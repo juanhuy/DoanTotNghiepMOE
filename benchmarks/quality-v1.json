@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cases": [
+    {"id":"math-add","category":"math","max_tokens":16,"messages":[{"role":"user","content":"What is 2 + 2? Answer briefly."}],"contains_all":["4"]},
+    {"id":"math-multiply","category":"math","max_tokens":16,"messages":[{"role":"user","content":"What is 7 times 8? Answer with the number."}],"contains_all":["56"]},
+    {"id":"capital-france","category":"knowledge","max_tokens":24,"messages":[{"role":"user","content":"What is the capital of France? Answer briefly."}],"contains_all":["Paris"]},
+    {"id":"capital-vietnamese","category":"vietnamese","max_tokens":32,"messages":[{"role":"user","content":"Thủ đô của Việt Nam là gì? Trả lời bằng một câu ngắn."}],"contains_all":["Hà Nội"]},
+    {"id":"follow-vietnamese","category":"instruction","max_tokens":16,"messages":[{"role":"user","content":"Hãy chỉ viết đúng hai từ: Việt Nam"}],"contains_all":["Việt Nam"]},
+    {"id":"follow-exact-ok","category":"instruction","max_tokens":16,"messages":[{"role":"user","content":"Reply with exactly: OK"}],"exact":"OK"},
+    {"id":"python-add","category":"code","max_tokens":64,"messages":[{"role":"user","content":"Write a short Python function named add that returns the sum of a and b. Return only code."}],"contains_all":["def add","return","a + b"]},
+    {"id":"python-even","category":"code","max_tokens":64,"messages":[{"role":"user","content":"Write a short Python function is_even(n) that returns whether n is even. Return only code."}],"contains_all":["def is_even","% 2"]},
+    {"id":"remember-name","category":"multi-turn","max_tokens":24,"messages":[{"role":"user","content":"My name is Linh."},{"role":"assistant","content":"Hello Linh!"},{"role":"user","content":"What is my name? Answer briefly."}],"contains_all":["Linh"]},
+    {"id":"retrieve-day","category":"retrieval","max_tokens":32,"messages":[{"role":"user","content":"Monday Minh prepared data. Tuesday Lan tested the interface. Wednesday Huy wrote the report. Who tested the interface and on which day?"}],"contains_all":["Lan","Tuesday"]},
+    {"id":"translate-hello","category":"vietnamese","max_tokens":24,"messages":[{"role":"user","content":"Translate 'hello' into Vietnamese. Answer briefly."}],"contains_all":["xin chào"]},
+    {"id":"opposite-hot","category":"language","max_tokens":16,"messages":[{"role":"user","content":"What is the opposite of hot? Answer with one word."}],"contains_all":["cold"]}
+  ]
+}

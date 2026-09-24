@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "first": {
+    "model": "olmoe",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Hello Linh! It's nice to meet you. How can I assist you"
+        },
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 22,
+      "completion_tokens": 16,
+      "total_tokens": 38
+    },
+    "metrics": {
+      "tokenizer_ms": 1.5113290000000001,
+      "prefill_ms": 4722.136757,
+      "time_to_first_token_ms": 4723.677654,
+      "decode_ms": 5749.094834,
+      "total_ms": 10474.965596,
+      "decode_tokens_per_second": 2.6091063781537196,
+      "attention_ms": 1301.567306,
+      "expert_compute_ms": 2099.827469,
+      "lm_head_ms": 212.445898,
+      "expert_io_ms": 6782.760403,
+      "expert_cache_hits": 3113,
+      "expert_cache_misses": 1623,
+      "expert_cache_evictions": 613,
+      "expert_bytes_read": 10237624320,
+      "expert_cache_bytes": 2119434240,
+      "kv_cache_bytes": 9699328,
+      "cached_prompt_tokens": 0
+    }
+  },
+  "second": {
+    "model": "olmoe",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Your name is Linh."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 7,
+      "total_tokens": 67
+    },
+    "metrics": {
+      "tokenizer_ms": 1.130108,
+      "prefill_ms": 4096.429365999999,
+      "time_to_first_token_ms": 4097.572707,
+      "decode_ms": 2084.6273,
+      "total_ms": 6182.213335,
+      "decode_tokens_per_second": 2.8782123308084855,
+      "attention_ms": 1087.125353,
+      "expert_compute_ms": 1581.7855359999999,
+      "lm_head_ms": 86.45142899999999,
+      "expert_io_ms": 3377.630645,
+      "expert_cache_hits": 2847,
+      "expert_cache_misses": 865,
+      "expert_cache_evictions": 285,
+      "expert_bytes_read": 5456281600,
+      "expert_cache_bytes": 2119434240,
+      "kv_cache_bytes": 17301504,
+      "cached_prompt_tokens": 37
+    }
+  },
+  "notes": [
+    "same HTTP session_id; second request includes first assistant response",
+    "single run; OS page cache and CPU frequency uncontrolled"
+  ],
+  "fresh_second_turn": {
+    "model": "olmoe",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Your name is Linh."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 60,
+      "completion_tokens": 7,
+      "total_tokens": 67
+    },
+    "metrics": {
+      "tokenizer_ms": 2.895174,
+      "prefill_ms": 9676.055292000001,
+      "time_to_first_token_ms": 9678.97535,
+      "decode_ms": 2834.914718,
+      "total_ms": 12516.542208,
+      "decode_tokens_per_second": 2.1164657835749403,
+      "attention_ms": 2163.159775,
+      "expert_compute_ms": 4229.7847409999995,
+      "lm_head_ms": 87.150129,
+      "expert_io_ms": 5910.97953,
+      "expert_cache_hits": 7426,
+      "expert_cache_misses": 1022,
+      "expert_cache_evictions": 292,
+      "expert_bytes_read": 6446612480,
+      "expert_cache_bytes": 2119434240,
+      "kv_cache_bytes": 17301504,
+      "cached_prompt_tokens": 0
+    }
+  }
+}

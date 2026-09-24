@@ -1,0 +1,44 @@
+{
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "cancellation_observed_ms": 11.070585000197752,
+  "runs": [
+    {
+      "prompt": "What is 2 + 2?",
+      "text": "2 + 2 equals 4.",
+      "content_chunks": 6,
+      "first_content_ms": 9924.652763000267,
+      "stream_total_ms": 12825.872897999943,
+      "usage": {
+        "completion_tokens": 7,
+        "prompt_tokens": 19,
+        "total_tokens": 26
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "prompt": "Hãy viết đúng hai từ: Việt Nam",
+      "text": "Đức",
+      "content_chunks": 3,
+      "first_content_ms": 11879.180803000054,
+      "stream_total_ms": 13181.583378000141,
+      "usage": {
+        "completion_tokens": 6,
+        "prompt_tokens": 32,
+        "total_tokens": 38
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "checks": [
+    "HTTP 429 while busy",
+    "health during prefill and streaming",
+    "disconnect during prefill releases permit",
+    "invalid request returns 400 before SSE",
+    "stream text/usage/finish match non-stream",
+    "terminal DONE received"
+  ],
+  "notes": [
+    "single smoke run, not a throughput benchmark",
+    "cancellation observation includes HTTP round trips; not a guaranteed latency bound"
+  ]
+}

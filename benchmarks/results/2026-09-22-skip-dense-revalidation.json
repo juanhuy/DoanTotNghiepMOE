@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "prompt": "What is 2 + 2?",
+  "max_tokens": 16,
+  "cache_bytes_per_layer": 33554432,
+  "context_limit": 512,
+  "dense_budget_bytes": 3221225472,
+  "logical_cpus": 24,
+  "load_ms": 1306.399613,
+  "runs": [
+    {
+      "index": 0,
+      "cache_state": "engine-cold",
+      "response": {
+        "text": "2 + 2 equals 4.",
+        "token_ids": [19, 559, 374, 18207, 577, 15, 50279],
+        "prompt_tokens": 19,
+        "finish_reason": "stop",
+        "metrics": {
+          "tokenizer_ms": 1.370215,
+          "prefill_ms": 19207.047287999998,
+          "time_to_first_token_ms": 19208.417750999997,
+          "decode_ms": 5952.012326,
+          "total_ms": 25160.464832999998,
+          "decode_tokens_per_second": 1.008062428532007,
+          "attention_ms": 3183.564334,
+          "expert_compute_ms": 9389.328610999999,
+          "lm_head_ms": 1179.138812,
+          "expert_io_ms": 11369.847306,
+          "expert_cache_hits": 242,
+          "expert_cache_misses": 2958,
+          "expert_cache_evictions": 2878,
+          "expert_bytes_read": 18658590720,
+          "expert_cache_bytes": 504627200,
+          "kv_cache_bytes": 6553600
+        }
+      }
+    },
+    {
+      "index": 1,
+      "cache_state": "engine-warm",
+      "response": {
+        "text": "2 + 2 equals 4.",
+        "token_ids": [19, 559, 374, 18207, 577, 15, 50279],
+        "prompt_tokens": 19,
+        "finish_reason": "stop",
+        "metrics": {
+          "tokenizer_ms": 0.066568,
+          "prefill_ms": 16197.786273999998,
+          "time_to_first_token_ms": 16197.85297,
+          "decode_ms": 5606.817041,
+          "total_ms": 21804.677683,
+          "decode_tokens_per_second": 1.0701258764330706,
+          "attention_ms": 2986.7229939999997,
+          "expert_compute_ms": 8587.974871,
+          "lm_head_ms": 1154.499253,
+          "expert_io_ms": 9041.113516,
+          "expert_cache_hits": 250,
+          "expert_cache_misses": 2950,
+          "expert_cache_evictions": 2950,
+          "expert_bytes_read": 18608128000,
+          "expert_cache_bytes": 504627200,
+          "kv_cache_bytes": 6553600
+        }
+      }
+    }
+  ],
+  "notes": [
+    "engine-cold means the in-process expert cache starts empty",
+    "the operating-system page cache is not cleared or measured",
+    "decode_tokens_per_second counts model steps after the first sampled token"
+  ]
+}

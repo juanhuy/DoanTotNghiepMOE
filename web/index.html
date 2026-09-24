@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MoE Tier Engine</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background:#0d1117; color:#e6edf3 }
+    * { box-sizing:border-box } body { margin:0 } main { width:min(860px,100%); min-height:100vh; margin:auto; padding:24px; display:flex; flex-direction:column; gap:16px }
+    header, .actions { display:flex; align-items:center; justify-content:space-between; gap:12px } h1 { margin:0; font-size:1.25rem }
+    #status { color:#8b949e; font-size:.9rem } #messages { flex:1; min-height:55vh; display:flex; flex-direction:column; gap:12px }
+    article { max-width:85%; padding:12px 14px; border-radius:14px; white-space:pre-wrap; overflow-wrap:anywhere }
+    .user { align-self:flex-end; background:#1f6feb } .assistant { align-self:flex-start; background:#21262d; border:1px solid #30363d }
+    .error { border-color:#f85149; color:#ff7b72 } form { position:sticky; bottom:0; display:grid; grid-template-columns:1fr auto; gap:10px; background:#0d1117; padding-top:8px }
+    textarea { min-height:74px; resize:vertical; border:1px solid #30363d; border-radius:10px; padding:12px; background:#161b22; color:inherit; font:inherit }
+    button { border:0; border-radius:10px; padding:10px 18px; background:#238636; color:white; font-weight:600; cursor:pointer } button:disabled { opacity:.55; cursor:not-allowed }
+    #stop { background:#da3633 } #clear { background:#30363d } select { background:#161b22; color:inherit; border:1px solid #30363d; border-radius:8px; padding:7px }
+    footer { display:flex; justify-content:space-between; gap:12px; color:#8b949e; font-size:.8rem } #metrics { text-align:right }
+    @media (max-width:600px) { main { padding:14px } article { max-width:95% } footer { flex-direction:column } }
+  </style>
+</head>
+<body><main>
+  <header><h1>MoE Tier Engine</h1><div class="actions"><span id="status">Sẵn sàng</span><button id="clear" type="button">Xóa hội thoại</button></div></header>
+  <section id="messages" aria-live="polite"></section>
+  <form id="form">
+    <textarea id="input" maxlength="16000" placeholder="Nhập câu hỏi…" required></textarea>
+    <button id="send" type="submit">Gửi</button><button id="stop" type="button" hidden>Dừng</button>
+  </form>
+  <footer><span>Enter để gửi · Shift+Enter xuống dòng</span><span><label>Output <select id="max-tokens"><option>32</option><option selected>64</option><option>128</option><option>256</option></select></label> · <span id="usage"></span></span></footer>
+  <div id="metrics"></div>
+</main>
+<script>
+const form=document.querySelector('#form'), input=document.querySelector('#input'), messagesEl=document.querySelector('#messages');
+const send=document.querySelector('#send'), stop=document.querySelector('#stop'), clear=document.querySelector('#clear'), statusEl=document.querySelector('#status'), usageEl=document.querySelector('#usage'), metricsEl=document.querySelector('#metrics'), maxTokens=document.querySelector('#max-tokens');
+let history=[]; let controller=null;
+const newSession=()=>globalThis.crypto?.randomUUID?.()||('web-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));
+let sessionId=localStorage.getItem('moe-session-id')||newSession(); localStorage.setItem('moe-session-id',sessionId);
+try { const saved=JSON.parse(localStorage.getItem('moe-history')||'[]'); if(Array.isArray(saved))history=saved.filter(x=>x&&['user','assistant'].includes(x.role)&&typeof x.content==='string').slice(-100) } catch(_) {}
+maxTokens.value=localStorage.getItem('moe-max-tokens')||'64'; if(!maxTokens.value)maxTokens.value='64';
+function bubble(role,text,extra=''){ const el=document.createElement('article'); el.className=role+' '+extra; el.textContent=text; messagesEl.append(el); el.scrollIntoView({behavior:'smooth',block:'end'}); return el }
+function persist(){ while(history.length>100||history.reduce((n,x)=>n+x.content.length,0)>48000)history.shift(); localStorage.setItem('moe-history',JSON.stringify(history)) }
+function busy(value){ send.disabled=value; send.hidden=value; input.disabled=value; clear.disabled=value; maxTokens.disabled=value; stop.hidden=!value; if(value)statusEl.textContent='Đang sinh câu trả lời…' }
+function parseBlock(block){ const lines=block.split(/\r?\n/); return lines.filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n') }
+for(const message of history)bubble(message.role,message.content);
+async function submit(){
+  const prompt=input.value.trim(); if(!prompt||controller)return;
+  history.push({role:'user',content:prompt}); persist(); bubble('user',prompt); input.value='';
+  const assistant={role:'assistant',content:''}; const output=bubble('assistant',''); controller=new AbortController(); busy(true); usageEl.textContent=''; metricsEl.textContent='';
+  try {
+    const response=await fetch('/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json'},signal:controller.signal,
+      body:JSON.stringify({model:'olmoe',session_id:sessionId,messages:history,max_tokens:Number(maxTokens.value),stream:true})});
+    if(!response.ok) throw new Error((await response.text())||`HTTP ${response.status}`);
+    if(!response.body) throw new Error('Trình duyệt không cung cấp response stream');
+    const reader=response.body.getReader(), decoder=new TextDecoder(); let buffer='', done=false;
+    while(!done){ const chunk=await reader.read(); done=chunk.done; buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!done});
+      const blocks=buffer.split(/\r?\n\r?\n/); buffer=blocks.pop()||'';
+      for(const block of blocks){ const data=parseBlock(block); if(!data)continue; if(data==='[DONE]'){done=true;break}
+        const event=JSON.parse(data); if(event.error)throw new Error(event.error.message);
+        const choice=event.choices?.[0], delta=choice?.delta?.content; if(delta){assistant.content+=delta;output.textContent=assistant.content;output.scrollIntoView({block:'end'})}
+        if(event.usage)usageEl.textContent=`${event.usage.prompt_tokens} input · ${event.usage.completion_tokens} output`;
+        if(event.metrics){ const m=event.metrics, cached=m.cached_prompt_tokens? ` · cache ${m.cached_prompt_tokens} token`:''; metricsEl.textContent=`TTFT ${(m.time_to_first_token_ms/1000).toFixed(2)}s · decode ${m.decode_tokens_per_second.toFixed(2)} bước/s · tổng ${(m.total_ms/1000).toFixed(2)}s${cached} · ${choice.finish_reason}` }
+      }
+    }
+    if(!assistant.content) output.textContent='(Không có nội dung)'; history.push(assistant); persist(); statusEl.textContent='Hoàn tất';
+  } catch(error) {
+    if(error.name==='AbortError'){ output.textContent=assistant.content||'(Đã dừng)'; if(assistant.content){history.push(assistant);persist()} statusEl.textContent='Đã dừng' }
+    else { output.textContent=`Lỗi: ${error.message}`; output.classList.add('error'); statusEl.textContent='Có lỗi' }
+  } finally { controller=null; busy(false); input.focus() }
+}
+form.addEventListener('submit',event=>{event.preventDefault();submit()});
+input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit()}});
+stop.addEventListener('click',()=>controller?.abort()); input.focus();
+clear.addEventListener('click',()=>{history=[];sessionId=newSession();localStorage.setItem('moe-session-id',sessionId);persist();messagesEl.replaceChildren();usageEl.textContent='';metricsEl.textContent='';statusEl.textContent='Đã xóa'});
+maxTokens.addEventListener('change',()=>localStorage.setItem('moe-max-tokens',maxTokens.value));
+</script></body></html>

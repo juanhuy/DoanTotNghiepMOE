@@ -1,0 +1,258 @@
+{
+  "environment": {
+    "arch": "x86_64",
+    "debug_assertions": false,
+    "logical_cpus": 24,
+    "os": "linux",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "load_ms": 1483.315145,
+  "model_config": {
+    "_name_or_path": "allenai/open_instruct_dev",
+    "architectures": [
+      "OlmoeForCausalLM"
+    ],
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "clip_qkv": null,
+    "eos_token_id": 50279,
+    "hidden_act": "silu",
+    "hidden_size": 2048,
+    "initializer_range": 0.02,
+    "intermediate_size": 1024,
+    "max_position_embeddings": 4096,
+    "model_type": "olmoe",
+    "norm_topk_prob": false,
+    "num_attention_heads": 16,
+    "num_experts": 64,
+    "num_experts_per_tok": 8,
+    "num_hidden_layers": 16,
+    "num_key_value_heads": 16,
+    "output_router_logits": false,
+    "pad_token_id": 1,
+    "rms_norm_eps": 0.00001,
+    "rope_scaling": null,
+    "rope_theta": 10000.0,
+    "router_aux_loss_coef": 0.01,
+    "tie_word_embeddings": false,
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.47.1",
+    "use_cache": false,
+    "vocab_size": 50304
+  },
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "notes": [
+    "fixed case order; only first request has empty expert cache; fresh KV per request",
+    "OS page cache and CPU frequency uncontrolled",
+    "VmHWM is cumulative process peak RSS on Linux, not per-request allocation or system page cache",
+    "evaluate answers manually; length finish may truncate; no quality score is inferred"
+  ],
+  "rounds": 3,
+  "runs": [
+    {
+      "case_id": "context-retrieval",
+      "process_peak_rss_kib": 3740320,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 8512.740403,
+          "decode_ms": 5673.181803,
+          "decode_tokens_per_second": 2.467750988095736,
+          "expert_bytes_read": 11202723840,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 451,
+          "expert_cache_hits": 17424,
+          "expert_cache_misses": 1776,
+          "expert_compute_ms": 14080.204269,
+          "expert_io_ms": 8311.201176999999,
+          "kv_cache_bytes": 39321600,
+          "lm_head_ms": 1882.041976,
+          "prefill_ms": 27244.917799,
+          "time_to_first_token_ms": 27246.061206,
+          "tokenizer_ms": 1.125726,
+          "total_ms": 32920.815538
+        },
+        "prompt_tokens": 136,
+        "text": "Lan tested the chat interface and fixed a display problem on Wednesday.",
+        "token_ids": [
+          45,
+          266,
+          5762,
+          253,
+          12939,
+          5673,
+          285,
+          4229,
+          247,
+          3148,
+          1895,
+          327,
+          8330,
+          15,
+          50279
+        ]
+      },
+      "round": 0
+    },
+    {
+      "case_id": "context-retrieval",
+      "process_peak_rss_kib": 3748356,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 7193.252789,
+          "decode_ms": 4860.167427,
+          "decode_tokens_per_second": 2.8805592009495187,
+          "expert_bytes_read": 9903308800,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 353,
+          "expert_cache_hits": 17630,
+          "expert_cache_misses": 1570,
+          "expert_compute_ms": 12782.308507,
+          "expert_io_ms": 5632.186191,
+          "kv_cache_bytes": 39321600,
+          "lm_head_ms": 300.285742,
+          "prefill_ms": 21160.714331000003,
+          "time_to_first_token_ms": 21162.58088,
+          "tokenizer_ms": 1.853198,
+          "total_ms": 26022.760868999998
+        },
+        "prompt_tokens": 136,
+        "text": "Lan tested the chat interface and fixed a display problem on Wednesday.",
+        "token_ids": [
+          45,
+          266,
+          5762,
+          253,
+          12939,
+          5673,
+          285,
+          4229,
+          247,
+          3148,
+          1895,
+          327,
+          8330,
+          15,
+          50279
+        ]
+      },
+      "round": 1
+    },
+    {
+      "case_id": "context-retrieval",
+      "process_peak_rss_kib": 3748356,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 7255.872203,
+          "decode_ms": 4807.062537,
+          "decode_tokens_per_second": 2.9123814995627546,
+          "expert_bytes_read": 9581608960,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 234,
+          "expert_cache_hits": 17681,
+          "expert_cache_misses": 1519,
+          "expert_compute_ms": 13008.672045000001,
+          "expert_io_ms": 4897.936314,
+          "kv_cache_bytes": 39321600,
+          "lm_head_ms": 274.020749,
+          "prefill_ms": 20734.272757,
+          "time_to_first_token_ms": 20734.506355,
+          "tokenizer_ms": 0.21834099999999998,
+          "total_ms": 25541.580515
+        },
+        "prompt_tokens": 136,
+        "text": "Lan tested the chat interface and fixed a display problem on Wednesday.",
+        "token_ids": [
+          45,
+          266,
+          5762,
+          253,
+          12939,
+          5673,
+          285,
+          4229,
+          247,
+          3148,
+          1895,
+          327,
+          8330,
+          15,
+          50279
+        ]
+      },
+      "round": 2
+    }
+  ],
+  "schema_version": 1,
+  "selected_case": "context-retrieval",
+  "settings": {
+    "cache_bytes_per_layer": 134217728,
+    "context_limit": 512,
+    "dense_budget_bytes": 3221225472
+  },
+  "suite": {
+    "cases": [
+      {
+        "id": "math-short",
+        "max_tokens": 32,
+        "messages": [
+          {
+            "content": "What is 2 + 2? Answer briefly.",
+            "role": "user"
+          }
+        ]
+      },
+      {
+        "id": "python",
+        "max_tokens": 96,
+        "messages": [
+          {
+            "content": "Write a short Python function that adds two integers. Return only the code.",
+            "role": "user"
+          }
+        ]
+      },
+      {
+        "id": "vietnamese",
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "Thủ đô của Việt Nam là gì? Hãy trả lời bằng một câu ngắn tiếng Việt.",
+            "role": "user"
+          }
+        ]
+      },
+      {
+        "id": "multi-turn",
+        "max_tokens": 48,
+        "messages": [
+          {
+            "content": "My name is Linh.",
+            "role": "user"
+          },
+          {
+            "content": "Hello Linh! How can I help you?",
+            "role": "assistant"
+          },
+          {
+            "content": "What is my name? Answer briefly.",
+            "role": "user"
+          }
+        ]
+      },
+      {
+        "id": "context-retrieval",
+        "max_tokens": 48,
+        "messages": [
+          {
+            "content": "Read these notes and answer only the question at the end. Monday: Linh checked the memory budget and recorded the results. Tuesday: Minh prepared the input data and wrote a short report. Wednesday: Lan tested the chat interface and fixed a display problem. Thursday: Huy reviewed the logs and updated the setup instructions. Friday: An measured the time to the first token and saved the benchmark results. Saturday: the team discussed the limitations of the CPU implementation and planned the next experiment. Sunday: everyone reviewed the final report and prepared a demonstration. Question: Who tested the chat interface, and on which day?",
+            "role": "user"
+          }
+        ]
+      }
+    ],
+    "version": 1
+  }
+}

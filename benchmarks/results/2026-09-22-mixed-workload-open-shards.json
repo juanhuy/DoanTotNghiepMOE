@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "max_tokens": 8,
+  "rounds": 2,
+  "cache_bytes_per_layer": 134217728,
+  "load_ms": 1336.684105,
+  "runs": [
+    {
+      "round": 0,
+      "prompt_index": 0,
+      "prompt": "What is 2 + 2?",
+      "response": {
+        "text": "2 + 2 equals 4.",
+        "token_ids": [
+          19,
+          559,
+          374,
+          18207,
+          577,
+          15,
+          50279
+        ],
+        "prompt_tokens": 19,
+        "finish_reason": "stop",
+        "metrics": {
+          "tokenizer_ms": 1.0235610000000002,
+          "prefill_ms": 15444.056901,
+          "time_to_first_token_ms": 15445.092502,
+          "decode_ms": 4379.2287129999995,
+          "total_ms": 19824.353821999997,
+          "decode_tokens_per_second": 1.3701042793651412,
+          "attention_ms": 3757.052644,
+          "expert_compute_ms": 9955.036490999999,
+          "lm_head_ms": 1307.478311,
+          "expert_io_ms": 4762.937653,
+          "expert_cache_hits": 2130,
+          "expert_cache_misses": 1070,
+          "expert_cache_evictions": 549,
+          "expert_bytes_read": 6749388800,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 6553600
+        }
+      }
+    },
+    {
+      "round": 0,
+      "prompt_index": 1,
+      "prompt": "Write a short Python function that adds two integers.",
+      "response": {
+        "text": "Here is a simple Python function that adds",
+        "token_ids": [
+          4943,
+          310,
+          247,
+          2969,
+          13814,
+          1159,
+          326,
+          11323
+        ],
+        "prompt_tokens": 23,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 0.10833999999999999,
+          "prefill_ms": 15843.286126,
+          "time_to_first_token_ms": 15843.410188,
+          "decode_ms": 5162.551923,
+          "total_ms": 21005.975368000003,
+          "decode_tokens_per_second": 1.3559185659351674,
+          "attention_ms": 3914.1514079999997,
+          "expert_compute_ms": 11416.145355999999,
+          "lm_head_ms": 1435.945787,
+          "expert_io_ms": 4189.099744,
+          "expert_cache_hits": 2540,
+          "expert_cache_misses": 1300,
+          "expert_cache_evictions": 392,
+          "expert_bytes_read": 8200192000,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 7864320
+        }
+      }
+    },
+    {
+      "round": 0,
+      "prompt_index": 2,
+      "prompt": "Hãy trả lời ngắn gọn: thủ đô của Việt Nam là gì?",
+      "response": {
+        "text": "Thủ đô củ",
+        "token_ids": [
+          1044,
+          6829,
+          102,
+          17949,
+          9837,
+          260,
+          6829,
+          102
+        ],
+        "prompt_tokens": 48,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 0.335848,
+          "prefill_ms": 31292.161113,
+          "time_to_first_token_ms": 31292.506793,
+          "decode_ms": 4567.312863,
+          "total_ms": 35859.831294999996,
+          "decode_tokens_per_second": 1.5326298438426027,
+          "attention_ms": 7208.381729,
+          "expert_compute_ms": 20726.730258,
+          "lm_head_ms": 2604.018066,
+          "expert_io_ms": 5221.176759000001,
+          "expert_cache_hits": 4760,
+          "expert_cache_misses": 2280,
+          "expert_cache_evictions": 364,
+          "expert_bytes_read": 14381875200,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 14417920
+        }
+      }
+    },
+    {
+      "round": 1,
+      "prompt_index": 0,
+      "prompt": "What is 2 + 2?",
+      "response": {
+        "text": "2 + 2 equals 4.",
+        "token_ids": [
+          19,
+          559,
+          374,
+          18207,
+          577,
+          15,
+          50279
+        ],
+        "prompt_tokens": 19,
+        "finish_reason": "stop",
+        "metrics": {
+          "tokenizer_ms": 0.055637000000000006,
+          "prefill_ms": 13428.482644000002,
+          "time_to_first_token_ms": 13428.553865,
+          "decode_ms": 4120.131662000001,
+          "total_ms": 17549.727134,
+          "decode_tokens_per_second": 1.4562641420753704,
+          "attention_ms": 3342.956677,
+          "expert_compute_ms": 10825.903203,
+          "lm_head_ms": 1194.731226,
+          "expert_io_ms": 2145.120075,
+          "expert_cache_hits": 2300,
+          "expert_cache_misses": 900,
+          "expert_cache_evictions": 99,
+          "expert_bytes_read": 5677056000,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 6553600
+        }
+      }
+    },
+    {
+      "round": 1,
+      "prompt_index": 1,
+      "prompt": "Write a short Python function that adds two integers.",
+      "response": {
+        "text": "Here is a simple Python function that adds",
+        "token_ids": [
+          4943,
+          310,
+          247,
+          2969,
+          13814,
+          1159,
+          326,
+          11323
+        ],
+        "prompt_tokens": 23,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 2.897242,
+          "prefill_ms": 15395.973762000001,
+          "time_to_first_token_ms": 15398.88137,
+          "decode_ms": 5001.351962000001,
+          "total_ms": 20400.507404,
+          "decode_tokens_per_second": 1.3996215529692009,
+          "attention_ms": 3987.825266,
+          "expert_compute_ms": 11774.305188999999,
+          "lm_head_ms": 1455.869068,
+          "expert_io_ms": 3135.165069,
+          "expert_cache_hits": 2490,
+          "expert_cache_misses": 1350,
+          "expert_cache_evictions": 85,
+          "expert_bytes_read": 8515584000,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 7864320
+        }
+      }
+    },
+    {
+      "round": 1,
+      "prompt_index": 2,
+      "prompt": "Hãy trả lời ngắn gọn: thủ đô của Việt Nam là gì?",
+      "response": {
+        "text": "Thủ đô củ",
+        "token_ids": [
+          1044,
+          6829,
+          102,
+          17949,
+          9837,
+          260,
+          6829,
+          102
+        ],
+        "prompt_tokens": 48,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 2.145964,
+          "prefill_ms": 30429.885517,
+          "time_to_first_token_ms": 30432.039808999998,
+          "decode_ms": 4511.943805,
+          "total_ms": 34954.319961,
+          "decode_tokens_per_second": 1.5514377621997002,
+          "attention_ms": 7523.454526,
+          "expert_compute_ms": 21585.03858,
+          "lm_head_ms": 2726.541883,
+          "expert_io_ms": 3025.878533,
+          "expert_cache_hits": 5243,
+          "expert_cache_misses": 1797,
+          "expert_cache_evictions": 127,
+          "expert_bytes_read": 11335188480,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 14417920
+        }
+      }
+    }
+  ],
+  "notes": [
+    "prompts run in fixed order in every round",
+    "heat history and expert cache persist across every run",
+    "the operating-system page cache is not cleared or measured"
+  ]
+}
