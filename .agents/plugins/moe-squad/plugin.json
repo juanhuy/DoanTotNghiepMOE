@@ -1,0 +1,12 @@
+{
+  "name": "moe-squad",
+  "version": "1.0.0",
+  "description": "AI-First Agent Squad for High-Performance MoE Inference Engine in Rust",
+  "agents": [
+    "agents/0-orchestrator.md",
+    "agents/1-architect.md",
+    "agents/2-rust-engineer.md",
+    "agents/3-profiler-tester.md",
+    "agents/4-reviewer.md"
+  ]
+}
