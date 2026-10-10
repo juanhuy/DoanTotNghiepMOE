@@ -1,0 +1,32 @@
+{
+  "head_width": 128,
+  "heads": 16,
+  "iterations_per_sample": 10,
+  "materialized_ms": [
+    0.4474884,
+    0.42668339999999993,
+    0.5234095,
+    0.4535751,
+    0.4374606,
+    0.428256,
+    0.5390098
+  ],
+  "max_abs_error": 3.4691765904426575e-8,
+  "notes": [
+    "synthetic resident f32 KV; no allocation in online timed region",
+    "materialized baseline allocates score vectors as the pre-online production path did",
+    "alternating order; one Rayon configuration; CPU frequency/background load uncontrolled"
+  ],
+  "online_ms": [
+    0.8280171,
+    1.0076405,
+    1.2161752,
+    0.8190147999999999,
+    1.3085488,
+    0.9078331000000001,
+    1.2618511
+  ],
+  "positions": 469,
+  "samples": 7,
+  "schema_version": 1
+}

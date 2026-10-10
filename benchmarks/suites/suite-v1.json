@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "cases": [
+    {"id":"math-short","max_tokens":32,"messages":[{"role":"user","content":"What is 2 + 2? Answer briefly."}]},
+    {"id":"python","max_tokens":96,"messages":[{"role":"user","content":"Write a short Python function that adds two integers. Return only the code."}]},
+    {"id":"vietnamese","max_tokens":64,"messages":[{"role":"user","content":"Thủ đô của Việt Nam là gì? Hãy trả lời bằng một câu ngắn tiếng Việt."}]},
+    {"id":"multi-turn","max_tokens":48,"messages":[{"role":"user","content":"My name is Linh."},{"role":"assistant","content":"Hello Linh! How can I help you?"},{"role":"user","content":"What is my name? Answer briefly."}]},
+    {"id":"context-retrieval","max_tokens":48,"messages":[{"role":"user","content":"Read these notes and answer only the question at the end. Monday: Linh checked the memory budget and recorded the results. Tuesday: Minh prepared the input data and wrote a short report. Wednesday: Lan tested the chat interface and fixed a display problem. Thursday: Huy reviewed the logs and updated the setup instructions. Friday: An measured the time to the first token and saved the benchmark results. Saturday: the team discussed the limitations of the CPU implementation and planned the next experiment. Sunday: everyone reviewed the final report and prepared a demonstration. Question: Who tested the chat interface, and on which day?"}]}
+  ]
+}

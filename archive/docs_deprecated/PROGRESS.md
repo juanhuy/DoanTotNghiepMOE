@@ -23,7 +23,6 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 5 | Prefill theo batch token | Hoàn thành bản đầu | Layer-major causal attention, gom route theo expert và LM head một lần; logits/hồi quy dài đạt |
 | 6 | Expert INT4 và đánh giá chất lượng | Chưa triển khai | Decoder thật hiện dùng INT8 |
 | 7 | Cấu hình, hồi quy và tài liệu vận hành | Đang triển khai | Có PLAN, SSE/UI local, giới hạn request và hồi quy HTTP; còn đóng gói và tải dài |
-| 8 | Chuẩn hóa AI-First & Bằng chứng Luận văn | Hoàn thành bản đầu | Đã tái cấu trúc repo, xuất 73 runs/30 file JSON thành BENCHMARKS.md, lập OUTLINE và EVIDENCE_MATRIX cho luận văn |
 
 ## 2026-09-22 — Mốc ban đầu (hồi cứu)
 
@@ -868,52 +867,6 @@ Kết quả **không đạt mục tiêu hiệu năng**: online chậm khoảng 2
 Giới hạn: buffer tổng hợp resident không đo I/O/expert, chỉ một cấu hình Rayon/máy, CPU frequency/tải nền không kiểm soát. Không dùng tỷ lệ này để dự đoán toàn model. Tuy vậy chênh lệch cùng kernel/cùng tiến trình đủ để yêu cầu đối chứng production trước khi giữ online làm mặc định.
 
 Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện không phải nâng cấp hiệu năng CPU. Bước tiếp theo là khôi phục materialized scratch làm mặc định hoặc tối ưu online (giảm rescale context khi max đổi) rồi chạy lại A/B; không tiếp tục tuyên bố online giúp tốc độ.
-
-## 2026-10-10 — Bước 14: Chuẩn hóa hệ thống tài liệu AI-First và Pipeline bằng chứng thực nghiệm
-
-- Mục tiêu: Tái cấu trúc không gian làm việc theo chuẩn AI-First Software Engineering, khôi phục và chuẩn hóa hệ thống tài liệu `docs/`, `benchmarks/`, xây dựng pipeline tự động trích xuất bằng chứng số liệu phục vụ bảo vệ đồ án tốt nghiệp và nộp bài báo khoa học.
-- Thay đổi và file liên quan:
-  - Tái cấu trúc thư mục: Di chuyển và phân tách `benchmarks/` (`suites/`, `results/`, `reports/`), `docs/` (`architecture/`, `thesis/`), lưu các tài liệu cũ vào `archive/`.
-  - `tools/export_benchmark_evidence.py`: Script tự động tổng hợp toàn bộ 30 tệp tin benchmark JSON thô (73 lần chạy thực nghiệm) thành bảng tổng hợp CSV `benchmarks/reports/all_benchmarks.csv` và tài liệu Markdown `docs/BENCHMARKS.md`.
-  - `docs/thesis/OUTLINE.md`: Đề cương chi tiết 6 chương cho Luận văn Tốt nghiệp và bài báo NCKH, ánh xạ trực tiếp các module code và thực nghiệm.
-  - `docs/thesis/EVIDENCE_MATRIX.md`: Ma trận đối chiếu 8 luận điểm khoa học cốt lõi với file mã nguồn, file JSON thô và kết quả định lượng.
-  - `README.md`: Soạn thảo lại toàn diện theo chuẩn học thuật và kỹ thuật AI-First (Badges, Diagram kiến trúc, Benchmark highlights, Quickstart, AI Squad).
-  - Khôi phục `docs/PROGRESS.md` vào đúng vị trí quy định của dự án.
-- Lệnh kiểm thử:
-  ```bash
-  cargo test --release --quiet
-  python tools/export_benchmark_evidence.py
-  ```
-- Kết quả kiểm thử: **36 test đạt** (26 lib, 2 HTTP binary, 5 loader, 3 integration), 3 microbenchmarks ignored có chủ đích; script Python xử lý thành công 30/30 file JSON, trích xuất 73 runs vào CSV và Markdown.
-- Điều kiện benchmark và liên kết dữ liệu thô:
-  - Báo cáo tổng hợp: [`docs/BENCHMARKS.md`](BENCHMARKS.md)
-  - Ma trận bằng chứng: [`docs/thesis/EVIDENCE_MATRIX.md`](thesis/EVIDENCE_MATRIX.md)
-  - Tệp CSV: [`benchmarks/reports/all_benchmarks.csv`](../benchmarks/reports/all_benchmarks.csv)
-
-## 2026-10-10 — Bước 15: Đo thực nghiệm đối chứng trên Testbed B (Intel Core i5)
-
-- Mục tiêu: Chạy bài đo thực nghiệm đầu tiên trực tiếp trên cấu hình phần cứng thứ hai của nhóm (Intel Core i5, 12 logical CPUs, RAM 16 GB, SSD), đối chứng độ nhạy phần cứng với Testbed A (Intel Core i7-14650HX).
-- Thay đổi và file liên quan:
-  - `src/olmoe.rs`: Thêm `#[serde(default = "default_rms_norm_eps")]` (mặc định $10^{-5}$) để hỗ trợ các checkpoint HF chuẩn bị thiếu trường `rms_norm_eps` trong `config.json`.
-  - `models/olmoe-1b-7b-int8/config.json`: Thêm trường `rms_norm_eps: 1e-05`.
-  - Tạo junction `models/olmoe-1b-7b-int8` trỏ tới checkpoint `..\Models\olmoe_merged` trên ổ đĩa.
-  - Kết quả thô: [`benchmarks/results/2026-10-10-testbed-i5-10400h.json`](../benchmarks/results/2026-10-10-testbed-i5-10400h.json).
-  - Tự động cập nhật vào [`docs/BENCHMARKS.md`](BENCHMARKS.md) và [`benchmarks/reports/all_benchmarks.csv`](../benchmarks/reports/all_benchmarks.csv).
-- Lệnh kiểm thử:
-  ```powershell
-  $env:RAYON_NUM_THREADS="4"
-  .\target\release\examples\benchmark_olmoe.exe models/olmoe-1b-7b-int8 "What is 2 + 2?" 16 2 128 | Out-File -Encoding utf8 benchmarks\results\2026-10-10-testbed-i5-10400h.json
-  ```
-- Kết quả kiểm thử: **Thành công**; 2/2 lượt chạy hoàn tất, model nạp trong 2.42 giây, sinh output hợp lý: `The result of 2 + 2 is 4. This is a basic arithmetic operation`.
-- Số đo chi tiết trên Testbed B:
-  - **Lượt 1 (Engine-Cold)**: Nạp 2.42s; TTFT 8.83s; Decode 1.85 tokens/s; Tổng thời gian 16.95s; Attention 1.98s; Expert Compute 2.89s; Expert I/O 11.27s (đọc 9.35 GB); Hit rate 68.68% (3253 hits / 1483 misses).
-  - **Lượt 2 (Engine-Warm)**: TTFT 4.90s; Decode 2.31 tokens/s; Tổng thời gian 11.39s; Attention 1.46s; Expert Compute 2.43s; Expert I/O 6.84s (đọc 7.05 GB); Hit rate 76.39% (3618 hits / 1118 misses).
-- Nhận định so sánh với Testbed A:
-  - Cache 128 MiB/layer hoạt động cực kỳ hiệu quả trên máy i5, hit rate tăng từ 68.68% lên 76.39% ở warm run.
-  - Tốc độ decode đạt 2.31 tokens/s (rất khả quan cho CPU phổ thông 4 worker threads, không bị giật lag).
-  - I/O vẫn là nút thắt lớn nhất (chiếm ~60-66% tổng thời gian), khẳng định tính đúng đắn của định hướng nghiên cứu Asynchronous Pre-fetching và GPU VRAM tier.
-- Giới hạn: Prompt 22 tokens, chưa đo context dài 469 tokens trên Testbed B.
-- Kết luận: Đã có bằng chứng thực nghiệm thật 100% trên cả 2 cấu hình máy trong nhóm.
 
 ## Mẫu cho mỗi bước tiếp theo
 

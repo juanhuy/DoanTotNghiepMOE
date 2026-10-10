@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "near-context-retrieval",
+      "max_tokens": 24,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Read the notes and answer the final question briefly. The access code is ORCHID. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. What is the access code?"
+        }
+      ]
+    }
+  ]
+}

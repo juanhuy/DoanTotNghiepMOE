@@ -30,6 +30,7 @@ pub struct Config {
     num_experts_per_tok: usize,
     vocab_size: usize,
     max_position_embeddings: usize,
+    #[serde(default = "default_rms_norm_eps")]
     rms_norm_eps: f32,
     rope_theta: f32,
     #[serde(default)]
@@ -45,6 +46,11 @@ pub struct Config {
     clip_qkv: Option<f32>,
     hidden_act: String,
 }
+
+fn default_rms_norm_eps() -> f32 {
+    1e-5
+}
+
 impl Config {
     fn validate(&self) -> io::Result<()> {
         let d = self.hidden_size;

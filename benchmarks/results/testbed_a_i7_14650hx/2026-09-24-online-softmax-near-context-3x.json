@@ -1,0 +1,195 @@
+{
+  "environment": {
+    "arch": "x86_64",
+    "debug_assertions": false,
+    "logical_cpus": 24,
+    "os": "linux",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "load_ms": 1435.636784,
+  "model_config": {
+    "_name_or_path": "allenai/open_instruct_dev",
+    "architectures": [
+      "OlmoeForCausalLM"
+    ],
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "clip_qkv": null,
+    "eos_token_id": 50279,
+    "hidden_act": "silu",
+    "hidden_size": 2048,
+    "initializer_range": 0.02,
+    "intermediate_size": 1024,
+    "max_position_embeddings": 4096,
+    "model_type": "olmoe",
+    "norm_topk_prob": false,
+    "num_attention_heads": 16,
+    "num_experts": 64,
+    "num_experts_per_tok": 8,
+    "num_hidden_layers": 16,
+    "num_key_value_heads": 16,
+    "output_router_logits": false,
+    "pad_token_id": 1,
+    "rms_norm_eps": 0.00001,
+    "rope_scaling": null,
+    "rope_theta": 10000.0,
+    "router_aux_loss_coef": 0.01,
+    "tie_word_embeddings": false,
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.47.1",
+    "use_cache": false,
+    "vocab_size": 50304
+  },
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "notes": [
+    "fixed case order; only first request has empty expert cache; fresh KV per request",
+    "OS page cache and CPU frequency uncontrolled",
+    "VmHWM is cumulative process peak RSS on Linux, not per-request allocation or system page cache",
+    "evaluate answers manually; length finish may truncate; no quality score is inferred"
+  ],
+  "rounds": 3,
+  "runs": [
+    {
+      "case_id": "near-context-retrieval",
+      "process_peak_rss_kib": 3740132,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 21352.423261,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 2576.276986,
+          "decode_tokens_per_second": 3.1052561675136587,
+          "expert_bytes_read": 9114828800,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 351,
+          "expert_cache_hits": 59611,
+          "expert_cache_misses": 1445,
+          "expert_compute_ms": 20362.532681,
+          "expert_io_ms": 9882.864372,
+          "kv_cache_bytes": 125042688,
+          "lm_head_ms": 365.706119,
+          "prefill_ms": 50294.702487999995,
+          "time_to_first_token_ms": 50296.273482,
+          "tokenizer_ms": 1.555501,
+          "total_ms": 52873.087151
+        },
+        "prompt_tokens": 469,
+        "text": "The access code is ORCHID.",
+        "token_ids": [
+          510,
+          2289,
+          2127,
+          310,
+          4145,
+          2775,
+          1838,
+          15,
+          50279
+        ]
+      },
+      "round": 0
+    },
+    {
+      "case_id": "near-context-retrieval",
+      "process_peak_rss_kib": 3790192,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 21672.185496000002,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 2006.1874579999999,
+          "decode_tokens_per_second": 3.98766325055951,
+          "expert_bytes_read": 7695564800,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 228,
+          "expert_cache_hits": 59836,
+          "expert_cache_misses": 1220,
+          "expert_compute_ms": 18289.65659,
+          "expert_io_ms": 3425.71133,
+          "kv_cache_bytes": 125042688,
+          "lm_head_ms": 106.73334,
+          "prefill_ms": 42276.063555999994,
+          "time_to_first_token_ms": 42280.77579,
+          "tokenizer_ms": 4.692084,
+          "total_ms": 44286.975362
+        },
+        "prompt_tokens": 469,
+        "text": "The access code is ORCHID.",
+        "token_ids": [
+          510,
+          2289,
+          2127,
+          310,
+          4145,
+          2775,
+          1838,
+          15,
+          50279
+        ]
+      },
+      "round": 1
+    },
+    {
+      "case_id": "near-context-retrieval",
+      "process_peak_rss_kib": 3791236,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 22089.66529,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 2000.9138329999998,
+          "decode_tokens_per_second": 3.99817316870936,
+          "expert_bytes_read": 7525253120,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 183,
+          "expert_cache_hits": 59863,
+          "expert_cache_misses": 1193,
+          "expert_compute_ms": 18232.812802,
+          "expert_io_ms": 3329.0975500000004,
+          "kv_cache_bytes": 125042688,
+          "lm_head_ms": 105.676742,
+          "prefill_ms": 42500.053352999996,
+          "time_to_first_token_ms": 42502.774495,
+          "tokenizer_ms": 2.713551,
+          "total_ms": 44503.705522
+        },
+        "prompt_tokens": 469,
+        "text": "The access code is ORCHID.",
+        "token_ids": [
+          510,
+          2289,
+          2127,
+          310,
+          4145,
+          2775,
+          1838,
+          15,
+          50279
+        ]
+      },
+      "round": 2
+    }
+  ],
+  "schema_version": 1,
+  "selected_case": "near-context-retrieval",
+  "settings": {
+    "cache_bytes_per_layer": 134217728,
+    "context_limit": 512,
+    "dense_budget_bytes": 3221225472
+  },
+  "suite": {
+    "cases": [
+      {
+        "id": "near-context-retrieval",
+        "max_tokens": 24,
+        "messages": [
+          {
+            "content": "Read the notes and answer the final question briefly. The access code is ORCHID. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. The ordinary note is blue. What is the access code?",
+            "role": "user"
+          }
+        ]
+      }
+    ],
+    "version": 1
+  }
+}

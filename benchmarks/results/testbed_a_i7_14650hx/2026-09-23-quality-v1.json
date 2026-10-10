@@ -1,0 +1,550 @@
+{
+  "load_ms": 1435.875302,
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "notes": [
+    "heuristic exact/substring acceptance checks; not a standardized quality benchmark",
+    "greedy decoding; cases run once in fixed order with persistent expert cache and fresh KV"
+  ],
+  "pass_rate": 1.0,
+  "passed": 12,
+  "results": [
+    {
+      "category": "math",
+      "expected_contains_all": [
+        "4"
+      ],
+      "expected_exact": null,
+      "id": "math-add",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 1417.252001,
+          "decode_ms": 1845.066454,
+          "decode_tokens_per_second": 3.251915391444215,
+          "expert_bytes_read": 6017679360,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 411,
+          "expert_cache_hits": 2630,
+          "expert_cache_misses": 954,
+          "expert_compute_ms": 2812.680996,
+          "expert_io_ms": 3174.348832,
+          "kv_cache_bytes": 7340032,
+          "lm_head_ms": 136.48550400000002,
+          "prefill_ms": 5719.1416070000005,
+          "time_to_first_token_ms": 5720.285099,
+          "tokenizer_ms": 1.1265209999999999,
+          "total_ms": 7565.370803999999
+        },
+        "prompt_tokens": 22,
+        "text": "2 + 2 equals 4.",
+        "token_ids": [
+          19,
+          559,
+          374,
+          18207,
+          577,
+          15,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "math",
+      "expected_contains_all": [
+        "56"
+      ],
+      "expected_exact": null,
+      "id": "math-multiply",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 1421.1156119999998,
+          "decode_ms": 1456.544628,
+          "decode_tokens_per_second": 4.119338250719222,
+          "expert_bytes_read": 4320870400,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 237,
+          "expert_cache_hits": 3155,
+          "expert_cache_misses": 685,
+          "expert_compute_ms": 2862.161212,
+          "expert_io_ms": 2077.092161,
+          "kv_cache_bytes": 7864320,
+          "lm_head_ms": 128.978586,
+          "prefill_ms": 5055.51417,
+          "time_to_first_token_ms": 5055.618327,
+          "tokenizer_ms": 0.093474,
+          "total_ms": 6512.171244
+        },
+        "prompt_tokens": 24,
+        "text": "7 times 8 equals 56.",
+        "token_ids": [
+          24,
+          2069,
+          854,
+          18207,
+          8026,
+          15,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "knowledge",
+      "expected_contains_all": [
+        "Paris"
+      ],
+      "expected_exact": null,
+      "id": "capital-france",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 1478.519839,
+          "decode_ms": 2778.643939,
+          "decode_tokens_per_second": 2.5192144634836566,
+          "expert_bytes_read": 6408765440,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 170,
+          "expert_cache_hits": 2824,
+          "expert_cache_misses": 1016,
+          "expert_compute_ms": 2885.568197,
+          "expert_io_ms": 3163.013344,
+          "kv_cache_bytes": 7864320,
+          "lm_head_ms": 152.90727700000002,
+          "prefill_ms": 4924.547349,
+          "time_to_first_token_ms": 4924.628708,
+          "tokenizer_ms": 0.070648,
+          "total_ms": 7703.281473
+        },
+        "prompt_tokens": 23,
+        "text": "The capital of France is Paris.",
+        "token_ids": [
+          510,
+          5347,
+          273,
+          6181,
+          310,
+          7785,
+          15,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "vietnamese",
+      "expected_contains_all": [
+        "Hà Nội"
+      ],
+      "expected_exact": null,
+      "id": "capital-vietnamese",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 3856.537772,
+          "decode_ms": 5837.779391,
+          "decode_tokens_per_second": 3.425960225703911,
+          "expert_bytes_read": 8730050560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 250,
+          "expert_cache_hits": 7704,
+          "expert_cache_misses": 1384,
+          "expert_compute_ms": 7132.979267,
+          "expert_io_ms": 3933.78373,
+          "kv_cache_bytes": 18612224,
+          "lm_head_ms": 446.75651500000004,
+          "prefill_ms": 9591.32052,
+          "time_to_first_token_ms": 9591.430052,
+          "tokenizer_ms": 0.095343,
+          "total_ms": 15429.228542
+        },
+        "prompt_tokens": 51,
+        "text": "Thủ đô của Việt Nam là Hà Nội.",
+        "token_ids": [
+          1044,
+          6829,
+          102,
+          17949,
+          9837,
+          260,
+          6829,
+          102,
+          66,
+          17721,
+          35177,
+          85,
+          20635,
+          27824,
+          388,
+          5991,
+          427,
+          36937,
+          74,
+          15,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "instruction",
+      "expected_contains_all": [
+        "Việt Nam"
+      ],
+      "expected_exact": null,
+      "id": "follow-vietnamese",
+      "pass": true,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 2717.239637,
+          "decode_ms": 4054.988851,
+          "decode_tokens_per_second": 3.699147038665927,
+          "expert_bytes_read": 6345687040,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 111,
+          "expert_cache_hits": 5394,
+          "expert_cache_misses": 1006,
+          "expert_compute_ms": 5107.718594999999,
+          "expert_io_ms": 3180.714026,
+          "kv_cache_bytes": 13107200,
+          "lm_head_ms": 295.579612,
+          "prefill_ms": 7288.601503,
+          "time_to_first_token_ms": 7288.729869,
+          "tokenizer_ms": 0.100579,
+          "total_ms": 11343.732109999999
+        },
+        "prompt_tokens": 35,
+        "text": "Việt Nam là một quốc gia ở",
+        "token_ids": [
+          37956,
+          35177,
+          85,
+          20635,
+          27824,
+          278,
+          36937,
+          85,
+          572,
+          39110,
+          68,
+          305,
+          571,
+          209,
+          6829,
+          242
+        ]
+      }
+    },
+    {
+      "category": "instruction",
+      "expected_contains_all": [],
+      "expected_exact": "OK",
+      "id": "follow-exact-ok",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 893.450758,
+          "decode_ms": 293.788713,
+          "decode_tokens_per_second": 3.403806735080391,
+          "expert_bytes_read": 2460057600,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 30,
+          "expert_cache_hits": 2042,
+          "expert_cache_misses": 390,
+          "expert_compute_ms": 1874.090542,
+          "expert_io_ms": 1438.764266,
+          "kv_cache_bytes": 4980736,
+          "lm_head_ms": 37.501886999999996,
+          "prefill_ms": 3963.901724,
+          "time_to_first_token_ms": 3963.977943,
+          "tokenizer_ms": 0.061258,
+          "total_ms": 4257.771413
+        },
+        "prompt_tokens": 18,
+        "text": "OK",
+        "token_ids": [
+          10249,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "code",
+      "expected_contains_all": [
+        "def add",
+        "return",
+        "a + b"
+      ],
+      "expected_exact": null,
+      "id": "python-add",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 2550.739466,
+          "decode_ms": 3936.629521,
+          "decode_tokens_per_second": 3.3023173581997836,
+          "expert_bytes_read": 6288916480,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 70,
+          "expert_cache_hits": 4891,
+          "expert_cache_misses": 997,
+          "expert_compute_ms": 4989.228634,
+          "expert_io_ms": 3512.333902,
+          "kv_cache_bytes": 12058624,
+          "lm_head_ms": 306.905057,
+          "prefill_ms": 7462.7973489999995,
+          "time_to_first_token_ms": 7462.913122,
+          "tokenizer_ms": 0.101496,
+          "total_ms": 11399.563834
+        },
+        "prompt_tokens": 33,
+        "text": "def add(a, b):\n    return a + b",
+        "token_ids": [
+          1545,
+          823,
+          9,
+          66,
+          13,
+          270,
+          2262,
+          187,
+          50274,
+          2309,
+          247,
+          559,
+          270,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "code",
+      "expected_contains_all": [
+        "def is_even",
+        "% 2"
+      ],
+      "expected_exact": null,
+      "id": "python-even",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 2648.532109,
+          "decode_ms": 4149.685767,
+          "decode_tokens_per_second": 3.6147315344419906,
+          "expert_bytes_read": 6465536000,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 68,
+          "expert_cache_hits": 5375,
+          "expert_cache_misses": 1025,
+          "expert_compute_ms": 5376.375652,
+          "expert_io_ms": 3696.3421670000002,
+          "kv_cache_bytes": 13107200,
+          "lm_head_ms": 333.119571,
+          "prefill_ms": 7946.894131999999,
+          "time_to_first_token_ms": 7947.074485,
+          "tokenizer_ms": 0.163487,
+          "total_ms": 12096.773669999999
+        },
+        "prompt_tokens": 35,
+        "text": "def is_even(n):\n    return n % 2 == 0",
+        "token_ids": [
+          1545,
+          310,
+          64,
+          9154,
+          9,
+          79,
+          2262,
+          187,
+          50274,
+          2309,
+          295,
+          2462,
+          374,
+          2295,
+          470,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "multi-turn",
+      "expected_contains_all": [
+        "Linh"
+      ],
+      "expected_exact": null,
+      "id": "remember-name",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 2538.166687,
+          "decode_ms": 2280.000277,
+          "decode_tokens_per_second": 2.6315786276547017,
+          "expert_bytes_read": 5796904960,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 67,
+          "expert_cache_hits": 5609,
+          "expert_cache_misses": 919,
+          "expert_compute_ms": 5181.015653,
+          "expert_io_ms": 3096.848739,
+          "kv_cache_bytes": 13369344,
+          "lm_head_ms": 130.021325,
+          "prefill_ms": 8704.721724,
+          "time_to_first_token_ms": 8704.855645,
+          "tokenizer_ms": 0.11287799999999999,
+          "total_ms": 10984.865149000001
+        },
+        "prompt_tokens": 45,
+        "text": "Your name is Linh.",
+        "token_ids": [
+          7093,
+          1416,
+          310,
+          18077,
+          73,
+          15,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "retrieval",
+      "expected_contains_all": [
+        "Lan",
+        "Tuesday"
+      ],
+      "expected_exact": null,
+      "id": "retrieve-day",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 2362.5348160000003,
+          "decode_ms": 2910.938466,
+          "decode_tokens_per_second": 2.748254589865315,
+          "expert_bytes_read": 7430635520,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 39,
+          "expert_cache_hits": 5094,
+          "expert_cache_misses": 1178,
+          "expert_compute_ms": 4811.3264899999995,
+          "expert_io_ms": 3600.155082,
+          "kv_cache_bytes": 12845056,
+          "lm_head_ms": 166.33890000000002,
+          "prefill_ms": 8066.327769,
+          "time_to_first_token_ms": 8066.488884,
+          "tokenizer_ms": 0.142954,
+          "total_ms": 10977.436732
+        },
+        "prompt_tokens": 41,
+        "text": "Lan tested the interface on Tuesday.",
+        "token_ids": [
+          45,
+          266,
+          5762,
+          253,
+          5673,
+          327,
+          7948,
+          15,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "vietnamese",
+      "expected_contains_all": [
+        "xin chào"
+      ],
+      "expected_exact": null,
+      "id": "translate-hello",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 1970.0526599999998,
+          "decode_ms": 4415.121647,
+          "decode_tokens_per_second": 3.3974148844103182,
+          "expert_bytes_read": 7172014080,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 65,
+          "expert_cache_hits": 3855,
+          "expert_cache_misses": 1137,
+          "expert_compute_ms": 3987.809169,
+          "expert_io_ms": 3053.1054489999997,
+          "kv_cache_bytes": 10223616,
+          "lm_head_ms": 304.74435,
+          "prefill_ms": 4931.605348,
+          "time_to_first_token_ms": 4931.701639,
+          "tokenizer_ms": 0.08761,
+          "total_ms": 9346.837901
+        },
+        "prompt_tokens": 24,
+        "text": "The Vietnamese translation for \"hello\" is \"xin chào\".",
+        "token_ids": [
+          510,
+          30907,
+          10234,
+          323,
+          346,
+          25521,
+          3,
+          310,
+          346,
+          89,
+          249,
+          448,
+          5991,
+          80,
+          3446,
+          50279
+        ]
+      }
+    },
+    {
+      "category": "language",
+      "expected_contains_all": [
+        "cold"
+      ],
+      "expected_exact": null,
+      "id": "opposite-hot",
+      "pass": true,
+      "response": {
+        "finish_reason": "stop",
+        "metrics": {
+          "attention_ms": 1221.257801,
+          "decode_ms": 380.199521,
+          "decode_tokens_per_second": 2.630197948092628,
+          "expert_bytes_read": 3746856960,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 30,
+          "expert_cache_hits": 2734,
+          "expert_cache_misses": 594,
+          "expert_compute_ms": 2510.9839620000002,
+          "expert_io_ms": 1824.573958,
+          "kv_cache_bytes": 6815744,
+          "lm_head_ms": 36.981348999999994,
+          "prefill_ms": 5232.581021,
+          "time_to_first_token_ms": 5232.6712019999995,
+          "tokenizer_ms": 0.08110500000000001,
+          "total_ms": 5612.876067
+        },
+        "prompt_tokens": 25,
+        "text": "cold",
+        "token_ids": [
+          32538,
+          50279
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "suite_path": "benchmarks/quality-v1.json",
+  "total": 12
+}

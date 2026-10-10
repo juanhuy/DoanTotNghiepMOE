@@ -1,0 +1,57 @@
+{
+  "iterations_per_sample": 10,
+  "notes": [
+    "synthetic deterministic resident f32 buffers; no allocation in timing",
+    "alternating measurement order; default release target; CPU frequency and background load uncontrolled"
+  ],
+  "results": [
+    {
+      "blocked_ms": [
+        0.45190339999999996,
+        0.4001238,
+        0.4242566,
+        0.38763349999999996,
+        0.38684219999999997,
+        0.3872772,
+        0.3585843
+      ],
+      "columns": 2048,
+      "rows": 2048,
+      "scalar_ms": [
+        2.0294136000000003,
+        1.9212964999999997,
+        1.7909259,
+        1.7796313000000001,
+        1.7444510999999998,
+        1.8197682,
+        1.7706307000000003
+      ]
+    },
+    {
+      "blocked_ms": [
+        2.8224104,
+        2.7925434,
+        2.8182970000000003,
+        2.8251847000000003,
+        2.800222,
+        2.813805,
+        2.801445
+      ],
+      "columns": 2048,
+      "rows": 8192,
+      "scalar_ms": [
+        6.601489000000001,
+        6.558614400000001,
+        6.6315359,
+        6.616524699999999,
+        6.583802,
+        6.575708199999999,
+        6.5660115
+      ]
+    }
+  ],
+  "samples": 7,
+  "schema_version": 1,
+  "threads": 1,
+  "warmup_per_variant": 5
+}

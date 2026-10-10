@@ -1,0 +1,3 @@
+testbed,filename,date,tag,cpus,cache_layer_mb,context_limit,run_state,ttft_ms,total_ms,decode_ms,decode_tok_s,attn_ms,expert_compute_ms,expert_io_ms,lm_head_ms,cache_hits,cache_misses,cache_evictions,hit_rate_pct,bytes_read_mb,text_sample
+Testbed B (Core i5),2026-10-10-testbed-i5-10400h.json,2026-10-10,testbed-i5-10400h,12,128,512,engine-cold,8830.93,16945.83,8114.02,1.85,1982.56,2887.05,11272.4,276.11,3253,1483,538,68.69,8921.17, The result of 2 + 2 is 4. This is a bas
+Testbed B (Core i5),2026-10-10-testbed-i5-10400h.json,2026-10-10,testbed-i5-10400h,12,128,512,engine-warm,4897.24,11385.36,6488.1,2.31,1464.29,2434.24,6836.88,211.92,3618,1118,252,76.39,6725.47, The result of 2 + 2 is 4. This is a bas
