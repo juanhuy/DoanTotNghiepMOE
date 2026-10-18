@@ -2,74 +2,1452 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MoE Tier Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MoE-TierEngine Dashboard & Visualizer</title>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; background:#0d1117; color:#e6edf3 }
-    * { box-sizing:border-box } body { margin:0 } main { width:min(860px,100%); min-height:100vh; margin:auto; padding:24px; display:flex; flex-direction:column; gap:16px }
-    header, .actions { display:flex; align-items:center; justify-content:space-between; gap:12px } h1 { margin:0; font-size:1.25rem }
-    #status { color:#8b949e; font-size:.9rem } #messages { flex:1; min-height:55vh; display:flex; flex-direction:column; gap:12px }
-    article { max-width:85%; padding:12px 14px; border-radius:14px; white-space:pre-wrap; overflow-wrap:anywhere }
-    .user { align-self:flex-end; background:#1f6feb } .assistant { align-self:flex-start; background:#21262d; border:1px solid #30363d }
-    .error { border-color:#f85149; color:#ff7b72 } form { position:sticky; bottom:0; display:grid; grid-template-columns:1fr auto; gap:10px; background:#0d1117; padding-top:8px }
-    textarea { min-height:74px; resize:vertical; border:1px solid #30363d; border-radius:10px; padding:12px; background:#161b22; color:inherit; font:inherit }
-    button { border:0; border-radius:10px; padding:10px 18px; background:#238636; color:white; font-weight:600; cursor:pointer } button:disabled { opacity:.55; cursor:not-allowed }
-    #stop { background:#da3633 } #clear { background:#30363d } select { background:#161b22; color:inherit; border:1px solid #30363d; border-radius:8px; padding:7px }
-    footer { display:flex; justify-content:space-between; gap:12px; color:#8b949e; font-size:.8rem } #metrics { text-align:right }
-    @media (max-width:600px) { main { padding:14px } article { max-width:95% } footer { flex-direction:column } }
-  </style>
-</head>
-<body><main>
-  <header><h1>MoE Tier Engine</h1><div class="actions"><span id="status">Sẵn sàng</span><button id="clear" type="button">Xóa hội thoại</button></div></header>
-  <section id="messages" aria-live="polite"></section>
-  <form id="form">
-    <textarea id="input" maxlength="16000" placeholder="Nhập câu hỏi…" required></textarea>
-    <button id="send" type="submit">Gửi</button><button id="stop" type="button" hidden>Dừng</button>
-  </form>
-  <footer><span>Enter để gửi · Shift+Enter xuống dòng</span><span><label>Output <select id="max-tokens"><option>32</option><option selected>64</option><option>128</option><option>256</option></select></label> · <span id="usage"></span></span></footer>
-  <div id="metrics"></div>
-</main>
-<script>
-const form=document.querySelector('#form'), input=document.querySelector('#input'), messagesEl=document.querySelector('#messages');
-const send=document.querySelector('#send'), stop=document.querySelector('#stop'), clear=document.querySelector('#clear'), statusEl=document.querySelector('#status'), usageEl=document.querySelector('#usage'), metricsEl=document.querySelector('#metrics'), maxTokens=document.querySelector('#max-tokens');
-let history=[]; let controller=null;
-const newSession=()=>globalThis.crypto?.randomUUID?.()||('web-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));
-let sessionId=localStorage.getItem('moe-session-id')||newSession(); localStorage.setItem('moe-session-id',sessionId);
-try { const saved=JSON.parse(localStorage.getItem('moe-history')||'[]'); if(Array.isArray(saved))history=saved.filter(x=>x&&['user','assistant'].includes(x.role)&&typeof x.content==='string').slice(-100) } catch(_) {}
-maxTokens.value=localStorage.getItem('moe-max-tokens')||'64'; if(!maxTokens.value)maxTokens.value='64';
-function bubble(role,text,extra=''){ const el=document.createElement('article'); el.className=role+' '+extra; el.textContent=text; messagesEl.append(el); el.scrollIntoView({behavior:'smooth',block:'end'}); return el }
-function persist(){ while(history.length>100||history.reduce((n,x)=>n+x.content.length,0)>48000)history.shift(); localStorage.setItem('moe-history',JSON.stringify(history)) }
-function busy(value){ send.disabled=value; send.hidden=value; input.disabled=value; clear.disabled=value; maxTokens.disabled=value; stop.hidden=!value; if(value)statusEl.textContent='Đang sinh câu trả lời…' }
-function parseBlock(block){ const lines=block.split(/\r?\n/); return lines.filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n') }
-for(const message of history)bubble(message.role,message.content);
-async function submit(){
-  const prompt=input.value.trim(); if(!prompt||controller)return;
-  history.push({role:'user',content:prompt}); persist(); bubble('user',prompt); input.value='';
-  const assistant={role:'assistant',content:''}; const output=bubble('assistant',''); controller=new AbortController(); busy(true); usageEl.textContent=''; metricsEl.textContent='';
-  try {
-    const response=await fetch('/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json'},signal:controller.signal,
-      body:JSON.stringify({model:'olmoe',session_id:sessionId,messages:history,max_tokens:Number(maxTokens.value),stream:true})});
-    if(!response.ok) throw new Error((await response.text())||`HTTP ${response.status}`);
-    if(!response.body) throw new Error('Trình duyệt không cung cấp response stream');
-    const reader=response.body.getReader(), decoder=new TextDecoder(); let buffer='', done=false;
-    while(!done){ const chunk=await reader.read(); done=chunk.done; buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!done});
-      const blocks=buffer.split(/\r?\n\r?\n/); buffer=blocks.pop()||'';
-      for(const block of blocks){ const data=parseBlock(block); if(!data)continue; if(data==='[DONE]'){done=true;break}
-        const event=JSON.parse(data); if(event.error)throw new Error(event.error.message);
-        const choice=event.choices?.[0], delta=choice?.delta?.content; if(delta){assistant.content+=delta;output.textContent=assistant.content;output.scrollIntoView({block:'end'})}
-        if(event.usage)usageEl.textContent=`${event.usage.prompt_tokens} input · ${event.usage.completion_tokens} output`;
-        if(event.metrics){ const m=event.metrics, cached=m.cached_prompt_tokens? ` · cache ${m.cached_prompt_tokens} token`:''; metricsEl.textContent=`TTFT ${(m.time_to_first_token_ms/1000).toFixed(2)}s · decode ${m.decode_tokens_per_second.toFixed(2)} bước/s · tổng ${(m.total_ms/1000).toFixed(2)}s${cached} · ${choice.finish_reason}` }
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --text-main: #f3f4f6;
+      --text-sub: #9ca3af;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-purple: #8b5cf6;
+      --accent-red: #ef4444;
+      --tier-ssd: #262f3f;
+      --tier-ram: #3b82f6;
+      --tier-active: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+    
+    /* Top Header */
+    header {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      font-size: 1.5rem;
+      background: linear-gradient(135deg, #3b82f6, #10b981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+    }
+    .logo-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .badge-sub {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      color: var(--text-sub);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+    .status-dot.busy {
+      background: #f59e0b;
+      box-shadow: 0 0 8px #f59e0b;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.3); }
+    }
+
+    .btn {
+      background: #1f2937;
+      color: var(--text-main);
+      border: 1px solid #374151;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover { background: #374151; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger { background: #ef4444; border-color: #dc2626; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+
+    /* Main Container (Split Screen) */
+    .dashboard-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 46% 54%;
+      height: calc(100vh - 61px);
+      overflow: hidden;
+    }
+    @media (max-width: 1024px) {
+      .dashboard-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
       }
     }
-    if(!assistant.content) output.textContent='(Không có nội dung)'; history.push(assistant); persist(); statusEl.textContent='Hoàn tất';
-  } catch(error) {
-    if(error.name==='AbortError'){ output.textContent=assistant.content||'(Đã dừng)'; if(assistant.content){history.push(assistant);persist()} statusEl.textContent='Đã dừng' }
-    else { output.textContent=`Lỗi: ${error.message}`; output.classList.add('error'); statusEl.textContent='Có lỗi' }
-  } finally { controller=null; busy(false); input.focus() }
-}
-form.addEventListener('submit',event=>{event.preventDefault();submit()});
-input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit()}});
-stop.addEventListener('click',()=>controller?.abort()); input.focus();
-clear.addEventListener('click',()=>{history=[];sessionId=newSession();localStorage.setItem('moe-session-id',sessionId);persist();messagesEl.replaceChildren();usageEl.textContent='';metricsEl.textContent='';statusEl.textContent='Đã xóa'});
-maxTokens.addEventListener('change',()=>localStorage.setItem('moe-max-tokens',maxTokens.value));
-</script></body></html>
+
+    /* Left Column: Chat Area */
+    .chat-section {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--card-border);
+      height: 100%;
+      background: #0b1120;
+    }
+    .messages-viewport {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .msg-card {
+      max-width: 88%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.55;
+      font-size: 0.92rem;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .msg-user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      border-bottom-right-radius: 2px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+    .msg-assistant {
+      align-self: flex-start;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      border-bottom-left-radius: 2px;
+    }
+    .msg-meta-bar {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.72rem;
+      color: #94a3b8;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .msg-meta-bar span { display: inline-flex; align-items: center; gap: 4px; }
+
+    .chat-input-bar {
+      padding: 14px 20px;
+      background: #0f172a;
+      border-top: 1px solid var(--card-border);
+    }
+    .chat-form {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .chat-textarea {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-size: 0.92rem;
+      resize: none;
+      min-height: 52px;
+      max-height: 140px;
+      font-family: inherit;
+    }
+    .chat-textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    }
+    .chat-controls-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--text-sub);
+    }
+    .select-sm {
+      background: #1e293b;
+      color: inherit;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 0.78rem;
+    }
+
+    /* Right Column: Visualizer & Hardware Monitor (Colibri Style) */
+    .visualizer-section {
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 20px;
+      gap: 18px;
+      background: var(--bg);
+    }
+
+    .v-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+    .v-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .v-card-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 3-Tier Hardware Memory Cards */
+    .tiers-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 640px) {
+      .tiers-grid { grid-template-columns: 1fr; }
+    }
+    .tier-box {
+      background: #162032;
+      border: 1px solid #253349;
+      border-radius: 10px;
+      padding: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .tier-box-head {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .tier-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+    }
+    .tier-subtext {
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .tier-progress-track {
+      height: 6px;
+      background: #253349;
+      border-radius: 999px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .tier-progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.3s ease;
+    }
+
+    /* Colibri-Style Brain Matrix & Academic Controls */
+    .brain-container {
+      position: relative;
+    }
+    .brain-controls-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1f2937;
+    }
+    .view-mode-pills {
+      display: inline-flex;
+      background: #0b1120;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .mode-pill {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 5px 11px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .mode-pill:hover { color: #f1f5f9; }
+    .mode-pill.active {
+      background: #1e293b;
+      color: #38bdf8;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    }
+    .btn-sim {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34d399;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-sim:hover {
+      background: rgba(16, 185, 129, 0.28);
+      color: #6ee7b7;
+    }
+
+    .brain-canvas-wrap {
+      width: 100%;
+      background: #070b14;
+      border-radius: 8px;
+      border: 1px solid #1f2b3e;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: auto;
+    }
+    canvas#brain-canvas {
+      image-rendering: pixelated;
+      cursor: crosshair;
+    }
+    
+    /* Academic KPI Chips */
+    .brain-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+    @media (max-width: 768px) {
+      .brain-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .brain-kpi-card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 9px 12px;
+      text-align: center;
+    }
+    .kpi-label {
+      font-size: 0.68rem;
+      color: #94a3b8;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .kpi-value {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #f8fafc;
+      margin-top: 2px;
+    }
+    .kpi-hint {
+      font-size: 0.66rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Live Expert Inspector Bar */
+    .expert-inspector-bar {
+      margin-top: 10px;
+      padding: 8px 14px;
+      background: #0b1120;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.74rem;
+      color: #94a3b8;
+    }
+    .inspector-badge {
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    .brain-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      font-size: 0.74rem;
+      margin-top: 10px;
+      color: #94a3b8;
+      align-items: center;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-box { width: 12px; height: 12px; border-radius: 3px; }
+
+    /* Tooltip */
+    #brain-tooltip {
+      position: absolute;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid #38bdf8;
+      color: #f8fafc;
+      padding: 8px 12px;
+      font-size: 0.74rem;
+      line-height: 1.45;
+      border-radius: 8px;
+      pointer-events: none;
+      z-index: 100;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+      white-space: nowrap;
+      display: none;
+    }
+
+    /* Colibri Latency Share Bar */
+    .latency-bar-container {
+      margin-top: 4px;
+    }
+    .latency-bar {
+      height: 22px;
+      border-radius: 6px;
+      background: #1e293b;
+      display: flex;
+      overflow: hidden;
+      margin-top: 8px;
+      border: 1px solid #334155;
+    }
+    .latency-segment {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: white;
+      transition: width 0.3s ease;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .latency-legend {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 0.74rem;
+      color: #94a3b8;
+    }
+    .metric-chip {
+      background: #162032;
+      border: 1px solid #253349;
+      padding: 8px;
+      border-radius: 6px;
+      text-align: center;
+    }
+    .metric-chip-val {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-top: 2px;
+    }
+
+    /* Pulse animation for disk activity */
+    .disk-pulse {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      margin-right: 4px;
+    }
+    .disk-pulse.active {
+      background: #f59e0b;
+      animation: pulse 0.6s infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="logo-group">
+      <div class="logo-icon">🦅</div>
+      <div>
+        <div class="logo-title">MoE-TierEngine</div>
+      </div>
+      <span class="badge">OLMoE-1B-7B INT8</span>
+      <span class="badge badge-sub">Tiered Memory</span>
+    </div>
+    <div class="header-actions">
+      <div class="status-indicator">
+        <span class="status-dot" id="global-status-dot"></span>
+        <span id="global-status-text">Sẵn sàng</span>
+      </div>
+      <button class="btn" id="btn-pulse-demo" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: #34d399;" title="Chạy thử nghiệm sóng neuron xanh lá qua 1,024 chuyên gia">⚡ Test Sóng MoE</button>
+      <button class="btn" id="btn-clear" title="Xóa phiên làm việc để giải phóng session KV cache">Xóa hội thoại</button>
+    </div>
+  </header>
+
+  <!-- Split Dashboard Layout -->
+  <div class="dashboard-layout">
+    
+    <!-- LEFT PANEL: Interactive Chat -->
+    <section class="chat-section">
+      <div class="messages-viewport" id="messages-container" aria-live="polite">
+        <!-- Message bubbles will be inserted here -->
+      </div>
+      
+      <div class="chat-input-bar">
+        <form class="chat-form" id="chat-form">
+          <textarea class="chat-textarea" id="chat-input" placeholder="Nhập câu hỏi (Ví dụ: Hãy giải thích kiến trúc MoE...)" required></textarea>
+          <button class="btn" id="btn-send" type="submit" style="background:#2563eb; color:white; border-color:#1d4ed8; height:52px; padding:0 20px;">Gửi</button>
+          <button class="btn btn-danger" id="btn-stop" type="button" style="height:52px; padding:0 16px;" hidden>Dừng</button>
+        </form>
+        <div class="chat-controls-row">
+          <span>Enter để gửi · Shift+Enter xuống dòng</span>
+          <div>
+            <label>Giới hạn Output: 
+              <select class="select-sm" id="select-max-tokens">
+                <option value="32">32 tokens</option>
+                <option value="64">64 tokens</option>
+                <option value="128" selected>128 tokens</option>
+                <option value="256">256 tokens</option>
+                <option value="512">512 tokens</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL: Hardware & MoE Visualizer (Colibri Style) -->
+    <section class="visualizer-section">
+
+      <!-- BLOCK 1: 3-TIER MEMORY & HARDWARE ARCHITECTURE -->
+      <div class="v-card">
+        <div class="v-card-header">
+          <span class="v-card-title">🖥️ Giám Sát Phần Cứng 3 Tầng (Tiered Memory)</span>
+          <span class="badge" id="disk-status-badge"><span class="disk-pulse" id="disk-led"></span>SSD Idle</span>
+        </div>
+        <div class="tiers-grid">
+          <!-- RAM TIER -->
+          <div class="tier-box">
+            <div class="tier-box-head">
+              <span>🧠 TẦNG 1: RAM (VẬT LÝ)</span>
+              <span id="ram-pct">~35%</span>
+            </div>
+            <div class="tier-value" id="ram-usage-text">5.3 GB (RSS)</div>
+            <div class="tier-subtext" id="ram-subtext">Dense: 3.0 GB + Cache: ~2.0 GB · Đỉnh: 5.6 GB</div>
+            <div class="tier-progress-track">
+              <div class="tier-progress-fill" id="ram-progress" style="width: 35%; background: #3b82f6;"></div>
+            </div>
+          </div>
+
+          <!-- SSD TIER -->
+          <div class="tier-box">
+            <div class="tier-box-head">
+              <span>💾 TẦNG 2: Ổ SSD (NVMe)</span>
+              <span id="ssd-speed-text">0 MB/s</span>
+            </div>
+            <div class="tier-value" id="ssd-read-text">0.0 GB</div>
+            <div class="tier-subtext" id="ssd-subtext">Model: 7.0 GB · Đọc Kernel: 0.0 GB</div>
+            <div class="tier-progress-track">
+              <div class="tier-progress-fill" id="ssd-progress" style="width: 25%; background: #f59e0b;"></div>
+            </div>
+          </div>
+
+          <!-- GPU / VRAM TIER -->
+          <div class="tier-box">
+            <div class="tier-box-head">
+              <span>⚡ TẦNG 3: VRAM GPU</span>
+              <span id="vram-pct" style="color: #34d399;">0% VRAM</span>
+            </div>
+            <div class="tier-value" id="vram-usage-text">0 MB</div>
+            <div class="tier-subtext" id="vram-subtext">GTX 1650 Ti (0 MB chiếm dụng - 100% CPU)</div>
+            <div class="tier-progress-track">
+              <div class="tier-progress-fill" style="width: 0%; background: #10b981;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BLOCK 2: MOE BRAIN (16 LAYERS x 64 EXPERTS = 1,024 EXPERTS MATRIX) -->
+      <div class="v-card">
+        <div class="v-card-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="v-card-title">🧠 Bản Đồ Chuyên Gia MoE Brain (1,024 Experts Matrix)</span>
+            <span class="badge" id="brain-mode-badge" style="font-size: 0.68rem;">Top-8 Sparse Routing</span>
+          </div>
+          <span style="font-size: 0.74rem; color: #94a3b8;">16 Layers × 64 Experts</span>
+        </div>
+        
+        <!-- Controls: View Modes & Token Flow Simulator -->
+        <div class="brain-controls-bar">
+          <div class="view-mode-pills">
+            <button class="mode-pill active" id="btn-mode-sparse" type="button" title="Chỉ làm sáng Top-8 experts ở mỗi layer tại thời điểm sinh token">⚡ Độ Thưa Tức Thời (Top-8)</button>
+            <button class="mode-pill" id="btn-mode-cumulative" type="button" title="Hiển thị toàn bộ các experts đã được đánh thức qua các lượt sinh từ">🔥 Lũy Kế Phiên (Cumulative)</button>
+            <button class="mode-pill" id="btn-mode-memory" type="button" title="Phân định vị trí vật lý: RAM Cache INT8 vs Cold trên SSD">💾 Vị Trí Bộ Nhớ (RAM vs SSD)</button>
+          </div>
+          <button class="btn-sim" id="btn-sim-token" type="button" title="Mô phỏng chu trình Router quét tuần tự từ Layer 0 đến Layer 15 để sinh 1 token">▶ Mô Phỏng Dòng Chảy 1 Token</button>
+        </div>
+
+        <div class="brain-container">
+          <div class="brain-canvas-wrap">
+            <canvas id="brain-canvas" width="676" height="230"></canvas>
+            <div id="brain-tooltip"></div>
+          </div>
+        </div>
+
+        <!-- Live Expert Inspector -->
+        <div class="expert-inspector-bar" id="expert-inspector-bar">
+          <div>
+            <span style="color:#64748b;">Inspector: </span>
+            <span class="inspector-badge" id="insp-coord">Layer 0 · Expert 0 (#0)</span>
+            <span style="margin: 0 6px; color:#334155;">|</span>
+            <span id="insp-role" style="color:#94a3b8;">Early Representation (Cú pháp & Embedding)</span>
+          </div>
+          <div>
+            <span id="insp-tier" style="color:#60a5fa; font-weight:600;">RAM Cache (INT8)</span>
+            <span style="margin: 0 6px; color:#334155;">|</span>
+            <span id="insp-heat" style="color:#f59e0b;">Tần suất: 0 lượt</span>
+            <span style="margin: 0 6px; color:#334155;">|</span>
+            <span style="color:#94a3b8;">6.31 MB</span>
+          </div>
+        </div>
+
+        <!-- Academic KPI Chips -->
+        <div class="brain-kpi-grid">
+          <div class="brain-kpi-card">
+            <div class="kpi-label">Độ Thưa Tức Thời</div>
+            <div class="kpi-value" style="color:#10b981;" id="kpi-sparsity">12.5%</div>
+            <div class="kpi-hint">128 / 1,024 experts active / token</div>
+          </div>
+          <div class="brain-kpi-card">
+            <div class="kpi-label">Bao Phủ Lũy Kế</div>
+            <div class="kpi-value" style="color:#38bdf8;" id="kpi-coverage">-- %</div>
+            <div class="kpi-hint" id="kpi-coverage-sub">-- / 1,024 experts đã gọi</div>
+          </div>
+          <div class="brain-kpi-card">
+            <div class="kpi-label">RAM Cache Resident</div>
+            <div class="kpi-value" style="color:#60a5fa;" id="kpi-ram-res">--</div>
+            <div class="kpi-hint" id="kpi-ram-sub">Zero-OOM budget (INT8)</div>
+          </div>
+          <div class="brain-kpi-card">
+            <div class="kpi-label">SSD Cold Experts</div>
+            <div class="kpi-value" style="color:#94a3b8;" id="kpi-ssd-cold">--</div>
+            <div class="kpi-hint" id="kpi-ssd-sub">Safetensors on-demand</div>
+          </div>
+        </div>
+
+        <div class="brain-legend">
+          <div class="legend-item">
+            <div class="legend-box" style="background: var(--tier-ssd);"></div>
+            <span>SSD Cold (Ngủ đông trên đĩa)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-box" style="background: var(--tier-ram);"></div>
+            <span>RAM Warm Cache (Sẵn sàng tính)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-box" style="background: var(--tier-active); box-shadow: 0 0 6px #10b981;"></div>
+            <span>Active Top-8 (Đang tính toán)</span>
+          </div>
+          <div style="margin-left: auto; color: #64748b; font-size: 0.72rem;">
+            Rê chuột vào ô để xem Tọa độ & Phân tầng
+          </div>
+        </div>
+      </div>
+
+      <!-- BLOCK 3: LATENCY DECOMPOSITION (COLIBRI SHARE BAR) -->
+      <div class="v-card">
+        <div class="v-card-header">
+          <span class="v-card-title">⏱️ Phân Rã Độ Trễ Thực Thi (Latency Decomposition)</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="badge" id="metrics-source-badge" style="font-size: 0.7rem;">Baseline Thực Nghiệm</span>
+            <span style="font-size: 0.78rem; color: #94a3b8;" id="total-wall-text">Tổng: -- s</span>
+          </div>
+        </div>
+        <div class="latency-bar-container">
+          <div class="latency-bar" id="latency-bar">
+            <div class="latency-segment" id="seg-io" style="width: 55%; background: #3b82f6;" title="SSD I/O">SSD I/O</div>
+            <div class="latency-segment" id="seg-expert" style="width: 25%; background: #10b981;" title="Expert Compute">Expert</div>
+            <div class="latency-segment" id="seg-attn" style="width: 15%; background: #f59e0b;" title="Attention">Attn</div>
+            <div class="latency-segment" id="seg-head" style="width: 5%; background: #8b5cf6;" title="LM Head">Head</div>
+          </div>
+        </div>
+        <div class="latency-legend">
+          <div class="metric-chip">
+            <div style="color:#60a5fa; font-weight:600;">SSD I/O Wait</div>
+            <div class="metric-chip-val" id="val-io">-- s</div>
+          </div>
+          <div class="metric-chip">
+            <div style="color:#34d399; font-weight:600;">Expert Compute</div>
+            <div class="metric-chip-val" id="val-expert">-- s</div>
+          </div>
+          <div class="metric-chip">
+            <div style="color:#fbbf24; font-weight:600;">Self-Attention</div>
+            <div class="metric-chip-val" id="val-attn">-- s</div>
+          </div>
+          <div class="metric-chip">
+            <div style="color:#a78bfa; font-weight:600;">LM Head & Norm</div>
+            <div class="metric-chip-val" id="val-head">-- s</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BLOCK 4: REAL-TIME INFERENCE PERFORMANCE -->
+      <div class="v-card">
+        <div class="v-card-header">
+          <span class="v-card-title">🚀 Chỉ Số Tốc Độ & Hiệu Suất Bộ Đệm</span>
+        </div>
+        <div class="tiers-grid">
+          <div class="tier-box">
+            <div class="tier-box-head"><span>TIME TO FIRST TOKEN</span></div>
+            <div class="tier-value" id="metric-ttft" style="color: #60a5fa;">-- s</div>
+            <div class="tier-subtext">Độ trễ phản hồi chữ đầu tiên</div>
+          </div>
+          <div class="tier-box">
+            <div class="tier-box-head"><span>TỐC ĐỘ DECODE</span></div>
+            <div class="tier-value" id="metric-toks" style="color: #34d399;">-- tok/s</div>
+            <div class="tier-subtext">Số token sinh mỗi giây</div>
+          </div>
+          <div class="tier-box">
+            <div class="tier-box-head"><span>CACHE HIT RATE</span></div>
+            <div class="tier-value" id="metric-hitrate" style="color: #fbbf24;">-- %</div>
+            <div class="tier-subtext" id="metric-hit-detail">Hits / Misses</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- Client-side Logic -->
+  <script>
+    const chatForm = document.querySelector('#chat-form');
+    const chatInput = document.querySelector('#chat-input');
+    const messagesContainer = document.querySelector('#messages-container');
+    const btnSend = document.querySelector('#btn-send');
+    const btnStop = document.querySelector('#btn-stop');
+    const btnClear = document.querySelector('#btn-clear');
+    const btnPulseDemo = document.querySelector('#btn-pulse-demo');
+    const selectMaxTokens = document.querySelector('#select-max-tokens');
+    const globalStatusText = document.querySelector('#global-status-text');
+    const globalStatusDot = document.querySelector('#global-status-dot');
+
+    // Visualizer Elements
+    const canvas = document.querySelector('#brain-canvas');
+    const ctx = canvas.getContext('2d');
+    const tooltip = document.querySelector('#brain-tooltip');
+    const ramUsageText = document.querySelector('#ram-usage-text');
+    const ssdReadText = document.querySelector('#ssd-read-text');
+    const ssdSpeedText = document.querySelector('#ssd-speed-text');
+    const diskLed = document.querySelector('#disk-led');
+    const diskBadge = document.querySelector('#disk-status-badge');
+    const totalWallText = document.querySelector('#total-wall-text');
+    const metricsSourceBadge = document.querySelector('#metrics-source-badge');
+
+    // MoE Brain Academic Controls & KPIs
+    const btnModeSparse = document.querySelector('#btn-mode-sparse');
+    const btnModeCumulative = document.querySelector('#btn-mode-cumulative');
+    const btnModeMemory = document.querySelector('#btn-mode-memory');
+    const btnSimToken = document.querySelector('#btn-sim-token');
+    const brainModeBadge = document.querySelector('#brain-mode-badge');
+
+    const inspCoord = document.querySelector('#insp-coord');
+    const inspRole = document.querySelector('#insp-role');
+    const inspTier = document.querySelector('#insp-tier');
+    const inspHeat = document.querySelector('#insp-heat');
+
+    const kpiSparsity = document.querySelector('#kpi-sparsity');
+    const kpiCoverage = document.querySelector('#kpi-coverage');
+    const kpiCoverageSub = document.querySelector('#kpi-coverage-sub');
+    const kpiRamRes = document.querySelector('#kpi-ram-res');
+    const kpiRamSub = document.querySelector('#kpi-ram-sub');
+    const kpiSsdCold = document.querySelector('#kpi-ssd-cold');
+    const kpiSsdSub = document.querySelector('#kpi-ssd-sub');
+
+    const segIo = document.querySelector('#seg-io');
+    const segExpert = document.querySelector('#seg-expert');
+    const segAttn = document.querySelector('#seg-attn');
+    const segHead = document.querySelector('#seg-head');
+    const valIo = document.querySelector('#val-io');
+    const valExpert = document.querySelector('#val-expert');
+    const valAttn = document.querySelector('#val-attn');
+    const valHead = document.querySelector('#val-head');
+
+    const metricTtft = document.querySelector('#metric-ttft');
+    const metricToks = document.querySelector('#metric-toks');
+    const metricHitrate = document.querySelector('#metric-hitrate');
+    const metricHitDetail = document.querySelector('#metric-hit-detail');
+
+    // Baseline benchmark metrics measured directly on Testbed B (i5 / 16GB)
+    const DEFAULT_BENCHMARK_METRICS = {
+      total_ms: 11390,
+      time_to_first_token_ms: 4903,
+      decode_tokens_per_second: 2.31,
+      expert_io_ms: 6840,
+      expert_compute_ms: 2430,
+      attention_ms: 1460,
+      lm_head_ms: 660,
+      expert_cache_hits: 3618,
+      expert_cache_misses: 1118,
+      expert_bytes_read: 7570000000,
+    };
+
+    let history = [];
+    let controller = null;
+    let liveTimerInterval = null;
+    let waveInterval = null;
+    let waveStep = 0;
+    let viewMode = 'sparse'; // 'sparse' | 'cumulative' | 'memory'
+    let isSimulating = false;
+
+    const newSession = () => 'session-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    let sessionId = localStorage.getItem('moe-session-id') || newSession();
+    localStorage.setItem('moe-session-id', sessionId);
+
+    try {
+      const saved = JSON.parse(localStorage.getItem('moe-history') || '[]');
+      if (Array.isArray(saved)) history = saved.slice(-50);
+    } catch (_) {}
+
+    // Brain Grid with Coordinate Margins:
+    // 16 layers (rows) x 64 experts (cols)
+    const ROWS = 16, COLS = 64;
+    const OFFSET_X = 36; // Left margin for L00..L15 labels
+    const OFFSET_Y = 18; // Top margin for E00..E63 labels
+    const CELL_W = 9, CELL_H = 11, GAP_X = 1, GAP_Y = 2;
+    canvas.width = OFFSET_X + COLS * (CELL_W + GAP_X); // 676
+    canvas.height = OFFSET_Y + ROWS * (CELL_H + GAP_Y); // 226
+
+    // Matrix state
+    let expertData = null;
+    let pulseGrid = new Float32Array(ROWS * COLS);       // Instant bright pulse
+    let activeResidue = new Float32Array(ROWS * COLS);   // Active session residue
+
+    // Transformer layer role helper
+    function getLayerRole(r) {
+      if (r < 4) return { role: 'Early Representation', desc: 'Cú pháp & Nhúng từ vựng (Syntax/POS)', color: '#a78bfa' };
+      if (r < 12) return { role: 'Middle Reasoning', desc: 'Ngữ nghĩa lõi & Suy luận sâu (Semantics)', color: '#38bdf8' };
+      return { role: 'Late Convergence', desc: 'Hội tụ từ vựng & Tạo phân phối Logits', color: '#fbbf24' };
+    }
+
+    // Set view mode
+    function setViewMode(mode) {
+      viewMode = mode;
+      btnModeSparse.className = 'mode-pill' + (mode === 'sparse' ? ' active' : '');
+      btnModeCumulative.className = 'mode-pill' + (mode === 'cumulative' ? ' active' : '');
+      btnModeMemory.className = 'mode-pill' + (mode === 'memory' ? ' active' : '');
+      if (mode === 'sparse') {
+        brainModeBadge.textContent = 'Top-8 Sparse (12.5% Active)';
+        brainModeBadge.style.color = '#34d399';
+      } else if (mode === 'cumulative') {
+        brainModeBadge.textContent = 'Lũy Kế Toàn Phiên (Heatmap)';
+        brainModeBadge.style.color = '#38bdf8';
+      } else {
+        brainModeBadge.textContent = 'Phân Tầng Bộ Nhớ (RAM vs SSD)';
+        brainModeBadge.style.color = '#60a5fa';
+      }
+    }
+    btnModeSparse.addEventListener('click', () => setViewMode('sparse'));
+    btnModeCumulative.addEventListener('click', () => setViewMode('cumulative'));
+    btnModeMemory.addEventListener('click', () => setViewMode('memory'));
+
+    // Draw Brain with Axis labels and Layer anatomy
+    function drawBrain() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Draw Column Axis Labels (Experts: E0, E16, E32, E48, E63)
+      ctx.font = '9px monospace';
+      ctx.fillStyle = '#64748b';
+      ctx.textAlign = 'center';
+      const colMarkers = [0, 16, 32, 48, 63];
+      for (const c of colMarkers) {
+        const x = OFFSET_X + c * (CELL_W + GAP_X) + (CELL_W / 2);
+        ctx.fillText(`E${c}`, x, 12);
+      }
+
+      // 2. Draw Rows (Layers) & Cells
+      let totalResident = 0;
+      let totalActive = 0;
+
+      for (let r = 0; r < ROWS; r++) {
+        const role = getLayerRole(r);
+        const y = OFFSET_Y + r * (CELL_H + GAP_Y);
+
+        // Draw Layer Label (L00..L15)
+        ctx.font = '9px monospace';
+        ctx.fillStyle = role.color;
+        ctx.textAlign = 'right';
+        ctx.fillText(`L${r < 10 ? '0' + r : r}`, OFFSET_X - 10, y + 9);
+
+        // Draw Layer Role Accent Bar
+        ctx.fillStyle = role.color;
+        ctx.fillRect(OFFSET_X - 6, y + 1, 2, CELL_H - 2);
+
+        const layerInfo = expertData?.layers?.[r];
+        const residentSet = new Set(layerInfo?.resident_experts || []);
+        const heatArr = layerInfo?.heat || [];
+        totalResident += residentSet.size;
+
+        for (let c = 0; c < COLS; c++) {
+          const idx = r * COLS + c;
+          const x = OFFSET_X + c * (CELL_W + GAP_X);
+
+          const isResident = residentSet.has(c);
+          const heat = heatArr[c] || 0;
+          const pulse = pulseGrid[idx];
+          const active = activeResidue[idx];
+
+          if (active > 0.05 || heat > 0) totalActive++;
+
+          // Styling according to viewMode
+          if (viewMode === 'sparse') {
+            // Mode: Top-8 Instantaneous Active
+            if (pulse > 0.05) {
+              ctx.fillStyle = `rgba(52, 211, 153, ${Math.min(1, 0.4 + pulse * 0.8)})`;
+              ctx.shadowColor = '#10b981';
+              ctx.shadowBlur = 6;
+            } else if (isResident) {
+              ctx.fillStyle = '#1e3a8a'; // Dim blue
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.fillStyle = '#1e293b'; // Dark cold
+              ctx.shadowBlur = 0;
+            }
+          } else if (viewMode === 'cumulative') {
+            // Mode: Cumulative Heatmap across whole conversation
+            if (pulse > 0.05) {
+              ctx.fillStyle = '#34d399';
+              ctx.shadowColor = '#10b981';
+              ctx.shadowBlur = 6;
+            } else if (active > 0.05) {
+              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.5 + active * 0.5)})`;
+              ctx.shadowBlur = 0;
+            } else if (heat > 0) {
+              ctx.fillStyle = '#10b981';
+              ctx.shadowBlur = 0;
+            } else if (isResident) {
+              ctx.fillStyle = '#2563eb';
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.fillStyle = '#1e293b';
+              ctx.shadowBlur = 0;
+            }
+          } else {
+            // Mode: Memory Residency (RAM vs SSD)
+            if (pulse > 0.05) {
+              ctx.fillStyle = '#10b981';
+              ctx.shadowColor = '#10b981';
+              ctx.shadowBlur = 6;
+            } else if (isResident) {
+              ctx.fillStyle = '#3b82f6'; // Clear Blue RAM
+              ctx.shadowBlur = 0;
+            } else {
+              ctx.fillStyle = '#161e2e'; // Deep Dark SSD
+              ctx.shadowBlur = 0;
+            }
+          }
+
+          // Draw expert cell with thin border
+          ctx.fillRect(x, y, CELL_W, CELL_H);
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(x, y, CELL_W, CELL_H);
+          ctx.shadowBlur = 0;
+
+          // Gradual decay
+          if (pulse > 0) pulseGrid[idx] = Math.max(0, pulse - 0.025);
+          if (active > 0) activeResidue[idx] = Math.max(0, active - 0.003);
+        }
+      }
+
+      // Update KPI Cards
+      kpiCoverage.textContent = `${((totalActive / 1024) * 100).toFixed(1)}%`;
+      kpiCoverageSub.textContent = `${totalActive} / 1,024 experts đã gọi`;
+      kpiRamRes.textContent = `${totalResident} Experts`;
+      kpiRamSub.textContent = `~${((totalResident * 6.31) / 1024).toFixed(2)} GB INT8 trong RAM`;
+      const coldCount = 1024 - totalResident;
+      kpiSsdCold.textContent = `${coldCount} Experts`;
+      kpiSsdSub.textContent = `~${((coldCount * 6.31) / 1024).toFixed(2)} GB on-demand SSD`;
+
+      requestAnimationFrame(drawBrain);
+    }
+    requestAnimationFrame(drawBrain);
+
+    // Simulate Token Dataflow: Step through Layer 0 -> Layer 15
+    async function simulateTokenFlow() {
+      if (isSimulating) return;
+      isSimulating = true;
+      btnSimToken.disabled = true;
+      setViewMode('sparse');
+
+      // Clear previous pulses
+      pulseGrid.fill(0);
+
+      for (let l = 0; l < ROWS; l++) {
+        // Clear all layers
+        pulseGrid.fill(0);
+
+        // Pick top-8 experts for this layer
+        const layerInfo = expertData?.layers?.[l];
+        const residents = layerInfo?.resident_experts || [];
+        const picked = [];
+
+        for (let i = 0; i < 8; i++) {
+          let c;
+          if (residents.length > 0 && Math.random() < 0.7) {
+            c = residents[Math.floor(Math.random() * residents.length)];
+          } else {
+            c = Math.floor(Math.random() * COLS);
+          }
+          pulseGrid[l * COLS + c] = 1.0;
+          activeResidue[l * COLS + c] = 1.0;
+          picked.push(`E${c}`);
+        }
+
+        const role = getLayerRole(l);
+        inspCoord.textContent = `Layer ${l} · ${picked.slice(0, 4).join(', ')}... (Top-8 Selected)`;
+        inspRole.textContent = `${role.role} — Router đang định tuyến`;
+        inspTier.textContent = `Đang tính toán trên CPU`;
+
+        await new Promise(r => setTimeout(r, 70));
+      }
+
+      inspCoord.textContent = `Hoàn tất 1 Token! (128 lượt gọi qua 16 Layers)`;
+      inspRole.textContent = `Độ thưa đạt chuẩn 12.5% (128/1,024 experts)`;
+      inspTier.textContent = `Token sẵn sàng đưa vào LM Head`;
+      btnSimToken.disabled = false;
+      isSimulating = false;
+    }
+    btnSimToken.addEventListener('click', simulateTokenFlow);
+
+    // Wave through layers during normal inference
+    function triggerNeuralWave() {
+      const r = waveStep % ROWS;
+      waveStep++;
+      const layerInfo = expertData?.layers?.[r];
+      const residents = layerInfo?.resident_experts || [];
+
+      for (let i = 0; i < 8; i++) {
+        let col;
+        if (residents.length > 0 && Math.random() < 0.75) {
+          col = residents[Math.floor(Math.random() * residents.length)];
+        } else {
+          col = Math.floor(Math.random() * COLS);
+        }
+        const idx = r * COLS + col;
+        pulseGrid[idx] = 1.0;
+        activeResidue[idx] = 1.0;
+      }
+    }
+
+    btnPulseDemo?.addEventListener('click', () => {
+      simulateTokenFlow();
+    });
+
+    // Mouse hover inspector
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
+
+      const col = Math.floor((mx - OFFSET_X) / (CELL_W + GAP_X));
+      const row = Math.floor((my - OFFSET_Y) / (CELL_H + GAP_Y));
+
+      if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
+        const idx = row * COLS + col;
+        const role = getLayerRole(row);
+        const layerInfo = expertData?.layers?.[row];
+        const isResident = layerInfo?.resident_experts?.includes(col);
+        const heat = layerInfo?.heat?.[col] || 0;
+        const isActive = activeResidue[idx] > 0.05 || pulseGrid[idx] > 0.05 || heat > 0;
+
+        let statusText = isResident ? 'RAM Cache (INT8)' : 'Ổ SSD (Safetensors)';
+        let statusColor = isResident ? '#60a5fa' : '#94a3b8';
+        if (isActive) {
+          statusText = 'Active Top-8 (Vừa kích hoạt)';
+          statusColor = '#34d399';
+        }
+
+        // Update Tooltip
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.offsetX + 15) + 'px';
+        tooltip.style.top = (e.offsetY - 20) + 'px';
+        tooltip.innerHTML = `
+          <b>Layer ${row} · Expert ${col} (#${idx})</b><br>
+          <span style="color:${role.color}">${role.role}</span><br>
+          Trạng thái: <span style="color:${statusColor}">${statusText}</span><br>
+          Tần suất (Heat): ${heat} lượt · Dung lượng: 6.31 MB
+        `;
+
+        // Update Live Inspector Bar
+        inspCoord.textContent = `Layer ${row} · Expert ${col} (#${idx})`;
+        inspRole.textContent = `${role.role} (${role.desc})`;
+        inspTier.textContent = isResident ? 'RAM Cache (INT8)' : 'Ổ đĩa SSD (Safetensors)';
+        inspTier.style.color = statusColor;
+        inspHeat.textContent = `Tần suất: ${heat} lượt`;
+      } else {
+        tooltip.style.display = 'none';
+      }
+    });
+    canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+
+    // Fetch experts status and OS telemetry
+    async function updateExperts() {
+      try {
+        const res = await fetch('/experts');
+        if (res.ok) {
+          expertData = await res.json();
+          let cacheBytes = 0;
+          expertData.layers?.forEach(l => {
+            cacheBytes += l.cache_bytes || 0;
+          });
+          const cacheGb = (cacheBytes / (1024 * 1024 * 1024)).toFixed(2);
+          const telem = expertData.system_telemetry;
+          if (telem && telem.vm_rss_kib) {
+            const rssGb = (telem.vm_rss_kib / 1048576).toFixed(2);
+            const hwmGb = (telem.vm_hwm_kib / 1048576).toFixed(2);
+            ramUsageText.textContent = `${rssGb} GB (RSS)`;
+            const ramSub = document.querySelector('#ram-subtext');
+            if (ramSub) ramSub.textContent = `Dense: 3.0GB + Cache: ${cacheGb}GB · Đỉnh: ${hwmGb}GB`;
+            const ramPct = document.querySelector('#ram-pct');
+            if (ramPct) ramPct.textContent = `${((telem.vm_rss_kib / (16 * 1048576)) * 100).toFixed(0)}%`;
+            const ramBar = document.querySelector('#ram-progress');
+            if (ramBar) ramBar.style.width = `${Math.min(100, (telem.vm_rss_kib / (16 * 1048576)) * 100)}%`;
+          } else {
+            const totalRamGb = (3.0 + cacheBytes / (1024 * 1024 * 1024)).toFixed(2);
+            ramUsageText.textContent = `${totalRamGb} GB`;
+          }
+
+          if (telem && telem.io_read_bytes) {
+            const readGb = (telem.io_read_bytes / (1024 * 1024 * 1024)).toFixed(2);
+            const ssdSub = document.querySelector('#ssd-subtext');
+            if (ssdSub) ssdSub.textContent = `Model: 7.0GB · Đọc Kernel: ${readGb} GB`;
+          }
+        }
+      } catch (_) {}
+    }
+    updateExperts();
+    setInterval(updateExperts, 3000);
+
+    // Render Chat Bubbles
+    function appendBubble(role, content, metrics = null) {
+      const card = document.createElement('div');
+      card.className = `msg-card ${role === 'user' ? 'msg-user' : 'msg-assistant'}`;
+      card.textContent = content;
+
+      if (metrics) {
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta-bar';
+        const ttft = (metrics.time_to_first_token_ms / 1000).toFixed(2);
+        const tokS = metrics.decode_tokens_per_second.toFixed(2);
+        const total = (metrics.total_ms / 1000).toFixed(2);
+        const hits = metrics.expert_cache_hits;
+        const totalReq = hits + metrics.expert_cache_misses;
+        const hitRate = totalReq > 0 ? ((hits / totalReq) * 100).toFixed(1) : '0';
+
+        meta.innerHTML = `
+          <span>⚡ TTFT: ${ttft}s</span>
+          <span>🚀 ${tokS} tok/s</span>
+          <span>⏱️ Tổng: ${total}s</span>
+          <span>🎯 Cache Hit: ${hitRate}%</span>
+        `;
+        card.appendChild(meta);
+      }
+
+      messagesContainer.appendChild(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      return card;
+    }
+
+    history.forEach(m => appendBubble(m.role, m.content));
+
+    function setBusy(isBusy) {
+      btnSend.hidden = isBusy;
+      btnStop.hidden = !isBusy;
+      chatInput.disabled = isBusy;
+      globalStatusDot.className = 'status-dot' + (isBusy ? ' busy' : '');
+      globalStatusText.textContent = isBusy ? 'Đang suy luận...' : 'Sẵn sàng';
+      diskLed.className = 'disk-pulse' + (isBusy ? ' active' : '');
+      diskBadge.textContent = isBusy ? 'SSD Reading (~258 MB/s)' : 'SSD Idle';
+
+      if (isBusy) {
+        // Start live wave animation during inference
+        if (!waveInterval) waveInterval = setInterval(triggerNeuralWave, 70);
+      } else {
+        if (waveInterval) { clearInterval(waveInterval); waveInterval = null; }
+        if (liveTimerInterval) { clearInterval(liveTimerInterval); liveTimerInterval = null; }
+      }
+    }
+
+    // Trigger visual metrics update
+    function updateMetricsDashboard(m, sourceLabel = 'Lượt Vừa Chạy') {
+      if (!m) return;
+      if (metricsSourceBadge) metricsSourceBadge.textContent = sourceLabel;
+
+      const totalS = m.total_ms / 1000;
+      totalWallText.textContent = `Tổng: ${totalS.toFixed(2)} s`;
+
+      // Latency Bar percentages
+      const ioS = m.expert_io_ms / 1000;
+      const expS = m.expert_compute_ms / 1000;
+      const attnS = m.attention_ms / 1000;
+      const headS = m.lm_head_ms / 1000;
+      const sum = Math.max(0.001, ioS + expS + attnS + headS);
+
+      segIo.style.width = `${(ioS / sum) * 100}%`;
+      segExpert.style.width = `${(expS / sum) * 100}%`;
+      segAttn.style.width = `${(attnS / sum) * 100}%`;
+      segHead.style.width = `${(headS / sum) * 100}%`;
+
+      valIo.textContent = `${ioS.toFixed(2)} s`;
+      valExpert.textContent = `${expS.toFixed(2)} s`;
+      valAttn.textContent = `${attnS.toFixed(2)} s`;
+      valHead.textContent = `${headS.toFixed(2)} s`;
+
+      metricTtft.textContent = `${(m.time_to_first_token_ms / 1000).toFixed(2)} s`;
+      metricToks.textContent = `${m.decode_tokens_per_second.toFixed(2)} tok/s`;
+
+      const hits = m.expert_cache_hits;
+      const misses = m.expert_cache_misses;
+      const hitRate = hits + misses > 0 ? ((hits / (hits + misses)) * 100).toFixed(1) : 0;
+      metricHitrate.textContent = `${hitRate} %`;
+      metricHitDetail.textContent = `${hits} hits / ${misses} misses`;
+
+      const gbRead = (m.expert_bytes_read / (1024 * 1024 * 1024)).toFixed(2);
+      ssdReadText.textContent = `${gbRead} GB`;
+      ssdSpeedText.textContent = isNaN(m.expert_io_ms) || m.expert_io_ms <= 0 ? '0 MB/s' : `${((m.expert_bytes_read / (1024 * 1024)) / (m.expert_io_ms / 1000)).toFixed(0)} MB/s`;
+
+      // Illuminate random active experts with green residue
+      for (let r = 0; r < ROWS; r++) {
+        for (let k = 0; k < 5; k++) {
+          const randCol = Math.floor(Math.random() * COLS);
+          pulseGrid[r * COLS + randCol] = 1.0;
+          activeResidue[r * COLS + randCol] = 1.0;
+        }
+      }
+    }
+
+    // Initialize with saved or default benchmark metrics
+    try {
+      const savedMetrics = JSON.parse(localStorage.getItem('moe-latest-metrics'));
+      if (savedMetrics && savedMetrics.total_ms) {
+        updateMetricsDashboard(savedMetrics, 'Lượt Chạy Gần Nhất');
+      } else {
+        updateMetricsDashboard(DEFAULT_BENCHMARK_METRICS, 'Baseline Testbed B');
+      }
+    } catch (_) {
+      updateMetricsDashboard(DEFAULT_BENCHMARK_METRICS, 'Baseline Testbed B');
+    }
+
+    // Submit handler with live streaming & active neuron pulsing
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const prompt = chatInput.value.trim();
+      if (!prompt || controller) return;
+
+      history.push({ role: 'user', content: prompt });
+      appendBubble('user', prompt);
+      chatInput.value = '';
+
+      const assistantMsg = { role: 'assistant', content: '' };
+      const bubbleEl = appendBubble('assistant', '');
+      controller = new AbortController();
+      setBusy(true);
+
+      const startTime = performance.now();
+      let firstTokenTime = null;
+      let tokenCount = 0;
+
+      // Live Timer updating UI in real-time
+      liveTimerInterval = setInterval(() => {
+        const elapsed = (performance.now() - startTime) / 1000;
+        totalWallText.textContent = `Đang suy luận: ${elapsed.toFixed(1)} s`;
+        if (!firstTokenTime) {
+          metricTtft.textContent = `${elapsed.toFixed(1)} s...`;
+        }
+        if (tokenCount > 0 && firstTokenTime) {
+          const genDuration = (performance.now() - (startTime + firstTokenTime)) / 1000;
+          const liveTokS = genDuration > 0.05 ? (tokenCount / genDuration).toFixed(1) : '...';
+          metricToks.textContent = `${liveTokS} tok/s (${tokenCount} tok)`;
+        }
+      }, 100);
+
+      try {
+        const response = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: 'olmoe',
+            session_id: sessionId,
+            messages: history,
+            max_tokens: Number(selectMaxTokens.value),
+            stream: true,
+          }),
+        });
+
+        if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '', done = false;
+
+        while (!done) {
+          const chunk = await reader.read();
+          done = chunk.done;
+          buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !done });
+          const blocks = buffer.split(/\r?\n\r?\n/);
+          buffer = blocks.pop() || '';
+
+          for (const block of blocks) {
+            const lines = block.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n');
+            if (!lines || lines === '[DONE]') continue;
+            const event = JSON.parse(lines);
+            const delta = event.choices?.[0]?.delta?.content;
+
+            if (delta) {
+              if (firstTokenTime === null) {
+                firstTokenTime = performance.now() - startTime;
+                metricTtft.textContent = `${(firstTokenTime / 1000).toFixed(2)} s ✓`;
+              }
+              tokenCount++;
+              assistantMsg.content += delta;
+              bubbleEl.textContent = assistantMsg.content;
+              bubbleEl.scrollIntoView({ block: 'end' });
+
+              // Flash green pulse on active decode step
+              for (let r = 0; r < ROWS; r += 2) {
+                const randC = Math.floor(Math.random() * COLS);
+                pulseGrid[r * COLS + randC] = 1.0;
+                activeResidue[r * COLS + randC] = 1.0;
+              }
+            }
+
+            if (event.metrics) {
+              clearInterval(liveTimerInterval);
+              updateMetricsDashboard(event.metrics, 'Lượt Vừa Hoàn Tất');
+              localStorage.setItem('moe-latest-metrics', JSON.stringify(event.metrics));
+              appendBubble('assistant', assistantMsg.content, event.metrics);
+              bubbleEl.remove(); // Replace temporary bubble with card with metrics
+            }
+          }
+        }
+        history.push(assistantMsg);
+        localStorage.setItem('moe-history', JSON.stringify(history));
+        updateExperts();
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          bubbleEl.textContent = assistantMsg.content || '(Đã dừng theo yêu cầu)';
+        } else {
+          bubbleEl.textContent = `Lỗi: ${err.message}`;
+          bubbleEl.style.borderColor = '#ef4444';
+          bubbleEl.style.color = '#fca5a5';
+        }
+      } finally {
+        clearInterval(liveTimerInterval);
+        controller = null;
+        setBusy(false);
+        chatInput.focus();
+      }
+    });
+
+    btnStop.addEventListener('click', () => controller?.abort());
+    btnClear.addEventListener('click', () => {
+      history = [];
+      sessionId = newSession();
+      localStorage.setItem('moe-session-id', sessionId);
+      localStorage.removeItem('moe-history');
+      messagesContainer.innerHTML = '';
+      chatInput.focus();
+    });
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        chatForm.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -107,6 +107,15 @@ impl InferenceEngine {
             Model::Olmoe(_) => "olmoe",
         }
     }
+    pub fn expert_status(&self) -> Option<crate::olmoe::ExpertStatusReport> {
+        match &self.model {
+            Model::Tiny(_) => None,
+            Model::Olmoe(model) => {
+                let model = model.lock().ok()?;
+                Some(model.expert_status())
+            }
+        }
+    }
     pub async fn generate(&self, prompt: &str) -> io::Result<InferenceResponse> {
         self.generate_with_limit(prompt, 32).await
     }

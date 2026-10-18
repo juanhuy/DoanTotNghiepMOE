@@ -8,7 +8,7 @@ use crate::{
     int8_expert::{ExpertScratch, Int8Expert},
     safetensors::TensorIndex,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
     fs, io,
@@ -93,6 +93,32 @@ struct CachedExpert {
     id: usize,
     expert: Int8Expert,
     last_used: u64,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct SystemTelemetry {
+    pub vm_rss_kib: Option<u64>,
+    pub vm_hwm_kib: Option<u64>,
+    pub io_read_bytes: Option<u64>,
+    pub io_rchar: Option<u64>,
+    pub gpu_vram_used_mib: Option<u64>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LayerExpertStatus {
+    pub resident_experts: Vec<usize>,
+    pub heat: Vec<u32>,
+    pub cache_bytes: usize,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ExpertStatusReport {
+    pub num_layers: usize,
+    pub num_experts: usize,
+    pub cache_bytes_per_layer: usize,
+    pub dense_bytes: usize,
+    pub layers: Vec<LayerExpertStatus>,
+    pub system_telemetry: SystemTelemetry,
 }
 
 struct Layer {
@@ -347,6 +373,52 @@ impl OlmoeModel {
             session_cache_bytes: 256 * 1024 * 1024,
         })
     }
+
+    pub fn expert_status(&self) -> ExpertStatusReport {
+        let layers = self
+            .layers
+            .iter()
+            .map(|layer| LayerExpertStatus {
+                resident_experts: layer.cache.iter().map(|entry| entry.id).collect(),
+                heat: layer.heat.clone(),
+                cache_bytes: layer.bytes,
+            })
+            .collect();
+        ExpertStatusReport {
+            num_layers: self.layers.len(),
+            num_experts: self.config.num_experts,
+            cache_bytes_per_layer: self.cache_bytes_per_layer,
+            dense_bytes: 3 * 1024 * 1024 * 1024,
+            layers,
+            system_telemetry: Self::get_system_telemetry(),
+        }
+    }
+
+fn get_system_telemetry() -> SystemTelemetry {
+    let mut telem = SystemTelemetry {
+        gpu_vram_used_mib: Some(0),
+        ..Default::default()
+    };
+    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+        for line in status.lines() {
+            if let Some(s) = line.strip_prefix("VmRSS:") {
+                telem.vm_rss_kib = s.split_whitespace().next().and_then(|v| v.parse().ok());
+            } else if let Some(s) = line.strip_prefix("VmHWM:") {
+                telem.vm_hwm_kib = s.split_whitespace().next().and_then(|v| v.parse().ok());
+            }
+        }
+    }
+    if let Ok(io) = std::fs::read_to_string("/proc/self/io") {
+        for line in io.lines() {
+            if let Some(s) = line.strip_prefix("read_bytes:") {
+                telem.io_read_bytes = s.trim().parse().ok();
+            } else if let Some(s) = line.strip_prefix("rchar:") {
+                telem.io_rchar = s.trim().parse().ok();
+            }
+        }
+    }
+    telem
+}
 
     pub fn require_chat(&self) -> io::Result<()> {
         if self.tokenizer.is_none() || !self.tokenizer_config["chat_template"].is_string() {

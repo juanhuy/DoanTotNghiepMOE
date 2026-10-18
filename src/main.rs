@@ -68,9 +68,21 @@ fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
         .route("/health", get(|| async { "ok" }))
+        .route("/experts", get(get_experts))
+        .route("/v1/engine/experts", get(get_experts))
         .route("/v1/chat/completions", post(chat))
         .layer(DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
+}
+
+async fn get_experts(
+    State(state): State<AppState>,
+) -> Result<Json<moe_tier_engine::olmoe::ExpertStatusReport>, StatusCode> {
+    state
+        .engine
+        .expert_status()
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 #[tokio::main]

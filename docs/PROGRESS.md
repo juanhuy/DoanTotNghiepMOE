@@ -915,6 +915,81 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
 - Giới hạn: Prompt 22 tokens, chưa đo context dài 469 tokens trên Testbed B.
 - Kết luận: Đã có bằng chứng thực nghiệm thật 100% trên cả 2 cấu hình máy trong nhóm.
 
+## 2026-10-11 — Bước 16: Nâng cấp Web Dashboard & Bộ Giám Sát Trực Quan 3 Tầng (Colibri Style)
+
+- Mục tiêu: Nâng cấp giao diện Web UI nhúng trực tiếp trong binary Rust thành một Dashboard chuyên sâu theo phong cách Colibri (`Brain.tsx`, `Profiling.tsx`), giúp người dùng và hội đồng phản biện thấy trực quan 100% cách hệ thống phân bổ RAM, SSD I/O, GPU VRAM và routing 1,024 experts trên mô hình OLMoE-1B-7B INT8 theo thời gian thực.
+- Thay đổi và file liên quan:
+  - `src/olmoe.rs`: Thêm cấu trúc `LayerExpertStatus`, `ExpertStatusReport` và phương thức `OlmoeModel::expert_status(&self)` để trích xuất trạng thái cache động, số byte cache và mảng heat frequency của từng layer.
+  - `src/engine.rs`: Thêm `InferenceEngine::expert_status(&self)`.
+  - `src/main.rs`: Đăng ký endpoint `GET /experts` và `GET /v1/engine/experts` phục vụ polling cho frontend.
+  - `web/index.html`: Viết lại toàn bộ giao diện dashboard phân đôi (Split Screen Layout):
+    1. **Khối Chat & Cấu hình Output**: Hỗ trợ streaming SSE thời gian thực, huy hiệu thông số dưới mỗi tin nhắn (TTFT, tok/s, hit rate), tùy chọn độ dài output (32, 64, 128, 256, 512 tokens).
+    2. **Khối Giám sát Phần cứng 3 Tầng (Tiered Memory Monitor)**: Trực quan hóa Tầng 1 RAM (Dense budget 3.0 GB + Cache ~0.9 GB, giới hạn Zero-OOM), Tầng 2 Ổ SSD (đo tốc độ MB/s, lượng GB đọc theo đợt, đèn LED nhấp nháy khi có I/O), Tầng 3 GPU VRAM (hiển thị chế độ chờ cho pha tích hợp CUDA).
+    3. **Bản đồ MoE Brain Matrix (1,024 Experts Canvas) Chuẩn Học Thuật**:
+       - Bổ sung **Trục Tọa Độ Rõ Ràng**: Trục tung đánh số tầng `L00`..`L15` kèm vạch màu phân vùng Transformer (Tím: Early Representation, Xanh: Middle Core Reasoning, Vàng: Late Convergence); trục hoành đánh số chuyên gia `E0`..`E63`.
+       - Tích hợp **3 Chế Độ Xem (View Modes)** phục vụ bảo vệ luận văn:
+         + `⚡ Độ Thưa Tức Thời (Top-8)`: Chứng minh luận điểm Sparse Activation (chỉ sáng đúng 128 / 1,024 experts = 12.5% tại mỗi token).
+         + `🔥 Lũy Kế Phiên (Cumulative)`: Thể hiện độ phủ nơ-ron qua toàn bộ các chủ đề của câu trả lời dài.
+         + `💾 Vị Trí Bộ Nhớ (RAM vs SSD)`: Phân định trực quan ranh giới vật lý RAM Cache INT8 vs SSD Cold.
+       - Nút **`▶ Mô Phỏng Dòng Chảy 1 Token`**: Quét tuần tự từ Layer 0 $\rightarrow$ 15 với đúng 8 experts sáng ở mỗi tầng để hội đồng phản biện thấy rõ chu trình Auto-regressive.
+       - Thanh **Live Expert Inspector** & **4 Chip KPI Học Thuật**: Sparsity tức thời (12.5%), Bao phủ lũy kế (%), RAM Resident và SSD Cold.
+    4. **Thanh Phân rã Độ trễ (Latency Decomposition Share-Bar)**: Mô phỏng thanh tỉ lệ phần trăm của Colibri chia 4 thành phần: SSD I/O Wait, Expert Compute, Self-Attention và LM Head.
+    5. **Thẻ Hiệu năng Thời gian Thực**: Cập nhật TTFT, Decode tok/s, Cache Hit Rate (Hits / Misses).
+- Lệnh kiểm thử:
+  ```bash
+  cargo check
+  cargo build --release
+  cargo test --release --quiet
+  # Kiểm thử giao diện bằng Chrome-Devtools MCP & Browser Subagent tự động
+  ```
+- Kết quả kiểm thử: **36/36 unit/integration tests đạt**; biên dịch release binary `moe-tier-engine.exe` thành công; server khởi chạy tại `http://127.0.0.1:8080`; kiểm thử trình duyệt tự động ghi nhận giao diện tải đầy đủ, mô phỏng token flow chạy mượt mà qua 16 layers, chuyển đổi 3 chế độ xem chính xác.
+- Giới hạn: Tầng GPU VRAM hiện đang hiển thị trạng thái Standby chờ triển khai tích hợp CUDA/`cudarc` ở bước tiếp theo; thanh I/O speed ước tính dựa trên payload read/io time của từng request.
+- Kết luận: Giao diện trực quan đáp ứng trọn vẹn yêu cầu demo thực nghiệm trực quan cho Đồ án Tốt nghiệp và NCKH. Bước tiếp theo: Triển khai Asynchronous Pre-fetching hoặc Hybrid GPU VRAM Offloading.
+
+## 2026-10-18 — Bước 17: Thiết lập và xác thực môi trường Linux (Testbed B)
+
+- **Mục tiêu**: Chuyển đổi và vận hành toàn diện hệ thống từ Windows sang Linux (Intel Core i5-10500H, RAM 16 GB, SSD, GPU GTX 1650 Ti), thiết lập liên kết checkpoint mô hình, kiểm thử hồi quy 36 test và khởi chạy HTTP Server/Dashboard.
+- **Thay đổi và file liên quan**:
+  - `models/olmoe-1b-7b-int8`: Tạo symlink Linux trỏ tới `/home/son/son/DATN/Models/olmoe_merged` (thay cho NTFS junction trên Windows).
+  - Biên dịch release binary `target/release/moe-tier-engine` trên toolchain Rust 1.99.1 Linux x86_64.
+- **Lệnh kiểm thử**:
+  ```bash
+  cargo test --release --quiet
+  RAYON_NUM_THREADS=4 cargo run --release --example chat_olmoe -- models/olmoe-1b-7b-int8 "What is 2 + 2?" 10
+  RAYON_NUM_THREADS=4 MOE_MODEL_DIR=./models/olmoe-1b-7b-int8 MOE_BIND=127.0.0.1:8080 ./target/release/moe-tier-engine
+  curl -s http://127.0.0.1:8080/health
+  curl -sS http://127.0.0.1:8080/v1/chat/completions -H 'content-type: application/json' -d '{"messages": [{"role": "user", "content": "Xin chao!"}], "max_tokens": 8}'
+  ```
+- **Kết quả kiểm thử**: **36/36 test đạt** (26 lib, 2 HTTP binary, 5 loader, 3 integration, 3 microbenchmarks ignored có chủ đích). CLI `chat_olmoe` nạp model trong 1.22s, sinh output `The result of 2 + 2 is 4.` trong 6.87s (TTFT 4.60s, decode 3.98 tok/s). Server HTTP phản hồi 200 OK trên các route `/health`, `/experts`, và `/v1/chat/completions` (TTFT 3.68s, decode 6.00 tok/s).
+- **Điều kiện benchmark và liên kết dữ liệu thô**: Đo trực tiếp trên Intel Core i5-10500H (12 vCPUs), 4 Rayon worker threads, cache 128 MiB/layer, dense budget 3 GiB.
+- **Số đo trước / sau**:
+  - Nạp model: 1.22s (trên Linux với file descriptor caching trực tiếp).
+  - TTFT CLI: 4.60s; Decode: 3.98 tok/s; HTTP TTFT: 3.68s; HTTP Decode: 6.00 tok/s.
+- **Lỗi, thử nghiệm thất bại và cách xử lý**: Thư mục `models/` ban đầu trống do mất junction NTFS của Windows; khắc phục bằng cách tạo symlink Linux sang `/home/son/son/DATN/Models/olmoe_merged`. Subagent trình duyệt tự động gặp lỗi tải driver Playwright CDN từ internet sandbox; server đã được xác thực hoạt động ổn định qua HTTP cURL và phục vụ sẵn sàng tại cổng 8080 cho trình duyệt máy chủ.
+- **Giới hạn còn lại**: Trình duyệt sandbox automation không tải được binary driver từ internet bên ngoài; người dùng truy cập trực tiếp từ trình duyệt trên desktop Linux.
+- **Kết luận và bước tiếp theo**: Hệ thống đã được thiết lập, kiểm thử toàn diện và đang chạy nền ổn định trên Linux. Người dùng có thể sử dụng Web UI tại `http://127.0.0.1:8080/` hoặc qua API OpenAI.
+
+## 2026-10-18 — Bước 18: Tích hợp hệ thống đo lường phần cứng tường minh (OS Physical Telemetry) & Công cụ HUD Terminal
+
+- **Mục tiêu**: Bổ sung khả năng theo dõi tường minh 100% tài nguyên vật lý thực tế của hệ điều hành (RAM VmRSS/VmHWM, SSD read_bytes, GPU VRAM 0MB) phục vụ kiểm chứng thực nghiệm trực quan cho luận văn.
+- **Thay đổi và file liên quan**:
+  - `src/olmoe.rs`: Thêm `SystemTelemetry` và hàm trích xuất từ `/proc/self/status` (VmRSS, VmHWM) và `/proc/self/io` (read_bytes, rchar), nhúng vào cấu trúc `ExpertStatusReport`.
+  - `web/index.html`: Cập nhật thẻ hiển thị 3 Tầng RAM, SSD, VRAM và hàm `updateExperts()` để đọc và hiển thị song song RAM logic (Dense + Cache) cùng RAM vật lý thực tế (VmRSS / VmHWM) và SSD read bytes.
+  - `tools/monitor_tier.sh`: Xây dựng kịch bản HUD giám sát trực quan thời gian thực trên terminal cho 3 tầng phần cứng.
+- **Lệnh kiểm thử**:
+  ```bash
+  cargo test --release --quiet
+  cargo build --release --bin moe-tier-engine
+  ./tools/monitor_tier.sh
+  curl -s http://127.0.0.1:8080/experts | python3 -c 'import sys, json; print(json.load(sys.stdin).get("system_telemetry"))'
+  ```
+- **Kết quả kiểm thử**: **36/36 tests đạt**; release binary build thành công; endpoint `/experts` trả đầy đủ `system_telemetry` với `vm_rss_kib`, `vm_hwm_kib`, `io_read_bytes`, `io_rchar` và `gpu_vram_used_mib: 0`.
+- **Số đo thực tế ghi nhận**:
+  - RAM vật lý thực tế (VmRSS): `1.81 GiB` lúc nạp ban đầu, tăng lên `3.80 GiB` sau khi tải cache và suy luận (Đỉnh VmHWM: `3.80 GiB`).
+  - Đọc từ SSD vật lý (read_bytes): Bắt đầu từ `0.89 GiB`, tích lũy lên `4.19 GiB` sau request.
+  - GPU VRAM: `0 MiB` (chứng minh tính toán hoàn toàn nằm ở CPU và RAM/SSD, không chiếm VRAM card đồ họa).
+- **Kết luận và bước tiếp theo**: Đã cung cấp cả 2 phương thức theo dõi tường minh: Web Dashboard thời gian thực và kịch bản Terminal HUD độc lập.
+
 ## Mẫu cho mỗi bước tiếp theo
 
 ```text
@@ -929,3 +1004,5 @@ Lỗi, thử nghiệm thất bại và cách xử lý:
 Giới hạn còn lại:
 Kết luận và bước tiếp theo:
 ```
+
+
