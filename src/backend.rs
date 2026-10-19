@@ -243,13 +243,13 @@ pub(crate) fn rms_norm_into(
         return Err(invalid("RMSNorm dimension mismatch"));
     }
     finite(input)?;
-    let scale =
-        (input.iter().map(|value| value * value).sum::<f32>() / input.len() as f32 + eps).sqrt();
+    let scale = (dot_product(input, input) / input.len() as f32 + eps).sqrt();
+    let inv_scale = 1.0 / scale;
     output
         .iter_mut()
         .zip(input)
         .zip(weight)
-        .for_each(|((target, value), gain)| *target = value / scale * gain);
+        .for_each(|((target, value), gain)| *target = *value * inv_scale * gain);
     finite(output)
 }
 
@@ -258,12 +258,12 @@ pub(crate) fn rms_norm_in_place(values: &mut [f32], weight: &[f32], eps: f32) ->
         return Err(invalid("RMSNorm dimension mismatch"));
     }
     finite(values)?;
-    let scale =
-        (values.iter().map(|value| value * value).sum::<f32>() / values.len() as f32 + eps).sqrt();
+    let scale = (dot_product(values, values) / values.len() as f32 + eps).sqrt();
+    let inv_scale = 1.0 / scale;
     values
         .iter_mut()
         .zip(weight)
-        .for_each(|(value, gain)| *value = *value / scale * gain);
+        .for_each(|(value, gain)| *value = *value * inv_scale * gain);
     finite(values)
 }
 
@@ -499,6 +499,52 @@ mod tests {
         let report = serde_json::json!({"schema_version":1,"heads":heads,"head_width":width,"positions":positions,"samples":7,"iterations_per_sample":10,"online_ms":online_ms,"materialized_ms":materialized_ms,"max_abs_error":max_abs_error,"notes":["synthetic resident f32 KV; no allocation in online timed region","materialized baseline allocates score vectors as the pre-online production path did","alternating order; one Rayon configuration; CPU frequency/background load uncontrolled"]});
         let path = std::env::var("MOE_ATTENTION_REPORT").expect("set MOE_ATTENTION_REPORT");
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn test_simd_rms_norm_parity() {
+        let n = 2048;
+        let input: Vec<f32> = (0..n).map(|i| (i as f32 * 0.17).sin()).collect();
+        let weight: Vec<f32> = (0..n)
+            .map(|i| 0.5 + (i as f32 * 0.23).cos() * 0.5)
+            .collect();
+        let eps = 1e-5;
+
+        // Scalar reference
+        let scale_scalar = (input.iter().map(|v| v * v).sum::<f32>() / n as f32 + eps).sqrt();
+        let expected: Vec<f32> = input
+            .iter()
+            .zip(&weight)
+            .map(|(x, w)| x / scale_scalar * w)
+            .collect();
+
+        let mut actual = vec![0.0; n];
+        rms_norm_into(&input, &weight, eps, &mut actual).unwrap();
+
+        for i in 0..n {
+            let diff = (actual[i] - expected[i]).abs();
+            assert!(
+                diff < 1e-6,
+                "RMSNorm mismatch at {}: actual={}, expected={}, diff={}",
+                i,
+                actual[i],
+                expected[i],
+                diff
+            );
+        }
+
+        let mut in_place = input.clone();
+        rms_norm_in_place(&mut in_place, &weight, eps).unwrap();
+        for i in 0..n {
+            let diff = (in_place[i] - expected[i]).abs();
+            assert!(
+                diff < 1e-6,
+                "RMSNorm in-place mismatch at {}: actual={}, expected={}",
+                i,
+                in_place[i],
+                expected[i]
+            );
+        }
     }
 
     #[test]

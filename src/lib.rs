@@ -3,6 +3,7 @@ pub mod backend;
 pub mod engine;
 pub mod expert;
 pub mod generation;
+pub mod gpu;
 pub mod int8_expert;
 pub mod memory;
 pub mod model;

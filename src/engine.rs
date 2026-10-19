@@ -63,6 +63,7 @@ enum Model {
 pub struct InferenceEngine {
     model: Model,
     gate: Arc<tokio::sync::Semaphore>,
+    cached_status: Arc<std::sync::RwLock<Option<crate::olmoe::ExpertStatusReport>>>,
 }
 impl InferenceEngine {
     pub async fn load(
@@ -84,21 +85,26 @@ impl InferenceEngine {
         dense: usize,
     ) -> io::Result<Self> {
         let directory = directory.as_ref().to_owned();
-        let model = if directory.join("model.json").exists() {
-            Model::Tiny(Box::new(DecoderModel::load(directory, cache).await?))
+        let (model, initial_status) = if directory.join("model.json").exists() {
+            (
+                Model::Tiny(Box::new(DecoderModel::load(directory, cache).await?)),
+                None,
+            )
         } else {
-            let model = tokio::task::spawn_blocking(move || {
+            let (model, status) = tokio::task::spawn_blocking(move || {
                 let model = OlmoeModel::load(directory, cache, context, dense)?;
                 model.require_chat()?;
-                Ok::<_, io::Error>(model)
+                let status = model.expert_status();
+                Ok::<_, io::Error>((model, status))
             })
             .await
             .map_err(io::Error::other)??;
-            Model::Olmoe(Arc::new(Mutex::new(model)))
+            (Model::Olmoe(Arc::new(Mutex::new(model))), Some(status))
         };
         Ok(Self {
             model,
             gate: Arc::new(tokio::sync::Semaphore::new(1)),
+            cached_status: Arc::new(std::sync::RwLock::new(initial_status)),
         })
     }
     pub fn model_name(&self) -> &'static str {
@@ -111,8 +117,58 @@ impl InferenceEngine {
         match &self.model {
             Model::Tiny(_) => None,
             Model::Olmoe(model) => {
-                let model = model.lock().ok()?;
-                Some(model.expert_status())
+                if let Ok(model) = model.try_lock() {
+                    let status = model.expert_status();
+                    if let Ok(mut cache) = self.cached_status.write() {
+                        *cache = Some(status.clone());
+                    }
+                    Some(status)
+                } else {
+                    // Trả snapshot cuối cùng nếu model đang bận tính toán suy luận (không block async thread)
+                    self.cached_status.read().ok().and_then(|c| c.clone())
+                }
+            }
+        }
+    }
+    pub fn toggle_gpu(&self) -> Option<crate::gpu::GpuTierStatus> {
+        match &self.model {
+            Model::Tiny(_) => None,
+            Model::Olmoe(model) => {
+                let mut model = model.lock().ok()?;
+                let status = model.toggle_gpu();
+                if let Ok(mut cache) = self.cached_status.write() {
+                    *cache = Some(model.expert_status());
+                }
+                Some(status)
+            }
+        }
+    }
+    pub fn set_gpu_enabled(&self, enabled: bool) -> Option<crate::gpu::GpuTierStatus> {
+        match &self.model {
+            Model::Tiny(_) => None,
+            Model::Olmoe(model) => {
+                let mut model = model.lock().ok()?;
+                let status = model.set_gpu_enabled(enabled);
+                if let Ok(mut cache) = self.cached_status.write() {
+                    *cache = Some(model.expert_status());
+                }
+                Some(status)
+            }
+        }
+    }
+    /// Xóa toàn bộ bộ đệm trong hệ thống (KV cache, RAM cache, VRAM cache) để đưa về Cold Start
+    pub fn reset_cache(&self) -> io::Result<()> {
+        match &self.model {
+            Model::Tiny(_) => Ok(()),
+            Model::Olmoe(model) => {
+                let mut model = model
+                    .lock()
+                    .map_err(|_| io::Error::other("model lock poisoned"))?;
+                model.reset_cache();
+                if let Ok(mut cache) = self.cached_status.write() {
+                    *cache = Some(model.expert_status());
+                }
+                Ok(())
             }
         }
     }

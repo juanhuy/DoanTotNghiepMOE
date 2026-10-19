@@ -70,9 +70,27 @@ fn app(state: AppState) -> Router {
         .route("/health", get(|| async { "ok" }))
         .route("/experts", get(get_experts))
         .route("/v1/engine/experts", get(get_experts))
+        .route("/api/gpu/toggle", post(toggle_gpu))
+        .route("/api/gpu/status", get(get_gpu_status))
+        .route("/api/cache/reset", post(reset_cache))
         .route("/v1/chat/completions", post(chat))
         .layer(DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
+}
+
+async fn reset_cache(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    tokio::task::spawn_blocking(move || state.engine.reset_cache())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map(|()| {
+            Json(serde_json::json!({
+                "status": "ok",
+                "message": "All tiers cleared: L1 VRAM, L2 RAM & KV session caches reset to 0 (Cold Start ready)"
+            }))
+        })
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn get_experts(
@@ -82,6 +100,26 @@ async fn get_experts(
         .engine
         .expert_status()
         .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+async fn toggle_gpu(
+    State(state): State<AppState>,
+) -> Result<Json<moe_tier_engine::gpu::GpuTierStatus>, StatusCode> {
+    tokio::task::spawn_blocking(move || state.engine.toggle_gpu())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+async fn get_gpu_status(
+    State(state): State<AppState>,
+) -> Result<Json<moe_tier_engine::gpu::GpuTierStatus>, StatusCode> {
+    state
+        .engine
+        .expert_status()
+        .map(|s| Json(s.gpu))
         .ok_or(StatusCode::NOT_FOUND)
 }
 
@@ -135,12 +173,24 @@ async fn main() -> io::Result<()> {
         Arc::new(InferenceEngine::load_with_limits(&directory, cache_bytes, context, dense).await?);
     let model_name = engine.model_name();
     let app = app(AppState {
-        engine,
+        engine: Arc::clone(&engine),
         stream_send_timeout,
     });
     let address = std::env::var("MOE_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let listener = tokio::net::TcpListener::bind(&address).await?;
-    info!(address, directory, model_name, "CPU MoE server ready");
+    if let Some(status) = engine.expert_status() {
+        if status.gpu.enabled {
+            info!(
+                device = %status.gpu.device_name,
+                vram_total_gb = format!("{:.2}", status.gpu.total_vram_bytes as f64 / 1073741824.0),
+                dense_offloaded = status.gpu.dense_offloaded,
+                "Heterogeneous Hybrid GPU Tier kích hoạt"
+            );
+        } else {
+            info!("Chạy chế độ CPU/RAM/SSD");
+        }
+    }
+    info!(address, directory, model_name, "MoE server ready");
     axum::serve(listener, app).await
 }
 

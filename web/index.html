@@ -3,846 +3,1301 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MoE-TierEngine Dashboard & Visualizer</title>
+  <title>MoE-TierEngine — Scientific Inference Workbench & Telemetry</title>
   <style>
     :root {
-      --bg: #090d16;
-      --card-bg: #111827;
-      --card-border: #1f2937;
-      --text-main: #f3f4f6;
-      --text-sub: #9ca3af;
-      --primary: #3b82f6;
-      --primary-hover: #2563eb;
-      --accent-green: #10b981;
+      --bg-base: #090d16;
+      --bg-surface: #0f172a;
+      --bg-subtle: #1e293b;
+      --border-subtle: #1e293b;
+      --border-strong: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      --accent-cyan: #06b6d4;
+      --accent-blue: #3b82f6;
+      --accent-emerald: #10b981;
       --accent-amber: #f59e0b;
-      --accent-purple: #8b5cf6;
-      --accent-red: #ef4444;
-      --tier-ssd: #262f3f;
+      --accent-rose: #f43f5e;
+      --tier-vram: #06b6d4;
       --tier-ram: #3b82f6;
-      --tier-active: #10b981;
+      --tier-ssd: #1e293b;
+      --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Fira Code", Consolas, Menlo, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
-      background: var(--bg);
+      background: var(--bg-base);
       color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-family: var(--font-sans);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       overflow-x: hidden;
+      font-size: 13px;
+      line-height: 1.5;
     }
-    
-    /* Top Header */
+
+    /* Top Technical Navigation Header */
     header {
-      background: rgba(17, 24, 39, 0.85);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--card-border);
-      padding: 12px 24px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border-strong);
+      padding: 8px 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       position: sticky;
       top: 0;
-      z-index: 50;
+      z-index: 100;
     }
-    .logo-group {
+
+    .brand-section {
       display: flex;
       align-items: center;
       gap: 12px;
     }
-    .logo-icon {
-      font-size: 1.5rem;
-      background: linear-gradient(135deg, #3b82f6, #10b981);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      font-weight: 800;
-    }
-    .logo-title {
-      font-size: 1.15rem;
+    .brand-title {
+      font-family: var(--font-mono);
+      font-size: 0.92rem;
       font-weight: 700;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.01em;
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .badge {
+    .brand-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--accent-emerald);
+      border-radius: 50%;
+    }
+    .tech-pill {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.12);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+    .tech-pill-cyan {
+      background: rgba(6, 182, 212, 0.12);
+      color: #67e8f9;
+      border-color: rgba(6, 182, 212, 0.25);
+    }
+
+    /* Tab Navigation */
+    .nav-tabs {
+      display: flex;
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .nav-tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
       font-size: 0.72rem;
       font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 999px;
-      background: rgba(59, 130, 246, 0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
     }
-    .badge-sub {
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border-color: rgba(16, 185, 129, 0.3);
+    .nav-tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .nav-tab-btn.active {
+      background: var(--bg-subtle);
+      color: var(--accent-cyan);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     }
 
-    .header-actions {
+    /* Hardware Telemetry Snippet in Header */
+    .header-telemetry {
       display: flex;
       align-items: center;
       gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
     }
-    .status-indicator {
+    .telem-item {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 0.82rem;
-      color: var(--text-sub);
+      gap: 5px;
     }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 8px #10b981;
-    }
-    .status-dot.busy {
-      background: #f59e0b;
-      box-shadow: 0 0 8px #f59e0b;
-      animation: pulse 1s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(1.3); }
-    }
-
-    .btn {
-      background: #1f2937;
+    .telem-val {
+      font-weight: 700;
       color: var(--text-main);
-      border: 1px solid #374151;
-      padding: 7px 14px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
+    }
+    .gpu-toggle-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      background: rgba(6, 182, 212, 0.15);
+      color: #67e8f9;
+      transition: all 0.2s ease;
     }
-    .btn:hover { background: #374151; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-danger { background: #ef4444; border-color: #dc2626; color: white; }
-    .btn-danger:hover { background: #dc2626; }
+    .gpu-toggle-btn:hover {
+      background: rgba(6, 182, 212, 0.28);
+    }
+    .gpu-toggle-btn.off {
+      border-color: var(--border-strong);
+      background: rgba(51, 65, 85, 0.3);
+      color: var(--text-muted);
+    }
 
-    /* Main Container (Split Screen) */
-    .dashboard-layout {
+    /* Tab Page Containers */
+    .main-viewport {
       flex: 1;
+      display: flex;
+      overflow: hidden;
+      height: calc(100vh - 49px);
+    }
+    .tab-pane {
+      display: none;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+    }
+    .tab-pane.active {
+      display: flex;
+    }
+
+    /* =========================================================================
+       TAB 1: INFERENCE WORKBENCH & TERMINAL
+       ========================================================================= */
+    .workbench-split {
       display: grid;
-      grid-template-columns: 46% 54%;
-      height: calc(100vh - 61px);
+      grid-template-columns: 55% 45%;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
     }
-    @media (max-width: 1024px) {
-      .dashboard-layout {
+    @media (max-width: 1100px) {
+      .workbench-split {
         grid-template-columns: 1fr;
         height: auto;
-        overflow: visible;
+        overflow-y: auto;
       }
     }
 
-    /* Left Column: Chat Area */
-    .chat-section {
+    /* Chat / Terminal Area */
+    .terminal-section {
       display: flex;
       flex-direction: column;
-      border-right: 1px solid var(--card-border);
+      border-right: 1px solid var(--border-strong);
       height: 100%;
-      background: #0b1120;
+      background: #090d16;
+    }
+    .terminal-header-bar {
+      padding: 8px 16px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-strong);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
     }
     .messages-viewport {
       flex: 1;
       overflow-y: auto;
-      padding: 20px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .msg-block {
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      background: #0c1220;
+      padding: 10px 14px;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+    .msg-block.user {
+      border-color: rgba(59, 130, 246, 0.35);
+      background: rgba(30, 58, 138, 0.15);
+    }
+    .msg-block.assistant {
+      border-color: var(--border-strong);
+      background: #0f172a;
+    }
+    .msg-header {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .msg-block.user .msg-header {
+      color: #60a5fa;
+    }
+    .msg-block.assistant .msg-header {
+      color: var(--accent-cyan);
+    }
+    .msg-body {
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text-main);
+    }
+
+    /* Structured Telemetry Table inside assistant message */
+    .msg-telemetry-table {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-subtle);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px 12px;
+      color: var(--text-muted);
+    }
+    .telem-cell-label {
+      color: var(--text-faint);
+    }
+    .telem-cell-val {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Terminal Input Prompt */
+    .terminal-input-bar {
+      padding: 12px 16px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-strong);
+    }
+    .terminal-form {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .terminal-textarea {
+      flex: 1;
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      line-height: 1.4;
+      resize: none;
+      min-height: 48px;
+      max-height: 120px;
+    }
+    .terminal-textarea:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+    }
+    .btn-action {
+      background: #1e293b;
+      border: 1px solid var(--border-strong);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 0 16px;
+      height: 48px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease;
+    }
+    .btn-action:hover {
+      background: #334155;
+    }
+    .btn-action-primary {
+      background: #0284c7;
+      border-color: #0369a1;
+      color: white;
+    }
+    .btn-action-primary:hover {
+      background: #0369a1;
+    }
+    .btn-action-danger {
+      background: rgba(244, 63, 94, 0.2);
+      border-color: rgba(244, 63, 94, 0.4);
+      color: #fda4af;
+    }
+    .btn-action-danger:hover {
+      background: rgba(244, 63, 94, 0.35);
+    }
+    .terminal-opts-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-faint);
+    }
+    .tech-select {
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+    }
+
+    /* Live Telemetry Sidebar (Right panel of Tab 1) */
+    .live-telemetry-panel {
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #090d16;
+    }
+    .tech-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+    .tech-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .kpi-box {
+      background: #090d16;
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: var(--font-mono);
+    }
+    .kpi-box-label {
+      font-size: 0.64rem;
+      color: var(--text-faint);
+      text-transform: uppercase;
+    }
+    .kpi-box-val {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-top: 2px;
+    }
+    .kpi-box-sub {
+      font-size: 0.62rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Latency Decomposition Stack Bar */
+    .latency-stack-bar {
+      height: 18px;
+      border-radius: 4px;
+      background: #1e293b;
+      display: flex;
+      overflow: hidden;
+      margin: 8px 0;
+      border: 1px solid var(--border-strong);
+    }
+    .latency-seg {
+      height: 100%;
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: width 0.3s ease;
+    }
+    .seg-io { background: #3b82f6; }
+    .seg-compute { background: #10b981; }
+    .seg-attn { background: #f59e0b; }
+    .seg-head { background: #8b5cf6; }
+
+    .latency-breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      margin-top: 6px;
+    }
+    .latency-breakdown-table td {
+      padding: 3px 0;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+    }
+    .latency-breakdown-table td:last-child {
+      text-align: right;
+      font-weight: 600;
+    }
+
+    /* =========================================================================
+       TAB 2: 3-TIER MEMORY TOPOLOGY & 1024 EXPERT MATRIX
+       ========================================================================= */
+    .topology-container {
+      padding: 18px 24px;
       display: flex;
       flex-direction: column;
       gap: 16px;
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
     }
-    .msg-card {
-      max-width: 88%;
-      padding: 12px 16px;
-      border-radius: 12px;
-      line-height: 1.55;
-      font-size: 0.92rem;
-      word-break: break-word;
-      white-space: pre-wrap;
-    }
-    .msg-user {
-      align-self: flex-end;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
-      color: white;
-      border-bottom-right-radius: 2px;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
-    }
-    .msg-assistant {
-      align-self: flex-start;
-      background: #1e293b;
-      border: 1px solid #334155;
-      color: #e2e8f0;
-      border-bottom-left-radius: 2px;
-    }
-    .msg-meta-bar {
-      margin-top: 8px;
-      padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      font-size: 0.72rem;
-      color: #94a3b8;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .msg-meta-bar span { display: inline-flex; align-items: center; gap: 4px; }
-
-    .chat-input-bar {
-      padding: 14px 20px;
-      background: #0f172a;
-      border-top: 1px solid var(--card-border);
-    }
-    .chat-form {
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
-    }
-    .chat-textarea {
-      flex: 1;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 10px 14px;
-      color: var(--text-main);
-      font-size: 0.92rem;
-      resize: none;
-      min-height: 52px;
-      max-height: 140px;
-      font-family: inherit;
-    }
-    .chat-textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-    }
-    .chat-controls-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 8px;
-      font-size: 0.78rem;
-      color: var(--text-sub);
-    }
-    .select-sm {
-      background: #1e293b;
-      color: inherit;
-      border: 1px solid #334155;
-      border-radius: 6px;
-      padding: 3px 8px;
-      font-size: 0.78rem;
-    }
-
-    /* Right Column: Visualizer & Hardware Monitor (Colibri Style) */
-    .visualizer-section {
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-      padding: 20px;
-      gap: 18px;
-      background: var(--bg);
-    }
-
-    .v-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    }
-    .v-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-    .v-card-title {
-      font-size: 0.88rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #94a3b8;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* 3-Tier Hardware Memory Cards */
-    .tiers-grid {
+    .memory-tiers-summary {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 12px;
     }
-    @media (max-width: 640px) {
-      .tiers-grid { grid-template-columns: 1fr; }
+    @media (max-width: 860px) {
+      .memory-tiers-summary { grid-template-columns: 1fr; }
     }
-    .tier-box {
-      background: #162032;
-      border: 1px solid #253349;
-      border-radius: 10px;
-      padding: 12px;
-      position: relative;
-      overflow: hidden;
+    .tier-spec-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-family: var(--font-mono);
     }
-    .tier-box-head {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: #94a3b8;
+    .tier-spec-header {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       margin-bottom: 6px;
+      font-size: 0.72rem;
+      color: var(--text-faint);
     }
-    .tier-value {
+    .tier-spec-title {
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+    .tier-spec-val {
       font-size: 1.25rem;
       font-weight: 800;
-      color: #f8fafc;
-      letter-spacing: -0.02em;
-    }
-    .tier-subtext {
-      font-size: 0.72rem;
-      color: #64748b;
-      margin-top: 4px;
+      color: var(--text-main);
     }
     .tier-progress-track {
-      height: 6px;
-      background: #253349;
-      border-radius: 999px;
-      margin-top: 8px;
+      height: 5px;
+      background: #1e293b;
+      border-radius: 3px;
+      margin: 8px 0;
       overflow: hidden;
     }
     .tier-progress-fill {
       height: 100%;
-      border-radius: 999px;
+      border-radius: 3px;
       transition: width 0.3s ease;
     }
 
-    /* Colibri-Style Brain Matrix & Academic Controls */
-    .brain-container {
-      position: relative;
+    /* 1,024 Experts Matrix Canvas Area */
+    .matrix-workspace {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 14px;
     }
-    .brain-controls-bar {
+    .matrix-toolbar {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
       gap: 10px;
-      margin-bottom: 12px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid #1f2937;
     }
-    .view-mode-pills {
-      display: inline-flex;
-      background: #0b1120;
-      border: 1px solid #1f2937;
-      border-radius: 8px;
-      padding: 2px;
-      gap: 2px;
-    }
-    .mode-pill {
-      background: transparent;
-      border: none;
-      color: #94a3b8;
-      padding: 5px 11px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .mode-pill:hover { color: #f1f5f9; }
-    .mode-pill.active {
-      background: #1e293b;
-      color: #38bdf8;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    }
-    .btn-sim {
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      color: #34d399;
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 0.74rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .btn-sim:hover {
-      background: rgba(16, 185, 129, 0.28);
-      color: #6ee7b7;
-    }
-
-    .brain-canvas-wrap {
-      width: 100%;
-      background: #070b14;
-      border-radius: 8px;
-      border: 1px solid #1f2b3e;
-      padding: 12px;
+    .matrix-title-group {
       display: flex;
-      flex-direction: column;
       align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .matrix-canvas-wrap {
+      background: #060911;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 10px;
       overflow-x: auto;
+      display: flex;
+      justify-content: center;
     }
     canvas#brain-canvas {
       image-rendering: pixelated;
       cursor: crosshair;
     }
-    
-    /* Academic KPI Chips */
-    .brain-kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-top: 12px;
-    }
-    @media (max-width: 768px) {
-      .brain-kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    .brain-kpi-card {
-      background: #0f172a;
-      border: 1px solid #1e293b;
-      border-radius: 8px;
-      padding: 9px 12px;
-      text-align: center;
-    }
-    .kpi-label {
-      font-size: 0.68rem;
-      color: #94a3b8;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-    }
-    .kpi-value {
-      font-size: 1.05rem;
-      font-weight: 800;
-      color: #f8fafc;
-      margin-top: 2px;
-    }
-    .kpi-hint {
-      font-size: 0.66rem;
-      color: #64748b;
-      margin-top: 2px;
-    }
 
-    /* Live Expert Inspector Bar */
+    /* Technical Inspector Bar */
     .expert-inspector-bar {
       margin-top: 10px;
-      padding: 8px 14px;
-      background: #0b1120;
-      border: 1px solid #1e293b;
-      border-radius: 8px;
+      padding: 8px 12px;
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
       display: flex;
-      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.74rem;
-      color: #94a3b8;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .inspector-badge {
       font-weight: 700;
-      color: #38bdf8;
+      color: var(--accent-cyan);
     }
 
-    .brain-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 14px;
-      font-size: 0.74rem;
-      margin-top: 10px;
-      color: #94a3b8;
-      align-items: center;
-    }
-    .legend-item { display: flex; align-items: center; gap: 6px; }
-    .legend-box { width: 12px; height: 12px; border-radius: 3px; }
-
-    /* Tooltip */
+    /* Matrix Tooltip */
     #brain-tooltip {
       position: absolute;
-      background: rgba(15, 23, 42, 0.96);
-      border: 1px solid #38bdf8;
+      background: rgba(15, 23, 42, 0.98);
+      border: 1px solid var(--accent-cyan);
       color: #f8fafc;
       padding: 8px 12px;
-      font-size: 0.74rem;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
       line-height: 1.45;
-      border-radius: 8px;
+      border-radius: 4px;
       pointer-events: none;
-      z-index: 100;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+      z-index: 200;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
       white-space: nowrap;
       display: none;
     }
 
-    /* Colibri Latency Share Bar */
-    .latency-bar-container {
-      margin-top: 4px;
-    }
-    .latency-bar {
-      height: 22px;
-      border-radius: 6px;
-      background: #1e293b;
+    /* =========================================================================
+       TOOLBAR, CONTEXT METER & TOAST NOTIFICATION
+       ========================================================================= */
+    .terminal-header-bar {
+      padding: 6px 14px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-strong);
       display: flex;
-      overflow: hidden;
-      margin-top: 8px;
-      border: 1px solid #334155;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 8px;
     }
-    .latency-segment {
+    .terminal-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .terminal-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .header-divider {
+      color: var(--border-strong);
+    }
+    .btn-tool {
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-tool:hover {
+      background: #1e293b;
+      color: #f8fafc;
+      border-color: var(--text-muted);
+    }
+    .btn-tool.btn-tool-warn {
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #f59e0b;
+    }
+    .btn-tool.btn-tool-warn:hover {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: #f59e0b;
+    }
+    .btn-tool.btn-tool-danger {
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #ef4444;
+    }
+    .btn-tool.btn-tool-danger:hover {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: #ef4444;
+    }
+    .context-meter {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.68rem;
+    }
+    .context-bar-track {
+      width: 70px;
+      height: 6px;
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .context-bar-fill {
       height: 100%;
+      background: #10b981;
+      width: 0%;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+    .context-bar-fill.warn {
+      background: #f59e0b;
+    }
+    .context-bar-fill.danger {
+      background: #ef4444;
+    }
+
+    /* =========================================================================
+       DATA FLOW PIPELINE ARCHITECTURE DIAGRAM
+       ========================================================================= */
+    .data-flow-diagram {
+      display: grid;
+      grid-template-columns: 1fr auto 1.1fr auto 1fr;
+      align-items: center;
+      gap: 6px;
+      margin: 10px 0 8px 0;
+    }
+    @media (max-width: 900px) {
+      .data-flow-diagram {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+    }
+    .flow-node {
+      background: #090d16;
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: var(--font-mono);
+      transition: all 0.3s ease;
+      text-align: center;
+      position: relative;
+    }
+    .flow-node-title {
+      font-size: 0.70rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 2px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.68rem;
-      font-weight: 700;
-      color: white;
-      transition: width 0.3s ease;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      gap: 4px;
     }
-    .latency-legend {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin-top: 10px;
-      font-size: 0.74rem;
-      color: #94a3b8;
+    .flow-node-sub {
+      font-size: 0.60rem;
+      color: var(--text-faint);
+      margin-bottom: 3px;
     }
-    .metric-chip {
-      background: #162032;
-      border: 1px solid #253349;
-      padding: 8px;
-      border-radius: 6px;
+    .flow-node-stat {
+      font-size: 0.64rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .flow-node-ssd {
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    .flow-node-ssd .flow-node-title {
+      color: #60a5fa;
+    }
+    .flow-node-ram {
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+    .flow-node-ram .flow-node-title {
+      color: #34d399;
+    }
+    .flow-node-gpu {
+      border-color: rgba(6, 182, 212, 0.4);
+      background: rgba(6, 182, 212, 0.04);
+    }
+    .flow-node-gpu.active {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.15);
+    }
+    .flow-node-gpu.active .flow-node-title {
+      color: var(--accent-cyan);
+    }
+    .flow-node-gpu.disabled {
+      opacity: 0.45;
+      border-color: var(--border-strong);
+      background: #070a10;
+    }
+    .flow-node-gpu.disabled .flow-node-title {
+      color: var(--text-faint);
+    }
+    .flow-link {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      color: var(--text-faint);
       text-align: center;
+      min-width: 50px;
     }
-    .metric-chip-val {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: #f1f5f9;
-      margin-top: 2px;
+    .flow-link-line {
+      width: 100%;
+      height: 2px;
+      background: var(--border-strong);
+      position: relative;
+      margin: 3px 0;
+      transition: all 0.3s ease;
+    }
+    .flow-link.active .flow-link-line {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 6px rgba(6, 182, 212, 0.5);
+    }
+    .flow-link.active-cpu .flow-link-line {
+      background: #10b981;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+    }
+    .flow-link.bypassed .flow-link-line {
+      background: var(--border-strong);
+      opacity: 0.3;
+    }
+    .flow-callout {
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: #090d16;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      line-height: 1.45;
+      color: var(--text-muted);
+    }
+    .toast-alert {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 10px 16px;
+      background: #0f172a;
+      border: 1px solid var(--accent-cyan);
+      color: #f8fafc;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      border-radius: 4px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+    }
+    .toast-alert.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .toast-alert.success {
+      border-color: #10b981;
+      color: #34d399;
+    }
+    .toast-alert.warn {
+      border-color: #f59e0b;
+      color: #fbbf24;
     }
 
-    /* Pulse animation for disk activity */
-    .disk-pulse {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10b981;
-      margin-right: 4px;
+    /* Utility Helpers */
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 2px 6px;
+      border-radius: 3px;
     }
-    .disk-pulse.active {
-      background: #f59e0b;
-      animation: pulse 0.6s infinite;
+    .badge-status.ready {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge-status.busy {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
     }
   </style>
 </head>
 <body>
-  <!-- Header -->
+
+  <!-- Top Technical Header -->
   <header>
-    <div class="logo-group">
-      <div class="logo-icon">🦅</div>
-      <div>
-        <div class="logo-title">MoE-TierEngine</div>
+    <div class="brand-section">
+      <div class="brand-title">
+        <span class="brand-dot" id="header-status-dot"></span>
+        <span>MoE-TierEngine</span>
       </div>
-      <span class="badge">OLMoE-1B-7B INT8</span>
-      <span class="badge badge-sub">Tiered Memory</span>
+      <span class="tech-pill">OLMoE-1B-7B INT8</span>
+      <span class="tech-pill tech-pill-cyan">3-Tier Memory</span>
     </div>
-    <div class="header-actions">
-      <div class="status-indicator">
-        <span class="status-dot" id="global-status-dot"></span>
-        <span id="global-status-text">Sẵn sàng</span>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs" role="tablist">
+      <button class="nav-tab-btn active" data-tab="tab-workbench">1. Console & Data Flow</button>
+      <button class="nav-tab-btn" data-tab="tab-topology">2. Memory & 1,024 Expert Matrix</button>
+    </nav>
+
+    <!-- Header Telemetry Snippet -->
+    <div class="header-telemetry">
+      <div class="telem-item">
+        <span>RAM:</span>
+        <span class="telem-val" id="header-ram-val">-- GB</span>
       </div>
-      <button class="btn" id="btn-pulse-demo" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: #34d399;" title="Chạy thử nghiệm sóng neuron xanh lá qua 1,024 chuyên gia">⚡ Test Sóng MoE</button>
-      <button class="btn" id="btn-clear" title="Xóa phiên làm việc để giải phóng session KV cache">Xóa hội thoại</button>
+      <div class="telem-item">
+        <span>VRAM:</span>
+        <span class="telem-val" id="header-vram-val">-- GB</span>
+      </div>
+      <button class="gpu-toggle-btn" id="btn-header-gpu-toggle" title="A/B Toggle cuBLAS Dense Offloading">
+        <span id="header-gpu-label">GPU cuBLAS: ON</span>
+      </button>
+      <div class="badge-status ready" id="header-status-badge">Engine Ready</div>
     </div>
   </header>
 
-  <!-- Split Dashboard Layout -->
-  <div class="dashboard-layout">
-    
-    <!-- LEFT PANEL: Interactive Chat -->
-    <section class="chat-section">
-      <div class="messages-viewport" id="messages-container" aria-live="polite">
-        <!-- Message bubbles will be inserted here -->
-      </div>
-      
-      <div class="chat-input-bar">
-        <form class="chat-form" id="chat-form">
-          <textarea class="chat-textarea" id="chat-input" placeholder="Nhập câu hỏi (Ví dụ: Hãy giải thích kiến trúc MoE...)" required></textarea>
-          <button class="btn" id="btn-send" type="submit" style="background:#2563eb; color:white; border-color:#1d4ed8; height:52px; padding:0 20px;">Gửi</button>
-          <button class="btn btn-danger" id="btn-stop" type="button" style="height:52px; padding:0 16px;" hidden>Dừng</button>
-        </form>
-        <div class="chat-controls-row">
-          <span>Enter để gửi · Shift+Enter xuống dòng</span>
-          <div>
-            <label>Giới hạn Output: 
-              <select class="select-sm" id="select-max-tokens">
-                <option value="32">32 tokens</option>
-                <option value="64">64 tokens</option>
-                <option value="128" selected>128 tokens</option>
-                <option value="256">256 tokens</option>
-                <option value="512">512 tokens</option>
-              </select>
-            </label>
+  <!-- Main Viewport containing Tab Panes -->
+  <main class="main-viewport">
+
+    <!-- =========================================================================
+         TAB 1: CONSOLE / INFERENCE WORKBENCH
+         ========================================================================= -->
+    <section class="tab-pane active" id="tab-workbench">
+      <div class="workbench-split">
+        
+        <!-- Left: Terminal & Messages -->
+        <div class="terminal-section">
+          <div class="terminal-header-bar">
+            <div class="terminal-header-left">
+              <span>SESSION: <span id="session-display" style="color:var(--text-main);">local-session</span></span>
+              <span class="header-divider">|</span>
+              <div class="context-meter" title="Dung lượng Context Window (tối đa 512 tokens)">
+                <span>CONTEXT: <strong id="context-used-val">0</strong>/512 tokens</span>
+                <div class="context-bar-track">
+                  <div class="context-bar-fill" id="context-bar-fill" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+            <div class="terminal-header-actions">
+              <button class="btn-tool btn-tool-warn" id="btn-reset-cache" title="Xóa toàn bộ L1 VRAM, L2 RAM & KV Cache để test Cold Start 0 cache ngay trên web">
+                ⚡ RESET CACHE (COLD START)
+              </button>
+              <button class="btn-tool" id="btn-clear-session" title="Xóa lịch sử hội thoại và đặt lại token ngữ cảnh về 0">
+                🧹 CLEAR CHAT
+              </button>
+            </div>
+          </div>
+
+          <div class="messages-viewport" id="messages-container" aria-live="polite">
+            <!-- Message cards inserted dynamically -->
+          </div>
+
+          <div class="terminal-input-bar">
+            <form class="terminal-form" id="chat-form">
+              <textarea class="terminal-textarea" id="chat-input" placeholder="Type prompt (e.g. What is 2 + 2? or Explain Mixture-of-Experts routing...)" required></textarea>
+              <button class="btn-action btn-action-primary" id="btn-send" type="submit">EXECUTE</button>
+              <button class="btn-action btn-action-danger" id="btn-stop" type="button" hidden>ABORT</button>
+            </form>
+            <div class="terminal-opts-row">
+              <span>Shift+Enter for newline · Enter to execute</span>
+              <div>
+                <label>Max New Tokens:
+                  <select class="tech-select" id="select-max-tokens">
+                    <option value="16">16 tokens</option>
+                    <option value="32">32 tokens</option>
+                    <option value="64">64 tokens</option>
+                    <option value="128" selected>128 tokens</option>
+                    <option value="256">256 tokens</option>
+                  </select>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
+
+        <!-- Right: Real-time Telemetry Dashboard -->
+        <div class="live-telemetry-panel">
+          
+          <!-- Card 0: Interactive Data Flow Architecture -->
+          <div class="tech-card data-flow-card">
+            <div class="tech-card-header">
+              <span>DATA FLOW PIPELINE ARCHITECTURE</span>
+              <button class="btn-tool btn-tool-gpu-on" id="btn-workbench-gpu-toggle" title="A/B Toggle cuBLAS GPU Offload">
+                <span id="workbench-gpu-label">GPU cuBLAS: ON</span>
+              </button>
+            </div>
+
+            <div class="data-flow-diagram" id="data-flow-diagram">
+              <!-- Node 1: SSD -->
+              <div class="flow-node flow-node-ssd" id="node-ssd">
+                <div class="flow-node-title">💾 NVMe SSD</div>
+                <div class="flow-node-sub">Cold Weights INT8</div>
+                <div class="flow-node-stat" id="flow-ssd-stat">Read: 0 MB</div>
+              </div>
+
+              <!-- Link 1: SSD -> RAM (Rayon Prefetch) -->
+              <div class="flow-link" id="link-ssd-ram">
+                <div class="flow-link-label">Rayon Prefetch</div>
+                <div class="flow-link-line"></div>
+                <div class="flow-link-dir">▶ ▶ ▶</div>
+              </div>
+
+              <!-- Node 2: Host RAM -->
+              <div class="flow-node flow-node-ram" id="node-ram">
+                <div class="flow-node-title">🧠 Host RAM</div>
+                <div class="flow-node-sub">L2 Cache (128MB/L)</div>
+                <div class="flow-node-stat" id="flow-ram-stat">RSS: -- GB</div>
+              </div>
+
+              <!-- Link 2: RAM <-> GPU (PCIe DMA) -->
+              <div class="flow-link active" id="link-ram-gpu">
+                <div class="flow-link-label" id="flow-pcie-label">PCIe 3.0 DMA</div>
+                <div class="flow-link-line"></div>
+                <div class="flow-link-dir" id="flow-pcie-dir">▲ H2D / ▼ D2H</div>
+              </div>
+
+              <!-- Node 3: GPU VRAM -->
+              <div class="flow-node flow-node-gpu active" id="node-gpu">
+                <div class="flow-node-title" id="flow-gpu-title">⚡ GTX 1650</div>
+                <div class="flow-node-sub" id="flow-gpu-sub">L1 VRAM Pool</div>
+                <div class="flow-node-stat" id="flow-gpu-stat">VRAM: -- GB</div>
+              </div>
+            </div>
+
+            <div class="flow-callout" id="flow-callout">
+              <strong>Luồng thực thi:</strong> <span id="flow-explanation">Đang tải...</span>
+            </div>
+          </div>
+
+          <!-- Card 1: Last Inference Metrics -->
+          <div class="tech-card">
+            <div class="tech-card-header">
+              <span>LATENCY DECOMPOSITION & THROUGHPUT</span>
+              <span id="telemetry-source-badge" style="color:var(--accent-cyan);">BASELINE TESTBED B</span>
+            </div>
+
+            <div class="kpi-row">
+              <div class="kpi-box">
+                <div class="kpi-box-label">Time to First Token</div>
+                <div class="kpi-box-val" id="metric-ttft" style="color:#67e8f9;">-- s</div>
+                <div class="kpi-box-sub">Prefill latency</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-box-label">Decode Speed</div>
+                <div class="kpi-box-val" id="metric-toks" style="color:#34d399;">-- tok/s</div>
+                <div class="kpi-box-sub">Autoregressive loop</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-box-label">Total Execution</div>
+                <div class="kpi-box-val" id="metric-total" style="color:#f8fafc;">-- s</div>
+                <div class="kpi-box-sub" id="metric-token-count">0 tokens generated</div>
+              </div>
+            </div>
+
+            <div class="latency-stack-bar" id="latency-bar">
+              <div class="latency-seg seg-io" id="seg-io" style="width: 55%;" title="SSD NVMe I/O Wait">I/O Wait</div>
+              <div class="latency-seg seg-compute" id="seg-expert" style="width: 25%;" title="Expert MLP Compute">Expert Compute</div>
+              <div class="latency-seg seg-attn" id="seg-attn" style="width: 14%;" title="Causal Self-Attention">Attn</div>
+              <div class="latency-seg seg-head" id="seg-head" style="width: 6%;" title="LM Head & Norm">Head</div>
+            </div>
+
+            <table class="latency-breakdown-table">
+              <tbody>
+                <tr>
+                  <td><span style="color:#60a5fa;">■</span> NVMe SSD I/O Wait (Paged/Cold)</td>
+                  <td id="val-io">-- s</td>
+                </tr>
+                <tr>
+                  <td><span style="color:#34d399;">■</span> Expert MLP Compute (Zero-Alloc SIMD)</td>
+                  <td id="val-expert">-- s</td>
+                </tr>
+                <tr>
+                  <td><span style="color:#fbbf24;">■</span> Attention (SIMD RoPE + Online Softmax)</td>
+                  <td id="val-attn">-- s</td>
+                </tr>
+                <tr>
+                  <td><span style="color:#c084fc;">■</span> LM Head Projection & RMSNorm</td>
+                  <td id="val-head">-- s</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Card 2: Memory Tier State -->
+          <div class="tech-card">
+            <div class="tech-card-header">
+              <span>PHYSICAL STORAGE TOPOLOGY ALLOCATION</span>
+              <span id="gpu-device-text" style="color:var(--text-muted);">GTX 1650 (4 GB GDDR5)</span>
+            </div>
+
+            <div class="kpi-row">
+              <div class="kpi-box">
+                <div class="kpi-box-label">L1: GPU VRAM Used</div>
+                <div class="kpi-box-val" id="vram-val-primary">-- MB</div>
+                <div class="kpi-box-sub" id="vram-sub-primary">Dense + L1 Cache</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-box-label">L2: Host RAM (RSS)</div>
+                <div class="kpi-box-val" id="ram-val-primary">-- GB</div>
+                <div class="kpi-box-sub" id="ram-sub-primary">Zero-OOM Cap</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-box-label">L3: NVMe Read Total</div>
+                <div class="kpi-box-val" id="ssd-val-primary">-- GB</div>
+                <div class="kpi-box-sub" id="ssd-sub-primary">Kernel I/O Bytes</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Cache Performance -->
+          <div class="tech-card">
+            <div class="tech-card-header">
+              <span>CACHE HIT RATE & RETRIEVAL EFFICIENCY</span>
+              <span id="cache-hit-pct" style="color:#fbbf24;">-- %</span>
+            </div>
+            <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); line-height:1.6;">
+              <div>Cache Hits: <span id="cache-hits-count" style="color:var(--text-main); font-weight:700;">--</span></div>
+              <div>Cache Misses (Cold Reads): <span id="cache-misses-count" style="color:var(--accent-rose); font-weight:700;">--</span></div>
+              <div>LRU Evictions: <span id="cache-evictions-count" style="color:var(--text-main);">--</span></div>
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </section>
 
-    <!-- RIGHT PANEL: Hardware & MoE Visualizer (Colibri Style) -->
-    <section class="visualizer-section">
-
-      <!-- BLOCK 1: 3-TIER MEMORY & HARDWARE ARCHITECTURE -->
-      <div class="v-card">
-        <div class="v-card-header">
-          <span class="v-card-title">🖥️ Giám Sát Phần Cứng 3 Tầng (Tiered Memory)</span>
-          <span class="badge" id="disk-status-badge"><span class="disk-pulse" id="disk-led"></span>SSD Idle</span>
-        </div>
-        <div class="tiers-grid">
-          <!-- RAM TIER -->
-          <div class="tier-box">
-            <div class="tier-box-head">
-              <span>🧠 TẦNG 1: RAM (VẬT LÝ)</span>
-              <span id="ram-pct">~35%</span>
-            </div>
-            <div class="tier-value" id="ram-usage-text">5.3 GB (RSS)</div>
-            <div class="tier-subtext" id="ram-subtext">Dense: 3.0 GB + Cache: ~2.0 GB · Đỉnh: 5.6 GB</div>
-            <div class="tier-progress-track">
-              <div class="tier-progress-fill" id="ram-progress" style="width: 35%; background: #3b82f6;"></div>
-            </div>
-          </div>
-
-          <!-- SSD TIER -->
-          <div class="tier-box">
-            <div class="tier-box-head">
-              <span>💾 TẦNG 2: Ổ SSD (NVMe)</span>
-              <span id="ssd-speed-text">0 MB/s</span>
-            </div>
-            <div class="tier-value" id="ssd-read-text">0.0 GB</div>
-            <div class="tier-subtext" id="ssd-subtext">Model: 7.0 GB · Đọc Kernel: 0.0 GB</div>
-            <div class="tier-progress-track">
-              <div class="tier-progress-fill" id="ssd-progress" style="width: 25%; background: #f59e0b;"></div>
-            </div>
-          </div>
-
-          <!-- GPU / VRAM TIER -->
-          <div class="tier-box">
-            <div class="tier-box-head">
-              <span>⚡ TẦNG 3: VRAM GPU</span>
-              <span id="vram-pct" style="color: #34d399;">0% VRAM</span>
-            </div>
-            <div class="tier-value" id="vram-usage-text">0 MB</div>
-            <div class="tier-subtext" id="vram-subtext">GTX 1650 Ti (0 MB chiếm dụng - 100% CPU)</div>
-            <div class="tier-progress-track">
-              <div class="tier-progress-fill" style="width: 0%; background: #10b981;"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- BLOCK 2: MOE BRAIN (16 LAYERS x 64 EXPERTS = 1,024 EXPERTS MATRIX) -->
-      <div class="v-card">
-        <div class="v-card-header">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="v-card-title">🧠 Bản Đồ Chuyên Gia MoE Brain (1,024 Experts Matrix)</span>
-            <span class="badge" id="brain-mode-badge" style="font-size: 0.68rem;">Top-8 Sparse Routing</span>
-          </div>
-          <span style="font-size: 0.74rem; color: #94a3b8;">16 Layers × 64 Experts</span>
-        </div>
+    <!-- =========================================================================
+         TAB 2: 3-TIER MEMORY TOPOLOGY & 1024 EXPERT MATRIX
+         ========================================================================= -->
+    <section class="tab-pane" id="tab-topology">
+      <div class="topology-container">
         
-        <!-- Controls: View Modes & Token Flow Simulator -->
-        <div class="brain-controls-bar">
-          <div class="view-mode-pills">
-            <button class="mode-pill active" id="btn-mode-sparse" type="button" title="Chỉ làm sáng Top-8 experts ở mỗi layer tại thời điểm sinh token">⚡ Độ Thưa Tức Thời (Top-8)</button>
-            <button class="mode-pill" id="btn-mode-cumulative" type="button" title="Hiển thị toàn bộ các experts đã được đánh thức qua các lượt sinh từ">🔥 Lũy Kế Phiên (Cumulative)</button>
-            <button class="mode-pill" id="btn-mode-memory" type="button" title="Phân định vị trí vật lý: RAM Cache INT8 vs Cold trên SSD">💾 Vị Trí Bộ Nhớ (RAM vs SSD)</button>
+        <!-- Memory Tiers Summary -->
+        <div class="memory-tiers-summary">
+          <!-- Tier 1: L1 VRAM -->
+          <div class="tier-spec-card">
+            <div class="tier-spec-header">
+              <span class="tier-spec-title" style="color:var(--accent-cyan);">TIER 1: GPU VRAM (GDDR5/GDDR6)</span>
+              <span id="vram-pct-badge">--%</span>
+            </div>
+            <div class="tier-spec-val" id="topo-vram-text">-- GB / 4.00 GB</div>
+            <div class="tier-progress-track">
+              <div class="tier-progress-fill" id="topo-vram-bar" style="width: 0%; background: var(--accent-cyan);"></div>
+            </div>
+            <div style="font-size:0.68rem; color:var(--text-faint);">
+              Bandwidth: ~128 GB/s · Latency: ~0.4ms DMA · Dense offloaded + L1 Expert Cache
+            </div>
           </div>
-          <button class="btn-sim" id="btn-sim-token" type="button" title="Mô phỏng chu trình Router quét tuần tự từ Layer 0 đến Layer 15 để sinh 1 token">▶ Mô Phỏng Dòng Chảy 1 Token</button>
+
+          <!-- Tier 2: L2 RAM -->
+          <div class="tier-spec-card">
+            <div class="tier-spec-header">
+              <span class="tier-spec-title" style="color:var(--accent-blue);">TIER 2: HOST RAM (DDR4/DDR5)</span>
+              <span id="ram-pct-badge">--%</span>
+            </div>
+            <div class="tier-spec-val" id="topo-ram-text">-- GB (RSS)</div>
+            <div class="tier-progress-track">
+              <div class="tier-progress-fill" id="topo-ram-bar" style="width: 0%; background: var(--accent-blue);"></div>
+            </div>
+            <div style="font-size:0.68rem; color:var(--text-faint);">
+              Bandwidth: ~25.6 GB/s · Latency: ~0.05ms Bus · INT8 L2 Cache (Hard Cap 2.0 GB)
+            </div>
+          </div>
+
+          <!-- Tier 3: L3 SSD -->
+          <div class="tier-spec-card">
+            <div class="tier-spec-header">
+              <span class="tier-spec-title" style="color:var(--accent-amber);">TIER 3: NVMe SSD (PCIe M.2)</span>
+              <span>COLD STORE</span>
+            </div>
+            <div class="tier-spec-val" id="topo-ssd-text">7.04 GB On-Disk</div>
+            <div class="tier-progress-track">
+              <div class="tier-progress-fill" style="width: 100%; background: var(--border-strong);"></div>
+            </div>
+            <div style="font-size:0.68rem; color:var(--text-faint);">
+              Bandwidth: ~250 MB/s (Random 4K) · Latency: ~3.5ms · 1,024 INT8 safetensors
+            </div>
+          </div>
         </div>
 
-        <div class="brain-container">
-          <div class="brain-canvas-wrap">
+        <!-- 16 x 64 = 1,024 Expert Matrix Canvas -->
+        <div class="matrix-workspace">
+          <div class="matrix-toolbar">
+            <div class="matrix-title-group">
+              <span>PHYSICAL EXPERT RESIDENCY MATRIX (16 LAYERS × 64 EXPERTS = 1,024 TOTAL)</span>
+              <span class="tech-pill" id="matrix-active-mode">Top-8 Sparse Routing (12.5% active)</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="nav-tab-btn active" id="btn-topo-sparse">Active Sparsity</button>
+              <button class="nav-tab-btn" id="btn-topo-physical">Physical Tier (VRAM/RAM/SSD)</button>
+              <button class="nav-tab-btn" id="btn-topo-cumulative">Cumulative Heatmap</button>
+            </div>
+          </div>
+
+          <div class="matrix-canvas-wrap">
             <canvas id="brain-canvas" width="676" height="230"></canvas>
             <div id="brain-tooltip"></div>
           </div>
+
+          <!-- Live Expert Inspector -->
+          <div class="expert-inspector-bar">
+            <div>
+              <span style="color:var(--text-faint);">Hover Inspector: </span>
+              <span class="inspector-badge" id="insp-coord">Layer 0 · Expert 0 (#0)</span>
+              <span style="margin: 0 6px; color:var(--border-strong);">|</span>
+              <span id="insp-role">Early Representation (Syntax / Lexical Embedding)</span>
+            </div>
+            <div>
+              <span id="insp-tier" style="color:var(--accent-blue); font-weight:600;">L2 RAM Cache (INT8)</span>
+              <span style="margin: 0 6px; color:var(--border-strong);">|</span>
+              <span id="insp-heat">Call Frequency: 0 accesses</span>
+              <span style="margin: 0 6px; color:var(--border-strong);">|</span>
+              <span>6.31 MB / expert</span>
+            </div>
+          </div>
+
+          <!-- Color Legend -->
+          <div style="display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-family:var(--font-mono); font-size:0.68rem; color:var(--text-faint);">
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span style="width:10px; height:10px; background:var(--tier-vram); border-radius:2px;"></span>
+              <span>L1 VRAM Resident (~0.4ms)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span style="width:10px; height:10px; background:var(--tier-ram); border-radius:2px;"></span>
+              <span>L2 Host RAM Resident (~0.05ms)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span style="width:10px; height:10px; background:var(--tier-ssd); border:1px solid var(--border-strong); border-radius:2px;"></span>
+              <span>L3 NVMe SSD Cold (~3.5ms)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span style="width:10px; height:10px; background:var(--accent-emerald); border-radius:2px;"></span>
+              <span>Top-8 Active Router Step</span>
+            </div>
+          </div>
+
         </div>
 
-        <!-- Live Expert Inspector -->
-        <div class="expert-inspector-bar" id="expert-inspector-bar">
-          <div>
-            <span style="color:#64748b;">Inspector: </span>
-            <span class="inspector-badge" id="insp-coord">Layer 0 · Expert 0 (#0)</span>
-            <span style="margin: 0 6px; color:#334155;">|</span>
-            <span id="insp-role" style="color:#94a3b8;">Early Representation (Cú pháp & Embedding)</span>
-          </div>
-          <div>
-            <span id="insp-tier" style="color:#60a5fa; font-weight:600;">RAM Cache (INT8)</span>
-            <span style="margin: 0 6px; color:#334155;">|</span>
-            <span id="insp-heat" style="color:#f59e0b;">Tần suất: 0 lượt</span>
-            <span style="margin: 0 6px; color:#334155;">|</span>
-            <span style="color:#94a3b8;">6.31 MB</span>
-          </div>
-        </div>
-
-        <!-- Academic KPI Chips -->
-        <div class="brain-kpi-grid">
-          <div class="brain-kpi-card">
-            <div class="kpi-label">Độ Thưa Tức Thời</div>
-            <div class="kpi-value" style="color:#10b981;" id="kpi-sparsity">12.5%</div>
-            <div class="kpi-hint">128 / 1,024 experts active / token</div>
-          </div>
-          <div class="brain-kpi-card">
-            <div class="kpi-label">Bao Phủ Lũy Kế</div>
-            <div class="kpi-value" style="color:#38bdf8;" id="kpi-coverage">-- %</div>
-            <div class="kpi-hint" id="kpi-coverage-sub">-- / 1,024 experts đã gọi</div>
-          </div>
-          <div class="brain-kpi-card">
-            <div class="kpi-label">RAM Cache Resident</div>
-            <div class="kpi-value" style="color:#60a5fa;" id="kpi-ram-res">--</div>
-            <div class="kpi-hint" id="kpi-ram-sub">Zero-OOM budget (INT8)</div>
-          </div>
-          <div class="brain-kpi-card">
-            <div class="kpi-label">SSD Cold Experts</div>
-            <div class="kpi-value" style="color:#94a3b8;" id="kpi-ssd-cold">--</div>
-            <div class="kpi-hint" id="kpi-ssd-sub">Safetensors on-demand</div>
-          </div>
-        </div>
-
-        <div class="brain-legend">
-          <div class="legend-item">
-            <div class="legend-box" style="background: var(--tier-ssd);"></div>
-            <span>SSD Cold (Ngủ đông trên đĩa)</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-box" style="background: var(--tier-ram);"></div>
-            <span>RAM Warm Cache (Sẵn sàng tính)</span>
-          </div>
-          <div class="legend-item">
-            <div class="legend-box" style="background: var(--tier-active); box-shadow: 0 0 6px #10b981;"></div>
-            <span>Active Top-8 (Đang tính toán)</span>
-          </div>
-          <div style="margin-left: auto; color: #64748b; font-size: 0.72rem;">
-            Rê chuột vào ô để xem Tọa độ & Phân tầng
-          </div>
-        </div>
       </div>
-
-      <!-- BLOCK 3: LATENCY DECOMPOSITION (COLIBRI SHARE BAR) -->
-      <div class="v-card">
-        <div class="v-card-header">
-          <span class="v-card-title">⏱️ Phân Rã Độ Trễ Thực Thi (Latency Decomposition)</span>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="badge" id="metrics-source-badge" style="font-size: 0.7rem;">Baseline Thực Nghiệm</span>
-            <span style="font-size: 0.78rem; color: #94a3b8;" id="total-wall-text">Tổng: -- s</span>
-          </div>
-        </div>
-        <div class="latency-bar-container">
-          <div class="latency-bar" id="latency-bar">
-            <div class="latency-segment" id="seg-io" style="width: 55%; background: #3b82f6;" title="SSD I/O">SSD I/O</div>
-            <div class="latency-segment" id="seg-expert" style="width: 25%; background: #10b981;" title="Expert Compute">Expert</div>
-            <div class="latency-segment" id="seg-attn" style="width: 15%; background: #f59e0b;" title="Attention">Attn</div>
-            <div class="latency-segment" id="seg-head" style="width: 5%; background: #8b5cf6;" title="LM Head">Head</div>
-          </div>
-        </div>
-        <div class="latency-legend">
-          <div class="metric-chip">
-            <div style="color:#60a5fa; font-weight:600;">SSD I/O Wait</div>
-            <div class="metric-chip-val" id="val-io">-- s</div>
-          </div>
-          <div class="metric-chip">
-            <div style="color:#34d399; font-weight:600;">Expert Compute</div>
-            <div class="metric-chip-val" id="val-expert">-- s</div>
-          </div>
-          <div class="metric-chip">
-            <div style="color:#fbbf24; font-weight:600;">Self-Attention</div>
-            <div class="metric-chip-val" id="val-attn">-- s</div>
-          </div>
-          <div class="metric-chip">
-            <div style="color:#a78bfa; font-weight:600;">LM Head & Norm</div>
-            <div class="metric-chip-val" id="val-head">-- s</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- BLOCK 4: REAL-TIME INFERENCE PERFORMANCE -->
-      <div class="v-card">
-        <div class="v-card-header">
-          <span class="v-card-title">🚀 Chỉ Số Tốc Độ & Hiệu Suất Bộ Đệm</span>
-        </div>
-        <div class="tiers-grid">
-          <div class="tier-box">
-            <div class="tier-box-head"><span>TIME TO FIRST TOKEN</span></div>
-            <div class="tier-value" id="metric-ttft" style="color: #60a5fa;">-- s</div>
-            <div class="tier-subtext">Độ trễ phản hồi chữ đầu tiên</div>
-          </div>
-          <div class="tier-box">
-            <div class="tier-box-head"><span>TỐC ĐỘ DECODE</span></div>
-            <div class="tier-value" id="metric-toks" style="color: #34d399;">-- tok/s</div>
-            <div class="tier-subtext">Số token sinh mỗi giây</div>
-          </div>
-          <div class="tier-box">
-            <div class="tier-box-head"><span>CACHE HIT RATE</span></div>
-            <div class="tier-value" id="metric-hitrate" style="color: #fbbf24;">-- %</div>
-            <div class="tier-subtext" id="metric-hit-detail">Hits / Misses</div>
-          </div>
-        </div>
-      </div>
-
     </section>
-  </div>
 
-  <!-- Client-side Logic -->
+    <!-- Global Toast Alert -->
+    <div class="toast-alert" id="toast-alert"></div>
+  </main>
+
+  <!-- Client-side Logic (Vanilla JavaScript - Zero external CDN dependencies) -->
   <script>
+    // Tab Navigation Logic
+    const tabButtons = document.querySelectorAll('.nav-tab-btn[data-tab]');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-tab');
+        tabButtons.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const targetPane = document.getElementById(targetId);
+        if (targetPane) targetPane.classList.add('active');
+      });
+    });
+
+    // Global Toast Notification
+    const toastAlert = document.querySelector('#toast-alert');
+    function showToast(msg, type = 'success') {
+      if (!toastAlert) return;
+      toastAlert.textContent = msg;
+      toastAlert.className = `toast-alert show ${type}`;
+      setTimeout(() => toastAlert.classList.remove('show'), 3500);
+    }
+
+    // Chat / Terminal Form Elements
     const chatForm = document.querySelector('#chat-form');
     const chatInput = document.querySelector('#chat-input');
     const messagesContainer = document.querySelector('#messages-container');
     const btnSend = document.querySelector('#btn-send');
     const btnStop = document.querySelector('#btn-stop');
-    const btnClear = document.querySelector('#btn-clear');
-    const btnPulseDemo = document.querySelector('#btn-pulse-demo');
+    const btnClearSession = document.querySelector('#btn-clear-session');
+    const btnResetCache = document.querySelector('#btn-reset-cache');
     const selectMaxTokens = document.querySelector('#select-max-tokens');
-    const globalStatusText = document.querySelector('#global-status-text');
-    const globalStatusDot = document.querySelector('#global-status-dot');
+    const sessionDisplay = document.querySelector('#session-display');
+    const contextUsedVal = document.querySelector('#context-used-val');
+    const contextBarFill = document.querySelector('#context-bar-fill');
 
-    // Visualizer Elements
-    const canvas = document.querySelector('#brain-canvas');
-    const ctx = canvas.getContext('2d');
-    const tooltip = document.querySelector('#brain-tooltip');
-    const ramUsageText = document.querySelector('#ram-usage-text');
-    const ssdReadText = document.querySelector('#ssd-read-text');
-    const ssdSpeedText = document.querySelector('#ssd-speed-text');
-    const diskLed = document.querySelector('#disk-led');
-    const diskBadge = document.querySelector('#disk-status-badge');
-    const totalWallText = document.querySelector('#total-wall-text');
-    const metricsSourceBadge = document.querySelector('#metrics-source-badge');
+    // Header & Workbench GPU Status Elements
+    const headerStatusDot = document.querySelector('#header-status-dot');
+    const headerStatusBadge = document.querySelector('#header-status-badge');
+    const headerRamVal = document.querySelector('#header-ram-val');
+    const headerVramVal = document.querySelector('#header-vram-val');
+    const btnHeaderGpuToggle = document.querySelector('#btn-header-gpu-toggle');
+    const headerGpuLabel = document.querySelector('#header-gpu-label');
+    const btnWorkbenchGpuToggle = document.querySelector('#btn-workbench-gpu-toggle');
+    const workbenchGpuLabel = document.querySelector('#workbench-gpu-label');
 
-    // MoE Brain Academic Controls & KPIs
-    const btnModeSparse = document.querySelector('#btn-mode-sparse');
-    const btnModeCumulative = document.querySelector('#btn-mode-cumulative');
-    const btnModeMemory = document.querySelector('#btn-mode-memory');
-    const btnSimToken = document.querySelector('#btn-sim-token');
-    const brainModeBadge = document.querySelector('#brain-mode-badge');
+    // Data Flow Architecture Elements
+    const nodeGpu = document.querySelector('#node-gpu');
+    const linkRamGpu = document.querySelector('#link-ram-gpu');
+    const linkSsdRam = document.querySelector('#link-ssd-ram');
+    const flowPcieLabel = document.querySelector('#flow-pcie-label');
+    const flowPcieDir = document.querySelector('#flow-pcie-dir');
+    const flowExplanation = document.querySelector('#flow-explanation');
+    const flowGpuStat = document.querySelector('#flow-gpu-stat');
+    const flowRamStat = document.querySelector('#flow-ram-stat');
+    const flowSsdStat = document.querySelector('#flow-ssd-stat');
 
-    const inspCoord = document.querySelector('#insp-coord');
-    const inspRole = document.querySelector('#insp-role');
-    const inspTier = document.querySelector('#insp-tier');
-    const inspHeat = document.querySelector('#insp-heat');
-
-    const kpiSparsity = document.querySelector('#kpi-sparsity');
-    const kpiCoverage = document.querySelector('#kpi-coverage');
-    const kpiCoverageSub = document.querySelector('#kpi-coverage-sub');
-    const kpiRamRes = document.querySelector('#kpi-ram-res');
-    const kpiRamSub = document.querySelector('#kpi-ram-sub');
-    const kpiSsdCold = document.querySelector('#kpi-ssd-cold');
-    const kpiSsdSub = document.querySelector('#kpi-ssd-sub');
+    // Telemetry Display Elements
+    const metricTtft = document.querySelector('#metric-ttft');
+    const metricToks = document.querySelector('#metric-toks');
+    const metricTotal = document.querySelector('#metric-total');
+    const metricTokenCount = document.querySelector('#metric-token-count');
+    const telemetrySourceBadge = document.querySelector('#telemetry-source-badge');
 
     const segIo = document.querySelector('#seg-io');
     const segExpert = document.querySelector('#seg-expert');
@@ -853,89 +1308,112 @@
     const valAttn = document.querySelector('#val-attn');
     const valHead = document.querySelector('#val-head');
 
-    const metricTtft = document.querySelector('#metric-ttft');
-    const metricToks = document.querySelector('#metric-toks');
-    const metricHitrate = document.querySelector('#metric-hitrate');
-    const metricHitDetail = document.querySelector('#metric-hit-detail');
+    const vramValPrimary = document.querySelector('#vram-val-primary');
+    const ramValPrimary = document.querySelector('#ram-val-primary');
+    const ssdValPrimary = document.querySelector('#ssd-val-primary');
+    const cacheHitPct = document.querySelector('#cache-hit-pct');
+    const cacheHitsCount = document.querySelector('#cache-hits-count');
+    const cacheMissesCount = document.querySelector('#cache-misses-count');
+    const cacheEvictionsCount = document.querySelector('#cache-evictions-count');
 
-    // Baseline benchmark metrics measured directly on Testbed B (i5 / 16GB)
-    const DEFAULT_BENCHMARK_METRICS = {
-      total_ms: 11390,
-      time_to_first_token_ms: 4903,
-      decode_tokens_per_second: 2.31,
-      expert_io_ms: 6840,
-      expert_compute_ms: 2430,
-      attention_ms: 1460,
-      lm_head_ms: 660,
-      expert_cache_hits: 3618,
-      expert_cache_misses: 1118,
-      expert_bytes_read: 7570000000,
+    // Topology Elements
+    const topoVramText = document.querySelector('#topo-vram-text');
+    const topoVramBar = document.querySelector('#topo-vram-bar');
+    const vramPctBadge = document.querySelector('#vram-pct-badge');
+    const topoRamText = document.querySelector('#topo-ram-text');
+    const topoRamBar = document.querySelector('#topo-ram-bar');
+    const ramPctBadge = document.querySelector('#ram-pct-badge');
+
+    // Matrix Canvas Elements
+    const canvas = document.querySelector('#brain-canvas');
+    const ctx = canvas.getContext('2d');
+    const tooltip = document.querySelector('#brain-tooltip');
+    const inspCoord = document.querySelector('#insp-coord');
+    const inspRole = document.querySelector('#insp-role');
+    const inspTier = document.querySelector('#insp-tier');
+    const inspHeat = document.querySelector('#insp-heat');
+    const matrixActiveMode = document.querySelector('#matrix-active-mode');
+
+    const btnTopoSparse = document.querySelector('#btn-topo-sparse');
+    const btnTopoPhysical = document.querySelector('#btn-topo-physical');
+    const btnTopoCumulative = document.querySelector('#btn-topo-cumulative');
+
+    // Default Baseline Benchmark Metrics (Measured on Testbed B Warm Run)
+    const BASELINE_METRICS = {
+      total_ms: 6390.18,
+      time_to_first_token_ms: 2699.90,
+      decode_tokens_per_second: 4.11,
+      expert_io_ms: 1209.38,
+      expert_compute_ms: 2353.98,
+      attention_ms: 361.93,
+      lm_head_ms: 44.82,
+      expert_cache_hits: 3873,
+      expert_cache_misses: 863,
+      expert_cache_evictions: 180,
+      expert_bytes_read: 6869237760,
     };
 
     let history = [];
     let controller = null;
     let liveTimerInterval = null;
-    let waveInterval = null;
-    let waveStep = 0;
-    let viewMode = 'sparse'; // 'sparse' | 'cumulative' | 'memory'
-    let isSimulating = false;
+    let expertData = null;
+    let matrixViewMode = 'sparse'; // 'sparse' | 'physical' | 'cumulative'
 
-    const newSession = () => 'session-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-    let sessionId = localStorage.getItem('moe-session-id') || newSession();
+    // Session Management
+    const genSessionId = () => 'sess-' + Math.random().toString(36).slice(2, 10);
+    let sessionId = localStorage.getItem('moe-session-id') || genSessionId();
     localStorage.setItem('moe-session-id', sessionId);
+    sessionDisplay.textContent = sessionId;
 
     try {
-      const saved = JSON.parse(localStorage.getItem('moe-history') || '[]');
-      if (Array.isArray(saved)) history = saved.slice(-50);
+      const savedHist = JSON.parse(localStorage.getItem('moe-history') || '[]');
+      if (Array.isArray(savedHist)) history = savedHist.slice(-40);
     } catch (_) {}
 
-    // Brain Grid with Coordinate Margins:
-    // 16 layers (rows) x 64 experts (cols)
+    // Matrix Geometry: 16 layers x 64 experts
     const ROWS = 16, COLS = 64;
-    const OFFSET_X = 36; // Left margin for L00..L15 labels
-    const OFFSET_Y = 18; // Top margin for E00..E63 labels
+    const OFFSET_X = 36;
+    const OFFSET_Y = 18;
     const CELL_W = 9, CELL_H = 11, GAP_X = 1, GAP_Y = 2;
     canvas.width = OFFSET_X + COLS * (CELL_W + GAP_X); // 676
     canvas.height = OFFSET_Y + ROWS * (CELL_H + GAP_Y); // 226
 
-    // Matrix state
-    let expertData = null;
-    let pulseGrid = new Float32Array(ROWS * COLS);       // Instant bright pulse
-    let activeResidue = new Float32Array(ROWS * COLS);   // Active session residue
+    let pulseGrid = new Float32Array(ROWS * COLS);
+    let activeResidue = new Float32Array(ROWS * COLS);
 
-    // Transformer layer role helper
     function getLayerRole(r) {
-      if (r < 4) return { role: 'Early Representation', desc: 'Cú pháp & Nhúng từ vựng (Syntax/POS)', color: '#a78bfa' };
-      if (r < 12) return { role: 'Middle Reasoning', desc: 'Ngữ nghĩa lõi & Suy luận sâu (Semantics)', color: '#38bdf8' };
-      return { role: 'Late Convergence', desc: 'Hội tụ từ vựng & Tạo phân phối Logits', color: '#fbbf24' };
+      if (r < 4) return { role: 'Early Representation', desc: 'Syntax / Lexical Embedding', color: '#a78bfa' };
+      if (r < 12) return { role: 'Middle Reasoning', desc: 'Core Semantics & Multi-hop Reasoning', color: '#38bdf8' };
+      return { role: 'Late Convergence', desc: 'Vocabulary Convergence & Logits Output', color: '#fbbf24' };
     }
 
-    // Set view mode
-    function setViewMode(mode) {
-      viewMode = mode;
-      btnModeSparse.className = 'mode-pill' + (mode === 'sparse' ? ' active' : '');
-      btnModeCumulative.className = 'mode-pill' + (mode === 'cumulative' ? ' active' : '');
-      btnModeMemory.className = 'mode-pill' + (mode === 'memory' ? ' active' : '');
+    // View Mode Handlers
+    function setMatrixMode(mode) {
+      matrixViewMode = mode;
+      btnTopoSparse.className = 'nav-tab-btn' + (mode === 'sparse' ? ' active' : '');
+      btnTopoPhysical.className = 'nav-tab-btn' + (mode === 'physical' ? ' active' : '');
+      btnTopoCumulative.className = 'nav-tab-btn' + (mode === 'cumulative' ? ' active' : '');
+
       if (mode === 'sparse') {
-        brainModeBadge.textContent = 'Top-8 Sparse (12.5% Active)';
-        brainModeBadge.style.color = '#34d399';
-      } else if (mode === 'cumulative') {
-        brainModeBadge.textContent = 'Lũy Kế Toàn Phiên (Heatmap)';
-        brainModeBadge.style.color = '#38bdf8';
+        matrixActiveMode.textContent = 'Top-8 Sparse Routing (12.5% active)';
+        matrixActiveMode.style.color = '#34d399';
+      } else if (mode === 'physical') {
+        matrixActiveMode.textContent = 'Physical Tier (L1 VRAM Cyan / L2 RAM Blue / L3 SSD Dark)';
+        matrixActiveMode.style.color = '#06b6d4';
       } else {
-        brainModeBadge.textContent = 'Phân Tầng Bộ Nhớ (RAM vs SSD)';
-        brainModeBadge.style.color = '#60a5fa';
+        matrixActiveMode.textContent = 'Cumulative Heatmap Across Session';
+        matrixActiveMode.style.color = '#38bdf8';
       }
     }
-    btnModeSparse.addEventListener('click', () => setViewMode('sparse'));
-    btnModeCumulative.addEventListener('click', () => setViewMode('cumulative'));
-    btnModeMemory.addEventListener('click', () => setViewMode('memory'));
+    btnTopoSparse.addEventListener('click', () => setMatrixMode('sparse'));
+    btnTopoPhysical.addEventListener('click', () => setMatrixMode('physical'));
+    btnTopoCumulative.addEventListener('click', () => setMatrixMode('cumulative'));
 
-    // Draw Brain with Axis labels and Layer anatomy
-    function drawBrain() {
+    // Draw Matrix Canvas
+    function drawMatrix() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 1. Draw Column Axis Labels (Experts: E0, E16, E32, E48, E63)
+      // 1. Column Axis Labels
       ctx.font = '9px monospace';
       ctx.fillStyle = '#64748b';
       ctx.textAlign = 'center';
@@ -945,28 +1423,24 @@
         ctx.fillText(`E${c}`, x, 12);
       }
 
-      // 2. Draw Rows (Layers) & Cells
-      let totalResident = 0;
-      let totalActive = 0;
-
+      // 2. Draw Layer Rows
       for (let r = 0; r < ROWS; r++) {
         const role = getLayerRole(r);
         const y = OFFSET_Y + r * (CELL_H + GAP_Y);
 
-        // Draw Layer Label (L00..L15)
+        // Layer ID
         ctx.font = '9px monospace';
         ctx.fillStyle = role.color;
         ctx.textAlign = 'right';
         ctx.fillText(`L${r < 10 ? '0' + r : r}`, OFFSET_X - 10, y + 9);
 
-        // Draw Layer Role Accent Bar
+        // Layer Role Accent Bar
         ctx.fillStyle = role.color;
         ctx.fillRect(OFFSET_X - 6, y + 1, 2, CELL_H - 2);
 
         const layerInfo = expertData?.layers?.[r];
         const residentSet = new Set(layerInfo?.resident_experts || []);
         const heatArr = layerInfo?.heat || [];
-        totalResident += residentSet.size;
 
         for (let c = 0; c < COLS; c++) {
           const idx = r * COLS + c;
@@ -977,154 +1451,53 @@
           const pulse = pulseGrid[idx];
           const active = activeResidue[idx];
 
-          if (active > 0.05 || heat > 0) totalActive++;
-
-          // Styling according to viewMode
-          if (viewMode === 'sparse') {
-            // Mode: Top-8 Instantaneous Active
+          if (matrixViewMode === 'sparse') {
             if (pulse > 0.05) {
-              ctx.fillStyle = `rgba(52, 211, 153, ${Math.min(1, 0.4 + pulse * 0.8)})`;
-              ctx.shadowColor = '#10b981';
-              ctx.shadowBlur = 6;
+              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.5 + pulse * 0.7)})`;
             } else if (isResident) {
-              ctx.fillStyle = '#1e3a8a'; // Dim blue
-              ctx.shadowBlur = 0;
-            } else {
-              ctx.fillStyle = '#1e293b'; // Dark cold
-              ctx.shadowBlur = 0;
-            }
-          } else if (viewMode === 'cumulative') {
-            // Mode: Cumulative Heatmap across whole conversation
-            if (pulse > 0.05) {
-              ctx.fillStyle = '#34d399';
-              ctx.shadowColor = '#10b981';
-              ctx.shadowBlur = 6;
-            } else if (active > 0.05) {
-              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.5 + active * 0.5)})`;
-              ctx.shadowBlur = 0;
-            } else if (heat > 0) {
-              ctx.fillStyle = '#10b981';
-              ctx.shadowBlur = 0;
-            } else if (isResident) {
-              ctx.fillStyle = '#2563eb';
-              ctx.shadowBlur = 0;
+              ctx.fillStyle = '#1e3a8a';
             } else {
               ctx.fillStyle = '#1e293b';
-              ctx.shadowBlur = 0;
             }
-          } else {
-            // Mode: Memory Residency (RAM vs SSD)
+          } else if (matrixViewMode === 'physical') {
             if (pulse > 0.05) {
               ctx.fillStyle = '#10b981';
-              ctx.shadowColor = '#10b981';
-              ctx.shadowBlur = 6;
             } else if (isResident) {
-              ctx.fillStyle = '#3b82f6'; // Clear Blue RAM
-              ctx.shadowBlur = 0;
+              // Mark whether resident in VRAM or RAM
+              ctx.fillStyle = (expertData?.gpu?.enabled && r < 4) ? '#06b6d4' : '#3b82f6';
             } else {
-              ctx.fillStyle = '#161e2e'; // Deep Dark SSD
-              ctx.shadowBlur = 0;
+              ctx.fillStyle = '#141c2b';
+            }
+          } else {
+            // Cumulative Heatmap
+            if (pulse > 0.05) {
+              ctx.fillStyle = '#34d399';
+            } else if (active > 0.05) {
+              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.4 + active * 0.6)})`;
+            } else if (heat > 0) {
+              ctx.fillStyle = '#10b981';
+            } else if (isResident) {
+              ctx.fillStyle = '#2563eb';
+            } else {
+              ctx.fillStyle = '#1e293b';
             }
           }
 
-          // Draw expert cell with thin border
           ctx.fillRect(x, y, CELL_W, CELL_H);
-          ctx.strokeStyle = '#0f172a';
+          ctx.strokeStyle = '#090d16';
           ctx.lineWidth = 0.5;
           ctx.strokeRect(x, y, CELL_W, CELL_H);
-          ctx.shadowBlur = 0;
 
-          // Gradual decay
-          if (pulse > 0) pulseGrid[idx] = Math.max(0, pulse - 0.025);
-          if (active > 0) activeResidue[idx] = Math.max(0, active - 0.003);
+          if (pulse > 0) pulseGrid[idx] = Math.max(0, pulse - 0.03);
+          if (active > 0) activeResidue[idx] = Math.max(0, active - 0.002);
         }
       }
 
-      // Update KPI Cards
-      kpiCoverage.textContent = `${((totalActive / 1024) * 100).toFixed(1)}%`;
-      kpiCoverageSub.textContent = `${totalActive} / 1,024 experts đã gọi`;
-      kpiRamRes.textContent = `${totalResident} Experts`;
-      kpiRamSub.textContent = `~${((totalResident * 6.31) / 1024).toFixed(2)} GB INT8 trong RAM`;
-      const coldCount = 1024 - totalResident;
-      kpiSsdCold.textContent = `${coldCount} Experts`;
-      kpiSsdSub.textContent = `~${((coldCount * 6.31) / 1024).toFixed(2)} GB on-demand SSD`;
-
-      requestAnimationFrame(drawBrain);
+      requestAnimationFrame(drawMatrix);
     }
-    requestAnimationFrame(drawBrain);
+    requestAnimationFrame(drawMatrix);
 
-    // Simulate Token Dataflow: Step through Layer 0 -> Layer 15
-    async function simulateTokenFlow() {
-      if (isSimulating) return;
-      isSimulating = true;
-      btnSimToken.disabled = true;
-      setViewMode('sparse');
-
-      // Clear previous pulses
-      pulseGrid.fill(0);
-
-      for (let l = 0; l < ROWS; l++) {
-        // Clear all layers
-        pulseGrid.fill(0);
-
-        // Pick top-8 experts for this layer
-        const layerInfo = expertData?.layers?.[l];
-        const residents = layerInfo?.resident_experts || [];
-        const picked = [];
-
-        for (let i = 0; i < 8; i++) {
-          let c;
-          if (residents.length > 0 && Math.random() < 0.7) {
-            c = residents[Math.floor(Math.random() * residents.length)];
-          } else {
-            c = Math.floor(Math.random() * COLS);
-          }
-          pulseGrid[l * COLS + c] = 1.0;
-          activeResidue[l * COLS + c] = 1.0;
-          picked.push(`E${c}`);
-        }
-
-        const role = getLayerRole(l);
-        inspCoord.textContent = `Layer ${l} · ${picked.slice(0, 4).join(', ')}... (Top-8 Selected)`;
-        inspRole.textContent = `${role.role} — Router đang định tuyến`;
-        inspTier.textContent = `Đang tính toán trên CPU`;
-
-        await new Promise(r => setTimeout(r, 70));
-      }
-
-      inspCoord.textContent = `Hoàn tất 1 Token! (128 lượt gọi qua 16 Layers)`;
-      inspRole.textContent = `Độ thưa đạt chuẩn 12.5% (128/1,024 experts)`;
-      inspTier.textContent = `Token sẵn sàng đưa vào LM Head`;
-      btnSimToken.disabled = false;
-      isSimulating = false;
-    }
-    btnSimToken.addEventListener('click', simulateTokenFlow);
-
-    // Wave through layers during normal inference
-    function triggerNeuralWave() {
-      const r = waveStep % ROWS;
-      waveStep++;
-      const layerInfo = expertData?.layers?.[r];
-      const residents = layerInfo?.resident_experts || [];
-
-      for (let i = 0; i < 8; i++) {
-        let col;
-        if (residents.length > 0 && Math.random() < 0.75) {
-          col = residents[Math.floor(Math.random() * residents.length)];
-        } else {
-          col = Math.floor(Math.random() * COLS);
-        }
-        const idx = r * COLS + col;
-        pulseGrid[idx] = 1.0;
-        activeResidue[idx] = 1.0;
-      }
-    }
-
-    btnPulseDemo?.addEventListener('click', () => {
-      simulateTokenFlow();
-    });
-
-    // Mouse hover inspector
+    // Canvas Hover Inspector
     canvas.addEventListener('mousemove', (e) => {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
@@ -1141,85 +1514,238 @@
         const layerInfo = expertData?.layers?.[row];
         const isResident = layerInfo?.resident_experts?.includes(col);
         const heat = layerInfo?.heat?.[col] || 0;
-        const isActive = activeResidue[idx] > 0.05 || pulseGrid[idx] > 0.05 || heat > 0;
 
-        let statusText = isResident ? 'RAM Cache (INT8)' : 'Ổ SSD (Safetensors)';
+        let statusText = isResident ? 'L2 RAM Resident (INT8)' : 'L3 NVMe SSD (Cold Safetensors)';
         let statusColor = isResident ? '#60a5fa' : '#94a3b8';
-        if (isActive) {
-          statusText = 'Active Top-8 (Vừa kích hoạt)';
-          statusColor = '#34d399';
+        if (expertData?.gpu?.enabled && isResident && row < 4) {
+          statusText = 'L1 GPU VRAM Resident (INT8 DMA)';
+          statusColor = '#06b6d4';
         }
 
-        // Update Tooltip
         tooltip.style.display = 'block';
         tooltip.style.left = (e.offsetX + 15) + 'px';
         tooltip.style.top = (e.offsetY - 20) + 'px';
         tooltip.innerHTML = `
-          <b>Layer ${row} · Expert ${col} (#${idx})</b><br>
+          <strong>Layer ${row} · Expert ${col} (#${idx})</strong><br>
           <span style="color:${role.color}">${role.role}</span><br>
-          Trạng thái: <span style="color:${statusColor}">${statusText}</span><br>
-          Tần suất (Heat): ${heat} lượt · Dung lượng: 6.31 MB
+          Storage Tier: <span style="color:${statusColor}">${statusText}</span><br>
+          Historical Calls: ${heat} accesses · 6.31 MB
         `;
 
-        // Update Live Inspector Bar
         inspCoord.textContent = `Layer ${row} · Expert ${col} (#${idx})`;
         inspRole.textContent = `${role.role} (${role.desc})`;
-        inspTier.textContent = isResident ? 'RAM Cache (INT8)' : 'Ổ đĩa SSD (Safetensors)';
+        inspTier.textContent = statusText;
         inspTier.style.color = statusColor;
-        inspHeat.textContent = `Tần suất: ${heat} lượt`;
+        inspHeat.textContent = `Call Frequency: ${heat} accesses`;
       } else {
         tooltip.style.display = 'none';
       }
     });
-    canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+    canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
 
-    // Fetch experts status and OS telemetry
-    async function updateExperts() {
+    // Periodic Telemetry Fetcher
+    async function fetchTelemetry() {
       try {
         const res = await fetch('/experts');
         if (res.ok) {
           expertData = await res.json();
-          let cacheBytes = 0;
-          expertData.layers?.forEach(l => {
-            cacheBytes += l.cache_bytes || 0;
-          });
-          const cacheGb = (cacheBytes / (1024 * 1024 * 1024)).toFixed(2);
-          const telem = expertData.system_telemetry;
-          if (telem && telem.vm_rss_kib) {
-            const rssGb = (telem.vm_rss_kib / 1048576).toFixed(2);
-            const hwmGb = (telem.vm_hwm_kib / 1048576).toFixed(2);
-            ramUsageText.textContent = `${rssGb} GB (RSS)`;
-            const ramSub = document.querySelector('#ram-subtext');
-            if (ramSub) ramSub.textContent = `Dense: 3.0GB + Cache: ${cacheGb}GB · Đỉnh: ${hwmGb}GB`;
-            const ramPct = document.querySelector('#ram-pct');
-            if (ramPct) ramPct.textContent = `${((telem.vm_rss_kib / (16 * 1048576)) * 100).toFixed(0)}%`;
-            const ramBar = document.querySelector('#ram-progress');
-            if (ramBar) ramBar.style.width = `${Math.min(100, (telem.vm_rss_kib / (16 * 1048576)) * 100)}%`;
-          } else {
-            const totalRamGb = (3.0 + cacheBytes / (1024 * 1024 * 1024)).toFixed(2);
-            ramUsageText.textContent = `${totalRamGb} GB`;
-          }
-
-          if (telem && telem.io_read_bytes) {
-            const readGb = (telem.io_read_bytes / (1024 * 1024 * 1024)).toFixed(2);
-            const ssdSub = document.querySelector('#ssd-subtext');
-            if (ssdSub) ssdSub.textContent = `Model: 7.0GB · Đọc Kernel: ${readGb} GB`;
-          }
+          renderTelemetry(expertData);
         }
       } catch (_) {}
     }
-    updateExperts();
-    setInterval(updateExperts, 3000);
 
-    // Render Chat Bubbles
-    function appendBubble(role, content, metrics = null) {
+    function renderTelemetry(data) {
+      if (!data) return;
+
+      // Host RAM
+      const telem = data.system_telemetry;
+      if (telem && telem.vm_rss_kib) {
+        const rssGb = (telem.vm_rss_kib / 1048576).toFixed(2);
+        headerRamVal.textContent = `${rssGb} GB`;
+        ramValPrimary.textContent = `${rssGb} GB`;
+        topoRamText.textContent = `${rssGb} GB (RSS)`;
+        const ramPct = Math.round((telem.vm_rss_kib / (16 * 1048576)) * 100);
+        ramPctBadge.textContent = `${ramPct}% of 16GB`;
+        topoRamBar.style.width = `${Math.min(100, ramPct)}%`;
+      }
+
+      // NVMe Read Bytes
+      if (telem && telem.io_read_bytes) {
+        const readGb = (telem.io_read_bytes / 1073741824).toFixed(2);
+        ssdValPrimary.textContent = `${readGb} GB`;
+      }
+
+      // GPU VRAM
+      const gpu = data.gpu;
+      if (gpu && gpu.enabled) {
+        btnHeaderGpuToggle.classList.remove('off');
+        headerGpuLabel.textContent = 'GPU cuBLAS: ON';
+        const allocMb = Math.round(gpu.allocated_vram_bytes / 1048576);
+        const allocGb = (gpu.allocated_vram_bytes / 1073741824).toFixed(2);
+        const totalGb = (gpu.total_vram_bytes / 1073741824).toFixed(2);
+        const pct = Math.round((gpu.allocated_vram_bytes / Math.max(1, gpu.total_vram_bytes)) * 100);
+
+        headerVramVal.textContent = `${allocGb} / ${totalGb} GB`;
+        vramValPrimary.textContent = `${allocMb} MB`;
+        topoVramText.textContent = `${allocGb} / ${totalGb} GB`;
+        vramPctBadge.textContent = `${pct}% of ${totalGb}GB`;
+        topoVramBar.style.width = `${Math.min(100, Math.max(4, pct))}%`;
+        topoVramBar.style.background = 'var(--accent-cyan)';
+      } else {
+        btnHeaderGpuToggle.classList.add('off');
+        headerGpuLabel.textContent = 'GPU cuBLAS: OFF';
+        headerVramVal.textContent = 'CPU ONLY';
+        vramValPrimary.textContent = '0 MB';
+        topoVramText.textContent = '0.00 GB (CPU Pure)';
+        vramPctBadge.textContent = '0%';
+        topoVramBar.style.width = '0%';
+      }
+
+      // Update Data Flow Pipeline
+      updateDataFlowUI(gpu, telem);
+    }
+
+    // Dynamic Data Flow Architecture Renderer
+    function updateDataFlowUI(gpu, telem) {
+      const isGpu = gpu && gpu.enabled;
+      if (isGpu) {
+        if (workbenchGpuLabel) workbenchGpuLabel.textContent = 'GPU cuBLAS: ON';
+        if (btnWorkbenchGpuToggle) btnWorkbenchGpuToggle.className = 'btn-tool btn-tool-gpu-on';
+        if (nodeGpu) nodeGpu.className = 'flow-node flow-node-gpu active';
+        if (linkRamGpu) {
+          linkRamGpu.className = 'flow-link active';
+          if (flowPcieLabel) flowPcieLabel.textContent = 'PCIe 3.0 DMA';
+          if (flowPcieDir) flowPcieDir.textContent = '▲ H2D / ▼ D2H';
+        }
+        if (flowExplanation) {
+          flowExplanation.innerHTML = '<span style="color:#67e8f9; font-weight:700;">Chế độ Phân tầng Lai (Hybrid GPU + CPU):</span> Trọng số Dense & Hot Experts lưu trên VRAM. cuBLAS tăng tốc Attention & LM Head (nhanh hơn 3.6x–4.8x). Cold Experts nạp qua PCIe DMA vào RAM cho Rayon tính SwiGLU.';
+        }
+        if (flowGpuStat) {
+          const allocMb = Math.round((gpu.allocated_vram_bytes || 0) / 1048576);
+          flowGpuStat.textContent = `VRAM: ${allocMb} MB (${gpu.vram_experts_resident || 0} L1 exp)`;
+        }
+      } else {
+        if (workbenchGpuLabel) workbenchGpuLabel.textContent = 'GPU: OFF (CPU)';
+        if (btnWorkbenchGpuToggle) btnWorkbenchGpuToggle.className = 'btn-tool btn-tool-gpu-off';
+        if (nodeGpu) nodeGpu.className = 'flow-node flow-node-gpu disabled';
+        if (linkRamGpu) {
+          linkRamGpu.className = 'flow-link bypassed';
+          if (flowPcieLabel) flowPcieLabel.textContent = 'PCIe Bypassed';
+          if (flowPcieDir) flowPcieDir.textContent = '--- 0 DMA ---';
+        }
+        if (flowExplanation) {
+          flowExplanation.innerHTML = '<span style="color:#34d399; font-weight:700;">Chế độ CPU Thuần (Zero-Transfer Mode):</span> Bỏ qua bus PCIe, triệt tiêu thuế độ trễ truyền dữ liệu liên bus. Toàn bộ trọng số đọc trực tiếp từ DRAM DDR4 nội bộ qua Rayon đa luồng.';
+        }
+        if (flowGpuStat) {
+          flowGpuStat.textContent = 'VRAM: Inactive';
+        }
+      }
+
+      if (telem && flowRamStat && telem.vm_rss_kib) {
+        flowRamStat.textContent = `RSS: ${(telem.vm_rss_kib / 1048576).toFixed(2)} GB`;
+      }
+      if (telem && flowSsdStat && telem.io_read_bytes) {
+        flowSsdStat.textContent = `Read: ${(telem.io_read_bytes / 1073741824).toFixed(2)} GB`;
+      }
+    }
+
+    fetchTelemetry();
+    setInterval(fetchTelemetry, 3000);
+
+    // Toggle GPU Switch Handler (Both header & workbench buttons)
+    async function toggleGPUAction() {
+      btnHeaderGpuToggle.style.opacity = '0.5';
+      if (btnWorkbenchGpuToggle) btnWorkbenchGpuToggle.style.opacity = '0.5';
+      try {
+        const res = await fetch('/api/gpu/toggle', { method: 'POST' });
+        if (res.ok) {
+          const status = await res.json();
+          showToast(status.enabled ? '✓ Đã kích hoạt Hybrid GPU cuBLAS Offload' : '✓ Đã chuyển sang CPU Thuần (Bypass PCIe DMA)');
+          await fetchTelemetry();
+        }
+      } catch (err) {
+        showToast('Lỗi khi đổi chế độ GPU: ' + err.message, 'warn');
+      } finally {
+        btnHeaderGpuToggle.style.opacity = '1';
+        if (btnWorkbenchGpuToggle) btnWorkbenchGpuToggle.style.opacity = '1';
+      }
+    }
+    btnHeaderGpuToggle.addEventListener('click', toggleGPUAction);
+    btnWorkbenchGpuToggle?.addEventListener('click', toggleGPUAction);
+
+    // Reset Cache Handler (Cold Start 0-cache test)
+    btnResetCache?.addEventListener('click', async () => {
+      btnResetCache.disabled = true;
+      btnResetCache.style.opacity = '0.5';
+      try {
+        const res = await fetch('/api/cache/reset', { method: 'POST' });
+        if (res.ok) {
+          showToast('✓ Đã reset 100% Cache (L1 VRAM, L2 RAM & KV)! Sẵn sàng kiểm thử Cold Start 0 cache.');
+          metricTtft.textContent = '-- s';
+          metricToks.textContent = '-- tok/s';
+          metricTotal.textContent = '-- s';
+          valIo.textContent = '-- s';
+          valExpert.textContent = '-- s';
+          valAttn.textContent = '-- s';
+          valHead.textContent = '-- s';
+          await fetchTelemetry();
+        } else {
+          showToast('Lỗi khi reset cache: ' + res.statusText, 'warn');
+        }
+      } catch (err) {
+        showToast('Lỗi kết nối khi reset cache: ' + err.message, 'warn');
+      } finally {
+        btnResetCache.disabled = false;
+        btnResetCache.style.opacity = '1';
+      }
+    });
+
+    // Context Window Meter Handler
+    function updateContextMeter() {
+      if (!contextUsedVal || !contextBarFill) return;
+      let totalChars = history.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
+      totalChars += (chatInput.value ? chatInput.value.length : 0);
+      const estTokens = history.length > 0 ? Math.max(12, Math.round(totalChars / 3.6)) : Math.round(totalChars / 3.6);
+      contextUsedVal.textContent = estTokens;
+      const maxTok = Number(selectMaxTokens?.value || 128);
+      const totalEstimated = estTokens + maxTok;
+      const pct = Math.min(100, Math.round((totalEstimated / 512) * 100));
+      contextBarFill.style.width = `${pct}%`;
+      if (totalEstimated > 512) {
+        contextBarFill.className = 'context-bar-fill danger';
+        contextUsedVal.style.color = '#ef4444';
+      } else if (totalEstimated > 400) {
+        contextBarFill.className = 'context-bar-fill warn';
+        contextUsedVal.style.color = '#f59e0b';
+      } else {
+        contextBarFill.className = 'context-bar-fill';
+        contextUsedVal.style.color = '#10b981';
+      }
+    }
+
+    chatInput.addEventListener('input', updateContextMeter);
+    selectMaxTokens?.addEventListener('change', updateContextMeter);
+    updateContextMeter();
+
+    // Message Rendering
+    function appendMessageCard(role, content, metrics = null) {
       const card = document.createElement('div');
-      card.className = `msg-card ${role === 'user' ? 'msg-user' : 'msg-assistant'}`;
-      card.textContent = content;
+      card.className = `msg-block ${role === 'user' ? 'user' : 'assistant'}`;
+
+      const header = document.createElement('div');
+      header.className = 'msg-header';
+      header.innerHTML = `<span>${role === 'user' ? 'USER PROMPT' : 'OLMoE-1B-7B INFERENCE'}</span><span>${new Date().toLocaleTimeString()}</span>`;
+      card.appendChild(header);
+
+      const body = document.createElement('div');
+      body.className = 'msg-body';
+      body.textContent = content;
+      card.appendChild(body);
 
       if (metrics) {
-        const meta = document.createElement('div');
-        meta.className = 'msg-meta-bar';
+        const table = document.createElement('div');
+        table.className = 'msg-telemetry-table';
+
         const ttft = (metrics.time_to_first_token_ms / 1000).toFixed(2);
         const tokS = metrics.decode_tokens_per_second.toFixed(2);
         const total = (metrics.total_ms / 1000).toFixed(2);
@@ -1227,13 +1753,17 @@
         const totalReq = hits + metrics.expert_cache_misses;
         const hitRate = totalReq > 0 ? ((hits / totalReq) * 100).toFixed(1) : '0';
 
-        meta.innerHTML = `
-          <span>⚡ TTFT: ${ttft}s</span>
-          <span>🚀 ${tokS} tok/s</span>
-          <span>⏱️ Tổng: ${total}s</span>
-          <span>🎯 Cache Hit: ${hitRate}%</span>
+        table.innerHTML = `
+          <div><span class="telem-cell-label">TTFT:</span> <span class="telem-cell-val">${ttft}s</span></div>
+          <div><span class="telem-cell-label">DECODE:</span> <span class="telem-cell-val">${tokS} tok/s</span></div>
+          <div><span class="telem-cell-label">WALL:</span> <span class="telem-cell-val">${total}s</span></div>
+          <div><span class="telem-cell-label">CACHE HIT:</span> <span class="telem-cell-val">${hitRate}%</span></div>
+          <div><span class="telem-cell-label">I/O WAIT:</span> <span class="telem-cell-val">${(metrics.expert_io_ms / 1000).toFixed(2)}s</span></div>
+          <div><span class="telem-cell-label">EXPERT COMPUTE:</span> <span class="telem-cell-val">${(metrics.expert_compute_ms / 1000).toFixed(2)}s</span></div>
+          <div><span class="telem-cell-label">ATTENTION:</span> <span class="telem-cell-val">${(metrics.attention_ms / 1000).toFixed(2)}s</span></div>
+          <div><span class="telem-cell-label">LM HEAD:</span> <span class="telem-cell-val">${(metrics.lm_head_ms / 1000).toFixed(2)}s</span></div>
         `;
-        card.appendChild(meta);
+        card.appendChild(table);
       }
 
       messagesContainer.appendChild(card);
@@ -1241,35 +1771,31 @@
       return card;
     }
 
-    history.forEach(m => appendBubble(m.role, m.content));
+    history.forEach(m => appendMessageCard(m.role, m.content));
 
-    function setBusy(isBusy) {
-      btnSend.hidden = isBusy;
-      btnStop.hidden = !isBusy;
-      chatInput.disabled = isBusy;
-      globalStatusDot.className = 'status-dot' + (isBusy ? ' busy' : '');
-      globalStatusText.textContent = isBusy ? 'Đang suy luận...' : 'Sẵn sàng';
-      diskLed.className = 'disk-pulse' + (isBusy ? ' active' : '');
-      diskBadge.textContent = isBusy ? 'SSD Reading (~258 MB/s)' : 'SSD Idle';
+    function setEngineBusy(busy) {
+      btnSend.hidden = busy;
+      btnStop.hidden = !busy;
+      chatInput.disabled = busy;
+      headerStatusDot.style.background = busy ? 'var(--accent-amber)' : 'var(--accent-emerald)';
+      headerStatusBadge.className = 'badge-status ' + (busy ? 'busy' : 'ready');
+      headerStatusBadge.textContent = busy ? 'Inferring...' : 'Engine Ready';
 
-      if (isBusy) {
-        // Start live wave animation during inference
-        if (!waveInterval) waveInterval = setInterval(triggerNeuralWave, 70);
-      } else {
-        if (waveInterval) { clearInterval(waveInterval); waveInterval = null; }
-        if (liveTimerInterval) { clearInterval(liveTimerInterval); liveTimerInterval = null; }
+      if (!busy && liveTimerInterval) {
+        clearInterval(liveTimerInterval);
+        liveTimerInterval = null;
       }
     }
 
-    // Trigger visual metrics update
-    function updateMetricsDashboard(m, sourceLabel = 'Lượt Vừa Chạy') {
+    // Update Telemetry Panel
+    function updateMetrics(m, label = 'LAST INFERENCE EXECUTION') {
       if (!m) return;
-      if (metricsSourceBadge) metricsSourceBadge.textContent = sourceLabel;
+      if (telemetrySourceBadge) telemetrySourceBadge.textContent = label;
 
-      const totalS = m.total_ms / 1000;
-      totalWallText.textContent = `Tổng: ${totalS.toFixed(2)} s`;
+      metricTtft.textContent = `${(m.time_to_first_token_ms / 1000).toFixed(2)} s`;
+      metricToks.textContent = `${m.decode_tokens_per_second.toFixed(2)} tok/s`;
+      metricTotal.textContent = `${(m.total_ms / 1000).toFixed(2)} s`;
 
-      // Latency Bar percentages
       const ioS = m.expert_io_ms / 1000;
       const expS = m.expert_compute_ms / 1000;
       const attnS = m.attention_ms / 1000;
@@ -1281,81 +1807,62 @@
       segAttn.style.width = `${(attnS / sum) * 100}%`;
       segHead.style.width = `${(headS / sum) * 100}%`;
 
-      valIo.textContent = `${ioS.toFixed(2)} s`;
-      valExpert.textContent = `${expS.toFixed(2)} s`;
-      valAttn.textContent = `${attnS.toFixed(2)} s`;
-      valHead.textContent = `${headS.toFixed(2)} s`;
+      valIo.textContent = `${ioS.toFixed(2)} s (${((ioS / sum) * 100).toFixed(1)}%)`;
+      valExpert.textContent = `${expS.toFixed(2)} s (${((expS / sum) * 100).toFixed(1)}%)`;
+      valAttn.textContent = `${attnS.toFixed(2)} s (${((attnS / sum) * 100).toFixed(1)}%)`;
+      valHead.textContent = `${headS.toFixed(2)} s (${((headS / sum) * 100).toFixed(1)}%)`;
 
-      metricTtft.textContent = `${(m.time_to_first_token_ms / 1000).toFixed(2)} s`;
-      metricToks.textContent = `${m.decode_tokens_per_second.toFixed(2)} tok/s`;
+      const hits = m.expert_cache_hits || 0;
+      const misses = m.expert_cache_misses || 0;
+      const evicts = m.expert_cache_evictions || 0;
+      const totalReq = hits + misses;
+      const rate = totalReq > 0 ? ((hits / totalReq) * 100).toFixed(1) : 0;
 
-      const hits = m.expert_cache_hits;
-      const misses = m.expert_cache_misses;
-      const hitRate = hits + misses > 0 ? ((hits / (hits + misses)) * 100).toFixed(1) : 0;
-      metricHitrate.textContent = `${hitRate} %`;
-      metricHitDetail.textContent = `${hits} hits / ${misses} misses`;
-
-      const gbRead = (m.expert_bytes_read / (1024 * 1024 * 1024)).toFixed(2);
-      ssdReadText.textContent = `${gbRead} GB`;
-      ssdSpeedText.textContent = isNaN(m.expert_io_ms) || m.expert_io_ms <= 0 ? '0 MB/s' : `${((m.expert_bytes_read / (1024 * 1024)) / (m.expert_io_ms / 1000)).toFixed(0)} MB/s`;
-
-      // Illuminate random active experts with green residue
-      for (let r = 0; r < ROWS; r++) {
-        for (let k = 0; k < 5; k++) {
-          const randCol = Math.floor(Math.random() * COLS);
-          pulseGrid[r * COLS + randCol] = 1.0;
-          activeResidue[r * COLS + randCol] = 1.0;
-        }
-      }
+      cacheHitPct.textContent = `${rate} %`;
+      cacheHitsCount.textContent = `${hits} hits`;
+      cacheMissesCount.textContent = `${misses} misses`;
+      cacheEvictionsCount.textContent = `${evicts} evictions`;
     }
 
-    // Initialize with saved or default benchmark metrics
-    try {
-      const savedMetrics = JSON.parse(localStorage.getItem('moe-latest-metrics'));
-      if (savedMetrics && savedMetrics.total_ms) {
-        updateMetricsDashboard(savedMetrics, 'Lượt Chạy Gần Nhất');
-      } else {
-        updateMetricsDashboard(DEFAULT_BENCHMARK_METRICS, 'Baseline Testbed B');
-      }
-    } catch (_) {
-      updateMetricsDashboard(DEFAULT_BENCHMARK_METRICS, 'Baseline Testbed B');
-    }
+    updateMetrics(BASELINE_METRICS, 'BASELINE TESTBED B');
 
-    // Submit handler with live streaming & active neuron pulsing
+    // Chat Submission Handler
     chatForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const prompt = chatInput.value.trim();
       if (!prompt || controller) return;
 
       history.push({ role: 'user', content: prompt });
-      appendBubble('user', prompt);
+      appendMessageCard('user', prompt);
       chatInput.value = '';
 
       const assistantMsg = { role: 'assistant', content: '' };
-      const bubbleEl = appendBubble('assistant', '');
+      const cardEl = appendMessageCard('assistant', '');
+      const bodyEl = cardEl.querySelector('.msg-body');
+
       controller = new AbortController();
-      setBusy(true);
+      setEngineBusy(true);
 
       const startTime = performance.now();
       let firstTokenTime = null;
       let tokenCount = 0;
 
-      // Live Timer updating UI in real-time
       liveTimerInterval = setInterval(() => {
         const elapsed = (performance.now() - startTime) / 1000;
-        totalWallText.textContent = `Đang suy luận: ${elapsed.toFixed(1)} s`;
+        metricTotal.textContent = `${elapsed.toFixed(1)} s...`;
         if (!firstTokenTime) {
           metricTtft.textContent = `${elapsed.toFixed(1)} s...`;
         }
         if (tokenCount > 0 && firstTokenTime) {
           const genDuration = (performance.now() - (startTime + firstTokenTime)) / 1000;
           const liveTokS = genDuration > 0.05 ? (tokenCount / genDuration).toFixed(1) : '...';
-          metricToks.textContent = `${liveTokS} tok/s (${tokenCount} tok)`;
+          metricToks.textContent = `${liveTokS} tok/s`;
+          metricTokenCount.textContent = `${tokenCount} tokens generated`;
         }
       }, 100);
 
       try {
-        const response = await fetch('/v1/chat/completions', {
+        const res = await fetch('/v1/chat/completions', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           signal: controller.signal,
@@ -1368,8 +1875,8 @@
           }),
         });
 
-        if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
-        const reader = response.body.getReader();
+        if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+        const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '', done = false;
 
@@ -1389,14 +1896,14 @@
             if (delta) {
               if (firstTokenTime === null) {
                 firstTokenTime = performance.now() - startTime;
-                metricTtft.textContent = `${(firstTokenTime / 1000).toFixed(2)} s ✓`;
+                metricTtft.textContent = `${(firstTokenTime / 1000).toFixed(2)} s`;
               }
               tokenCount++;
               assistantMsg.content += delta;
-              bubbleEl.textContent = assistantMsg.content;
-              bubbleEl.scrollIntoView({ block: 'end' });
+              bodyEl.textContent = assistantMsg.content;
+              cardEl.scrollIntoView({ block: 'end' });
 
-              // Flash green pulse on active decode step
+              // Illuminate active experts on token decode
               for (let r = 0; r < ROWS; r += 2) {
                 const randC = Math.floor(Math.random() * COLS);
                 pulseGrid[r * COLS + randC] = 1.0;
@@ -1406,39 +1913,50 @@
 
             if (event.metrics) {
               clearInterval(liveTimerInterval);
-              updateMetricsDashboard(event.metrics, 'Lượt Vừa Hoàn Tất');
+              updateMetrics(event.metrics, 'LIVE INFERENCE RESULT');
               localStorage.setItem('moe-latest-metrics', JSON.stringify(event.metrics));
-              appendBubble('assistant', assistantMsg.content, event.metrics);
-              bubbleEl.remove(); // Replace temporary bubble with card with metrics
+              cardEl.remove();
+              appendMessageCard('assistant', assistantMsg.content, event.metrics);
             }
           }
         }
+
         history.push(assistantMsg);
         localStorage.setItem('moe-history', JSON.stringify(history));
-        updateExperts();
+        updateContextMeter();
+        fetchTelemetry();
       } catch (err) {
         if (err.name === 'AbortError') {
-          bubbleEl.textContent = assistantMsg.content || '(Đã dừng theo yêu cầu)';
+          bodyEl.textContent = assistantMsg.content || '(Aborted by user)';
         } else {
-          bubbleEl.textContent = `Lỗi: ${err.message}`;
-          bubbleEl.style.borderColor = '#ef4444';
-          bubbleEl.style.color = '#fca5a5';
+          let errText = err.message || '';
+          if (errText.includes('exceeds context limit') || errText.includes('context limit')) {
+            errText = '⚠️ [Vượt quá Context Window] Lịch sử hội thoại + Max Tokens vượt quá trần 512 tokens của model! Hãy bấm nút "CLEAR CHAT" trên thanh công cụ hoặc giảm "Max New Tokens" xuống 32/64 để tiếp tục.';
+            showToast('Lỗi: Vượt quá Context Window (512 tokens)!', 'warn');
+          }
+          bodyEl.innerHTML = `<span style="color:#ef4444; font-weight:600;">${errText}</span>`;
+          cardEl.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         }
       } finally {
         clearInterval(liveTimerInterval);
         controller = null;
-        setBusy(false);
+        setEngineBusy(false);
+        updateContextMeter();
         chatInput.focus();
       }
     });
 
     btnStop.addEventListener('click', () => controller?.abort());
-    btnClear.addEventListener('click', () => {
+    btnClearSession.addEventListener('click', () => {
       history = [];
-      sessionId = newSession();
+      sessionId = genSessionId();
       localStorage.setItem('moe-session-id', sessionId);
       localStorage.removeItem('moe-history');
+      sessionDisplay.textContent = sessionId;
       messagesContainer.innerHTML = '';
+      chatInput.value = '';
+      updateContextMeter();
+      showToast('✓ Đã xóa toàn bộ lịch sử chat & reset token ngữ cảnh.');
       chatInput.focus();
     });
 

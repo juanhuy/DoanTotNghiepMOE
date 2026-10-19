@@ -90,6 +90,28 @@ impl Int8Expert {
         self.weights.len() + self.scales.len() * 4
     }
 
+    pub fn from_raw(
+        hidden: usize,
+        intermediate: usize,
+        weights: Vec<u8>,
+        scales: Vec<f32>,
+    ) -> Self {
+        Self {
+            hidden,
+            intermediate,
+            weights,
+            scales,
+        }
+    }
+
+    pub fn weights(&self) -> &[u8] {
+        &self.weights
+    }
+
+    pub fn scales(&self) -> &[f32] {
+        &self.scales
+    }
+
     /// Uses row scales during matvec; never expands the expert to an f32 matrix.
     pub fn forward(&self, input: &[f32]) -> io::Result<Vec<f32>> {
         let mut scratch = ExpertScratch::new(self.hidden, self.intermediate);
@@ -121,15 +143,12 @@ impl Int8Expert {
             input,
             &mut scratch.up,
         );
-        finite(&scratch.gate)?;
-        finite(&scratch.up)?;
         scratch
             .activated
             .iter_mut()
             .zip(&scratch.gate)
             .zip(&scratch.up)
             .for_each(|((target, g), u)| *target = g / (1.0 + (-g).exp()) * u);
-        finite(&scratch.activated)?;
         matvec_into(
             &self.weights[2 * n..],
             &self.scales[2 * self.intermediate..],

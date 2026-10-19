@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "prompt": "What is 2 + 2?",
+  "max_tokens": 16,
+  "cache_bytes_per_layer": 134217728,
+  "context_limit": 512,
+  "dense_budget_bytes": 3221225472,
+  "logical_cpus": 12,
+  "load_ms": 8021.6866150000005,
+  "runs": [
+    {
+      "index": 0,
+      "cache_state": "engine-cold",
+      "response": {
+        "text": "\nThe result of 2 + 2 is 4. This is a basic arithmetic operation",
+        "token_ids": [
+          187,
+          510,
+          906,
+          273,
+          374,
+          559,
+          374,
+          310,
+          577,
+          15,
+          831,
+          310,
+          247,
+          5044,
+          27844,
+          4254
+        ],
+        "prompt_tokens": 22,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 1.528681,
+          "prefill_ms": 11775.513072000002,
+          "time_to_first_token_ms": 11777.159001,
+          "decode_ms": 6403.87421,
+          "total_ms": 18181.077596000003,
+          "decode_tokens_per_second": 2.3423320802548995,
+          "attention_ms": 438.950832,
+          "expert_compute_ms": 2411.156096,
+          "lm_head_ms": 44.930957,
+          "expert_io_ms": 12796.148717,
+          "expert_cache_hits": 3497,
+          "expert_cache_misses": 1239,
+          "expert_cache_evictions": 538,
+          "expert_bytes_read": 9354526720,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9699328,
+          "cached_prompt_tokens": 0
+        }
+      }
+    },
+    {
+      "index": 1,
+      "cache_state": "engine-warm",
+      "response": {
+        "text": "\nThe result of 2 + 2 is 4. This is a basic arithmetic operation",
+        "token_ids": [
+          187,
+          510,
+          906,
+          273,
+          374,
+          559,
+          374,
+          310,
+          577,
+          15,
+          831,
+          310,
+          247,
+          5044,
+          27844,
+          4254
+        ],
+        "prompt_tokens": 22,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 0.10846700000000001,
+          "prefill_ms": 2790.764993,
+          "time_to_first_token_ms": 2790.893183,
+          "decode_ms": 3649.565318,
+          "total_ms": 6440.477535,
+          "decode_tokens_per_second": 4.110078514287328,
+          "attention_ms": 373.827946,
+          "expert_compute_ms": 2368.2898250000003,
+          "lm_head_ms": 44.800009,
+          "expert_io_ms": 1237.76436,
+          "expert_cache_hits": 3852,
+          "expert_cache_misses": 884,
+          "expert_cache_evictions": 252,
+          "expert_bytes_read": 7052165120,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9699328,
+          "cached_prompt_tokens": 0
+        }
+      }
+    },
+    {
+      "index": 2,
+      "cache_state": "engine-warm",
+      "response": {
+        "text": "\nThe result of 2 + 2 is 4. This is a basic arithmetic operation",
+        "token_ids": [
+          187,
+          510,
+          906,
+          273,
+          374,
+          559,
+          374,
+          310,
+          577,
+          15,
+          831,
+          310,
+          247,
+          5044,
+          27844,
+          4254
+        ],
+        "prompt_tokens": 22,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 0.071134,
+          "prefill_ms": 2699.8230200000003,
+          "time_to_first_token_ms": 2699.9083539999997,
+          "decode_ms": 3690.259434,
+          "total_ms": 6390.187904,
+          "decode_tokens_per_second": 4.064754868397147,
+          "attention_ms": 361.931471,
+          "expert_compute_ms": 2353.989422,
+          "lm_head_ms": 44.823861,
+          "expert_io_ms": 1209.385765,
+          "expert_cache_hits": 3873,
+          "expert_cache_misses": 863,
+          "expert_cache_evictions": 180,
+          "expert_bytes_read": 6869237760,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9699328,
+          "cached_prompt_tokens": 0
+        }
+      }
+    }
+  ],
+  "notes": [
+    "engine-cold means the in-process expert cache starts empty",
+    "the operating-system page cache is not cleared or measured",
+    "decode_tokens_per_second counts model steps after the first sampled token"
+  ]
+}
