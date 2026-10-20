@@ -9,6 +9,7 @@ use crate::{
     safetensors::TensorIndex,
 };
 use serde::{Deserialize, Serialize};
+use rayon::prelude::*;
 use std::{
     collections::{HashMap, VecDeque},
     fs, io,
@@ -1177,19 +1178,114 @@ impl OlmoeModel {
             } else {
                 1.0
             };
-            let (mut preloaded, prefetch_io) = Self::prefetch_missing_experts(
-                id,
-                top_experts,
-                d,
-                intermediate_size,
-                index,
-                layer,
-                gpu_dense.as_ref(),
-                gpu_tier.is_enabled(),
-            );
+
+            // Hit-First Decoupled Compute-I/O Scheduling:
+            // Phân loại các expert thành 2 nhóm: Hit (nằm sẵn trong L1 VRAM / L2 RAM) và Miss (cần nạp SSD).
+            let mut hit_ids = Vec::with_capacity(top_experts.len());
+            let mut miss_ids = Vec::with_capacity(top_experts.len());
+            for &eid in top_experts.iter() {
+                let is_hit = layer.cache.iter().any(|entry| entry.id == eid)
+                    || gpu_dense
+                        .as_ref()
+                        .is_some_and(|s| gpu_tier.is_enabled() && s.expert_cache.contains(id, eid));
+                if is_hit {
+                    hit_ids.push(eid);
+                } else {
+                    miss_ids.push(eid);
+                }
+            }
+
+            // Nếu vừa có Hit vừa có Miss:
+            // Kích hoạt Rayon I/O bất đồng bộ nạp Miss từ SSD, trong khi Main Thread lập tức tính toán các Hit!
+            // Thời gian I/O của Miss được chồng lấn hoàn toàn (overlapped) vào thời gian tính toán của Hit!
+            let (mut preloaded, prefetch_io) = if !miss_ids.is_empty() && !hit_ids.is_empty() {
+                let (prefetch_res, ()) = rayon::join(
+                    || {
+                        let started = Instant::now();
+                        let loaded: HashMap<usize, Int8Expert> = miss_ids
+                            .par_iter()
+                            .filter_map(|&eid| {
+                                Int8Expert::load(index, id, eid, d, intermediate_size, 256 * 1024 * 1024)
+                                    .ok()
+                                    .map(|exp| (eid, exp))
+                            })
+                            .collect();
+                        (loaded, started.elapsed())
+                    },
+                    || {
+                        for &expert_id in &hit_ids {
+                            layer.clock = layer.clock.wrapping_add(1);
+                            if layer.clock % 65_536 == 0 {
+                                layer.heat.iter_mut().for_each(|heat| *heat /= 2);
+                            }
+                            layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
+                            let mut empty_map = HashMap::new();
+                            if let Ok((expert, l2_hit, hits_in_cache, is_protected)) =
+                                Self::acquire_expert_tiered(
+                                    id,
+                                    expert_id,
+                                    d,
+                                    intermediate_size,
+                                    weight_count,
+                                    scale_count,
+                                    index,
+                                    layer,
+                                    gpu_dense,
+                                    gpu_tier.is_enabled(),
+                                    profile,
+                                    1,
+                                    &mut empty_map,
+                                )
+                            {
+                                let expert_started = Instant::now();
+                                if let Ok(result) = expert.forward_reuse(&scratch.hidden, &mut scratch.expert) {
+                                    profile.expert_compute += expert_started.elapsed();
+                                    for (a, b) in scratch.x.iter_mut().zip(result.iter().copied()) {
+                                        *a += scratch.router[expert_id] / normalizer * b;
+                                    }
+                                }
+                                Self::admit_expert_l2(
+                                    layer,
+                                    expert_id,
+                                    expert,
+                                    l2_hit,
+                                    hits_in_cache,
+                                    is_protected,
+                                    cache_bytes_per_layer,
+                                    profile,
+                                );
+                            }
+                        }
+                    },
+                );
+                prefetch_res
+            } else if !miss_ids.is_empty() {
+                let started = Instant::now();
+                let loaded: HashMap<usize, Int8Expert> = miss_ids
+                    .par_iter()
+                    .filter_map(|&eid| {
+                        Int8Expert::load(index, id, eid, d, intermediate_size, 256 * 1024 * 1024)
+                            .ok()
+                            .map(|exp| (eid, exp))
+                    })
+                    .collect();
+                (loaded, started.elapsed())
+            } else {
+                (HashMap::new(), Duration::ZERO)
+            };
             profile.expert_io += prefetch_io;
 
-            for &expert_id in top_experts.iter() {
+            // Xử lý các phần tử còn lại cần tính toán
+            let remaining_to_compute = if !hit_ids.is_empty() && !miss_ids.is_empty() {
+                // Nhóm Hit đã được tính toán trong rayon::join song song với I/O, chỉ còn nhóm Miss cần tính
+                &miss_ids[..]
+            } else if hit_ids.is_empty() {
+                &miss_ids[..]
+            } else {
+                &hit_ids[..]
+            };
+
+            for &expert_id in remaining_to_compute {
                 check()?;
                 layer.clock = layer.clock.wrapping_add(1);
                 if layer.clock % 65_536 == 0 {
