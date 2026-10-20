@@ -90,7 +90,13 @@ async fn reset_cache(
                 "message": "All tiers cleared: L1 VRAM, L2 RAM & KV session caches reset to 0 (Cold Start ready)"
             }))
         })
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::WouldBlock {
+                StatusCode::TOO_MANY_REQUESTS
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        })
 }
 
 async fn get_experts(
@@ -109,6 +115,13 @@ async fn toggle_gpu(
     tokio::task::spawn_blocking(move || state.engine.toggle_gpu())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::WouldBlock {
+                StatusCode::TOO_MANY_REQUESTS
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        })?
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
 }
@@ -145,10 +158,13 @@ async fn main() -> io::Result<()> {
     }
     let directory =
         std::env::var("MOE_MODEL_DIR").unwrap_or_else(|_| "./models/olmoe-1b-7b-int8".into());
-    let cache_bytes = std::env::var("MOE_CACHE_BYTES_PER_LAYER")
-        .unwrap_or_else(|_| "134217728".into())
-        .parse::<usize>()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cache byte budget"))?;
+    let cache_bytes = if let Ok(custom) = std::env::var("MOE_CACHE_BYTES_PER_LAYER") {
+        custom
+            .parse::<usize>()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cache byte budget"))?
+    } else {
+        detect_adaptive_cache_bytes()
+    };
     let context = std::env::var("MOE_CONTEXT")
         .unwrap_or_else(|_| "512".into())
         .parse::<usize>()
@@ -309,6 +325,49 @@ impl futures_core::Stream for SseEvents {
             }
         };
         Poll::Ready(Some(Ok(Event::default().data(value.to_string()))))
+    }
+}
+
+/// Tự động phát hiện dung lượng RAM khả dụng của hệ thống để phân bổ Expert Cache tối ưu
+fn detect_adaptive_cache_bytes() -> usize {
+    const DEFAULT_CACHE_BYTES: usize = 128 * 1024 * 1024;
+    let available_kb = (|| -> Option<usize> {
+        let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+        for line in content.lines() {
+            if line.starts_with("MemAvailable:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    return parts[1].parse::<usize>().ok();
+                }
+            }
+        }
+        None
+    })();
+
+    if let Some(kb) = available_kb {
+        let avail_mib = kb / 1024;
+        let cache_bytes = if avail_mib >= 8192 {
+            256 * 1024 * 1024
+        } else if avail_mib >= 5120 {
+            192 * 1024 * 1024
+        } else if avail_mib >= 3072 {
+            128 * 1024 * 1024
+        } else {
+            64 * 1024 * 1024
+        };
+        tracing::info!(
+            available_ram_mib = avail_mib,
+            cache_mib_per_layer = cache_bytes / (1024 * 1024),
+            total_cache_gib = (cache_bytes * 16) as f64 / (1024.0 * 1024.0 * 1024.0),
+            "Adaptive Cache Sizing: Tự động điều chỉnh kích thước bộ đệm theo RAM khả dụng"
+        );
+        cache_bytes
+    } else {
+        tracing::info!(
+            cache_mib_per_layer = DEFAULT_CACHE_BYTES / (1024 * 1024),
+            "Không phát hiện được /proc/meminfo, sử dụng mức đệm mặc định 128 MiB/layer"
+        );
+        DEFAULT_CACHE_BYTES
     }
 }
 

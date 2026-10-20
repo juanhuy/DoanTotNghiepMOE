@@ -5,12 +5,13 @@ use std::{
     io,
     path::Path,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const MAX_MESSAGES: usize = 128;
 const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 const DEFAULT_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_MAX_STREAM_DURATION: Duration = Duration::from_secs(300);
 
 pub type InferenceResponse = Generation;
 #[derive(Clone, Deserialize, Serialize)]
@@ -130,29 +131,41 @@ impl InferenceEngine {
             }
         }
     }
-    pub fn toggle_gpu(&self) -> Option<crate::gpu::GpuTierStatus> {
+    pub fn toggle_gpu(&self) -> io::Result<Option<crate::gpu::GpuTierStatus>> {
         match &self.model {
-            Model::Tiny(_) => None,
+            Model::Tiny(_) => Ok(None),
             Model::Olmoe(model) => {
-                let mut model = model.lock().ok()?;
+                let mut model = model.try_lock().map_err(|e| match e {
+                    std::sync::TryLockError::WouldBlock => io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "model is busy generating; retry after current request completes",
+                    ),
+                    std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
+                })?;
                 let status = model.toggle_gpu();
                 if let Ok(mut cache) = self.cached_status.write() {
                     *cache = Some(model.expert_status());
                 }
-                Some(status)
+                Ok(Some(status))
             }
         }
     }
-    pub fn set_gpu_enabled(&self, enabled: bool) -> Option<crate::gpu::GpuTierStatus> {
+    pub fn set_gpu_enabled(&self, enabled: bool) -> io::Result<Option<crate::gpu::GpuTierStatus>> {
         match &self.model {
-            Model::Tiny(_) => None,
+            Model::Tiny(_) => Ok(None),
             Model::Olmoe(model) => {
-                let mut model = model.lock().ok()?;
+                let mut model = model.try_lock().map_err(|e| match e {
+                    std::sync::TryLockError::WouldBlock => io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "model is busy generating; retry after current request completes",
+                    ),
+                    std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
+                })?;
                 let status = model.set_gpu_enabled(enabled);
                 if let Ok(mut cache) = self.cached_status.write() {
                     *cache = Some(model.expert_status());
                 }
-                Some(status)
+                Ok(Some(status))
             }
         }
     }
@@ -161,9 +174,13 @@ impl InferenceEngine {
         match &self.model {
             Model::Tiny(_) => Ok(()),
             Model::Olmoe(model) => {
-                let mut model = model
-                    .lock()
-                    .map_err(|_| io::Error::other("model lock poisoned"))?;
+                let mut model = model.try_lock().map_err(|e| match e {
+                    std::sync::TryLockError::WouldBlock => io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "model is busy generating; retry after current request completes",
+                    ),
+                    std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
+                })?;
                 model.reset_cache();
                 if let Ok(mut cache) = self.cached_status.write() {
                     *cache = Some(model.expert_status());
@@ -360,6 +377,7 @@ impl InferenceEngine {
             let _permit = permit;
             let mut ready_tx = Some(ready_tx);
             let cancelled = || io::Error::new(io::ErrorKind::Interrupted, "client disconnected");
+            let overall_deadline = Instant::now() + DEFAULT_MAX_STREAM_DURATION;
             let result = (|| {
                 let mut model = model
                     .lock()
@@ -372,6 +390,11 @@ impl InferenceEngine {
                     &|| {
                         if tx.is_closed() {
                             Err(cancelled())
+                        } else if Instant::now() > overall_deadline {
+                            Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "stream exceeded maximum allowed request duration",
+                            ))
                         } else {
                             Ok(())
                         }
@@ -384,10 +407,19 @@ impl InferenceEngine {
                             .map_err(|_| cancelled())
                     },
                     Some(&mut |delta| {
+                        let now = Instant::now();
+                        let remaining = overall_deadline.saturating_duration_since(now);
+                        if remaining.is_zero() {
+                            return Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "stream exceeded maximum allowed request duration",
+                            ));
+                        }
+                        let timeout = send_timeout.min(remaining);
                         blocking_stream_send(
                             &runtime,
                             &tx,
-                            send_timeout,
+                            timeout,
                             Ok(ChatEvent::Delta(delta.to_owned())),
                         )
                     }),
@@ -395,10 +427,13 @@ impl InferenceEngine {
             })();
             match result {
                 Ok(result) => {
+                    let now = Instant::now();
+                    let remaining = overall_deadline.saturating_duration_since(now);
+                    let timeout = send_timeout.min(remaining);
                     let _ = blocking_stream_send(
                         &runtime,
                         &tx,
-                        send_timeout,
+                        timeout,
                         Ok(ChatEvent::Finished(result)),
                     );
                 }
@@ -406,7 +441,10 @@ impl InferenceEngine {
                     if let Some(ready_tx) = ready_tx {
                         let _ = ready_tx.send(Err(error));
                     } else {
-                        let _ = blocking_stream_send(&runtime, &tx, send_timeout, Err(error));
+                        let now = Instant::now();
+                        let remaining = overall_deadline.saturating_duration_since(now);
+                        let timeout = send_timeout.min(remaining);
+                        let _ = blocking_stream_send(&runtime, &tx, timeout, Err(error));
                     }
                 }
             }

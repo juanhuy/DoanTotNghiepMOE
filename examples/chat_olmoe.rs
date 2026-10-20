@@ -6,9 +6,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: chat_olmoe MODEL_DIRECTORY PROMPT [MAX_TOKENS]".into());
     }
     let max = args.get(2).map(|v| v.parse()).transpose()?.unwrap_or(16);
+    let cache_bytes = std::env::var("MOE_CACHE_BYTES_PER_LAYER")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(128 * 1024 * 1024);
     let start = std::time::Instant::now();
     let engine =
-        InferenceEngine::load_with_limits(&args[0], 128 * 1024 * 1024, 512, 3 * 1024 * 1024 * 1024)
+        InferenceEngine::load_with_limits(&args[0], cache_bytes, 512, 3 * 1024 * 1024 * 1024)
             .await?;
     eprintln!(
         "Loaded {} in {:.2}s",

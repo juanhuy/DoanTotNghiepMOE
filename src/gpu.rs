@@ -16,6 +16,7 @@ pub type CublasStatus = c_int;
 
 const CUDA_SUCCESS: CUresult = 0;
 const CUBLAS_STATUS_SUCCESS: CublasStatus = 0;
+const CUBLAS_OP_N: c_int = 0;
 const CUBLAS_OP_T: c_int = 1;
 
 /// Thông tin chi tiết phần cứng GPU được nhận diện
@@ -229,6 +230,22 @@ pub(crate) struct CudaCublasApi {
         y: CUdeviceptr,
         incy: c_int,
     ) -> CublasStatus,
+    pub cublas_sgemm: unsafe extern "C" fn(
+        handle: CublasHandle,
+        transa: c_int,
+        transb: c_int,
+        m: c_int,
+        n: c_int,
+        k: c_int,
+        alpha: *const f32,
+        a: CUdeviceptr,
+        lda: c_int,
+        b: CUdeviceptr,
+        ldb: c_int,
+        beta: *const f32,
+        c: CUdeviceptr,
+        ldc: c_int,
+    ) -> CublasStatus,
 }
 
 unsafe impl Send for CudaCublasApi {}
@@ -302,11 +319,32 @@ impl CudaCublasApi {
                 ) -> CublasStatus
             );
 
+            let cublas_sgemm = get_sym!(
+                b"cublasSgemm_v2\0",
+                unsafe extern "C" fn(
+                    CublasHandle,
+                    c_int,
+                    c_int,
+                    c_int,
+                    c_int,
+                    c_int,
+                    *const f32,
+                    CUdeviceptr,
+                    c_int,
+                    CUdeviceptr,
+                    c_int,
+                    *const f32,
+                    CUdeviceptr,
+                    c_int,
+                ) -> CublasStatus
+            );
+
             Some(Self {
                 _handle: handle,
                 cublas_create,
                 cublas_destroy,
                 cublas_sgemv,
+                cublas_sgemm,
             })
         }
     }
@@ -470,6 +508,46 @@ impl GpuComputeEngine {
             .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Tự động mở rộng kích thước d_scratch_in và d_scratch_out khi batch size lớn
+    fn ensure_scratch_caps(
+        &self,
+        state: &mut GpuExecutionState,
+        in_bytes: usize,
+        out_bytes: usize,
+    ) -> Result<(), String> {
+        unsafe {
+            if in_bytes > state.d_scratch_in_cap {
+                let new_cap = in_bytes.next_power_of_two().max(8192 * std::mem::size_of::<f32>());
+                let mut new_ptr = 0;
+                if (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap) != CUDA_SUCCESS {
+                    self.circuit_broken
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    return Err(format!("Lỗi cuMemAlloc mở rộng scratch_in: {} bytes", new_cap));
+                }
+                if state.d_scratch_in != 0 {
+                    let _ = (self.driver.cu_mem_free)(state.d_scratch_in);
+                }
+                state.d_scratch_in = new_ptr;
+                state.d_scratch_in_cap = new_cap;
+            }
+            if out_bytes > state.d_scratch_out_cap {
+                let new_cap = out_bytes.next_power_of_two().max(65536 * std::mem::size_of::<f32>());
+                let mut new_ptr = 0;
+                if (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap) != CUDA_SUCCESS {
+                    self.circuit_broken
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    return Err(format!("Lỗi cuMemAlloc mở rộng scratch_out: {} bytes", new_cap));
+                }
+                if state.d_scratch_out != 0 {
+                    let _ = (self.driver.cu_mem_free)(state.d_scratch_out);
+                }
+                state.d_scratch_out = new_ptr;
+                state.d_scratch_out_cap = new_cap;
+            }
+            Ok(())
+        }
+    }
+
     /// Thực thi phép nhân ma trận - vector y = A * x trên GPU bằng cuBLAS (Thread-safe)
     pub fn gemv(
         &self,
@@ -494,14 +572,12 @@ impl GpuComputeEngine {
         }
         let in_bytes = std::mem::size_of_val(input);
         let out_bytes = std::mem::size_of_val(output);
-        let state = self
+        let mut state = self
             .state
             .lock()
             .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
 
-        if in_bytes > state.d_scratch_in_cap || out_bytes > state.d_scratch_out_cap {
-            return Err("Kích thước vector vượt quá scratch buffer GPU".into());
-        }
+        self.ensure_scratch_caps(&mut state, in_bytes, out_bytes)?;
         unsafe {
             let _ = (self.driver.cu_ctx_set_current)(self.ctx);
             if (self.driver.cu_memcpy_h_to_d)(
@@ -548,6 +624,12 @@ impl GpuComputeEngine {
                 return Err("Lỗi cuMemcpyDtoH scratch_out".into());
             }
 
+            if crate::backend::finite(output).is_err() {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("cuBLAS GEMV output chứa giá trị không hợp lệ (NaN/Inf)".into());
+            }
+
             Ok(())
         }
     }
@@ -589,14 +671,12 @@ impl GpuComputeEngine {
         let in_bytes = std::mem::size_of_val(hidden);
         let total_out_bytes = total_out_len * std::mem::size_of::<f32>();
 
-        let state = self
+        let mut state = self
             .state
             .lock()
             .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
 
-        if in_bytes > state.d_scratch_in_cap || total_out_bytes > state.d_scratch_out_cap {
-            return Err("Kích thước QKV vượt quá scratch buffer GPU".into());
-        }
+        self.ensure_scratch_caps(&mut state, in_bytes, total_out_bytes)?;
 
         unsafe {
             let _ = (self.driver.cu_ctx_set_current)(self.ctx);
@@ -696,6 +776,299 @@ impl GpuComputeEngine {
             query.copy_from_slice(&out_buf[..q.rows]);
             key.copy_from_slice(&out_buf[q.rows..q.rows + k.rows]);
             value.copy_from_slice(&out_buf[q.rows + k.rows..total_out_len]);
+
+            if crate::backend::finite(query).is_err()
+                || crate::backend::finite(key).is_err()
+                || crate::backend::finite(value).is_err()
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("cuBLAS GEMV QKV output chứa giá trị không hợp lệ (NaN/Inf)".into());
+            }
+
+            Ok(())
+        }
+    }
+
+    /// Thực thi phép nhân ma trận - ma trận Y = X * W^T trên GPU bằng cuBLAS SGEMM (Row-major)
+    /// - `matrix`: Ma trận trọng số W (kích thước rows x columns = M x K)
+    /// - `batch_input`: Dữ liệu đầu vào X (kích thước batch_size x columns = B x K)
+    /// - `batch_output`: Dữ liệu đầu ra Y (kích thước batch_size x rows = B x M)
+    /// - `batch_size`: Số lượng tokens (B)
+    pub fn gemm(
+        &self,
+        matrix: &GpuMatrix,
+        batch_input: &[f32],
+        batch_output: &mut [f32],
+        batch_size: usize,
+    ) -> Result<(), String> {
+        if self
+            .circuit_broken
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err("GPU Circuit Breaker đang ngắt do lỗi trước đó".into());
+        }
+        if batch_size == 0 || matrix.columns == 0 || matrix.rows == 0 {
+            return Ok(());
+        }
+        if batch_input.len() != batch_size * matrix.columns {
+            return Err("Kích thước batch_input không khớp batch_size * matrix.columns".into());
+        }
+        if batch_output.len() != batch_size * matrix.rows {
+            return Err("Kích thước batch_output không khớp batch_size * matrix.rows".into());
+        }
+
+        let in_bytes = std::mem::size_of_val(batch_input);
+        let out_bytes = std::mem::size_of_val(batch_output);
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
+
+        self.ensure_scratch_caps(&mut state, in_bytes, out_bytes)?;
+
+        unsafe {
+            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
+            if (self.driver.cu_memcpy_h_to_d)(
+                state.d_scratch_in,
+                batch_input.as_ptr() as *const c_void,
+                in_bytes,
+            ) != CUDA_SUCCESS
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("Lỗi cuMemcpyHtoD scratch_in GEMM".into());
+            }
+
+            let alpha = 1.0f32;
+            let beta = 0.0f32;
+            let status = (self.cublas.cublas_sgemm)(
+                state.handle,
+                CUBLAS_OP_T,
+                CUBLAS_OP_N,
+                matrix.rows as c_int,
+                batch_size as c_int,
+                matrix.columns as c_int,
+                &alpha,
+                matrix.d_ptr,
+                matrix.columns as c_int,
+                state.d_scratch_in,
+                matrix.columns as c_int,
+                &beta,
+                state.d_scratch_out,
+                matrix.rows as c_int,
+            );
+            if status != CUBLAS_STATUS_SUCCESS {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(format!("Lỗi cublasSgemm: {}", status));
+            }
+
+            if (self.driver.cu_memcpy_d_to_h)(
+                batch_output.as_mut_ptr() as *mut c_void,
+                state.d_scratch_out,
+                out_bytes,
+            ) != CUDA_SUCCESS
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("Lỗi cuMemcpyDtoH scratch_out GEMM".into());
+            }
+
+            if crate::backend::finite(batch_output).is_err() {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("cuBLAS GEMM output chứa giá trị không hợp lệ (NaN/Inf)".into());
+            }
+
+            Ok(())
+        }
+    }
+
+    /// Thực thi phép nhân ma trận Attention (Q, K, V) cho cả batch đầu vào:
+    /// 1. Copy toàn bộ `batch_hidden` (kích thước B x D) lên GPU trong 1 lần H2D.
+    /// 2. Tuần tự thực thi 3 kernel cuBLAS SGEMM cho Q, K, V trên cùng CUDA stream.
+    /// 3. Copy các mảng kết quả về Host qua D2H.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gemm_qkv(
+        &self,
+        q: &GpuMatrix,
+        k: &GpuMatrix,
+        v: &GpuMatrix,
+        batch_hidden: &[f32],
+        batch_size: usize,
+        all_q: &mut [f32],
+        all_k: &mut [f32],
+        all_v: &mut [f32],
+    ) -> Result<(), String> {
+        if self
+            .circuit_broken
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err("GPU Circuit Breaker đang ngắt do lỗi trước đó".into());
+        }
+        if batch_size == 0 {
+            return Ok(());
+        }
+        let d = q.columns;
+        if k.columns != d || v.columns != d {
+            return Err("Kích thước số cột của ma trận Q/K/V không đồng nhất".into());
+        }
+        if batch_hidden.len() != batch_size * d {
+            return Err("Kích thước batch_hidden không khớp batch_size * d".into());
+        }
+        if all_q.len() != batch_size * q.rows
+            || all_k.len() != batch_size * k.rows
+            || all_v.len() != batch_size * v.rows
+        {
+            return Err("Kích thước all_q / all_k / all_v không khớp batch_size * rows".into());
+        }
+
+        let q_floats = batch_size * q.rows;
+        let k_floats = batch_size * k.rows;
+        let v_floats = batch_size * v.rows;
+        let total_out_floats = q_floats + k_floats + v_floats;
+        let in_bytes = std::mem::size_of_val(batch_hidden);
+        let total_out_bytes = total_out_floats * std::mem::size_of::<f32>();
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
+
+        self.ensure_scratch_caps(&mut state, in_bytes, total_out_bytes)?;
+
+        unsafe {
+            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
+            // 1. Copy H2D batch_hidden một lần duy nhất
+            if (self.driver.cu_memcpy_h_to_d)(
+                state.d_scratch_in,
+                batch_hidden.as_ptr() as *const c_void,
+                in_bytes,
+            ) != CUDA_SUCCESS
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("Lỗi cuMemcpyHtoD scratch_in QKV GEMM".into());
+            }
+
+            let alpha = 1.0f32;
+            let beta = 0.0f32;
+
+            let d_out_q = state.d_scratch_out;
+            let d_out_k = state.d_scratch_out + (q_floats * std::mem::size_of::<f32>()) as u64;
+            let d_out_v =
+                state.d_scratch_out + ((q_floats + k_floats) * std::mem::size_of::<f32>()) as u64;
+
+            // 2. Chạy 3 phép SGEMM trên cùng CUDA stream
+            let status_q = (self.cublas.cublas_sgemm)(
+                state.handle,
+                CUBLAS_OP_T,
+                CUBLAS_OP_N,
+                q.rows as c_int,
+                batch_size as c_int,
+                d as c_int,
+                &alpha,
+                q.d_ptr,
+                d as c_int,
+                state.d_scratch_in,
+                d as c_int,
+                &beta,
+                d_out_q,
+                q.rows as c_int,
+            );
+            if status_q != CUBLAS_STATUS_SUCCESS {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(format!("Lỗi cublasSgemm Q: {}", status_q));
+            }
+
+            let status_k = (self.cublas.cublas_sgemm)(
+                state.handle,
+                CUBLAS_OP_T,
+                CUBLAS_OP_N,
+                k.rows as c_int,
+                batch_size as c_int,
+                d as c_int,
+                &alpha,
+                k.d_ptr,
+                d as c_int,
+                state.d_scratch_in,
+                d as c_int,
+                &beta,
+                d_out_k,
+                k.rows as c_int,
+            );
+            if status_k != CUBLAS_STATUS_SUCCESS {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(format!("Lỗi cublasSgemm K: {}", status_k));
+            }
+
+            let status_v = (self.cublas.cublas_sgemm)(
+                state.handle,
+                CUBLAS_OP_T,
+                CUBLAS_OP_N,
+                v.rows as c_int,
+                batch_size as c_int,
+                d as c_int,
+                &alpha,
+                v.d_ptr,
+                d as c_int,
+                state.d_scratch_in,
+                d as c_int,
+                &beta,
+                d_out_v,
+                v.rows as c_int,
+            );
+            if status_v != CUBLAS_STATUS_SUCCESS {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(format!("Lỗi cublasSgemm V: {}", status_v));
+            }
+
+            // 3. Copy D2H các mảng kết quả
+            if (self.driver.cu_memcpy_d_to_h)(
+                all_q.as_mut_ptr() as *mut c_void,
+                d_out_q,
+                q_floats * std::mem::size_of::<f32>(),
+            ) != CUDA_SUCCESS
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("Lỗi cuMemcpyDtoH all_q GEMM".into());
+            }
+
+            if (self.driver.cu_memcpy_d_to_h)(
+                all_k.as_mut_ptr() as *mut c_void,
+                d_out_k,
+                k_floats * std::mem::size_of::<f32>(),
+            ) != CUDA_SUCCESS
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("Lỗi cuMemcpyDtoH all_k GEMM".into());
+            }
+
+            if (self.driver.cu_memcpy_d_to_h)(
+                all_v.as_mut_ptr() as *mut c_void,
+                d_out_v,
+                v_floats * std::mem::size_of::<f32>(),
+            ) != CUDA_SUCCESS
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("Lỗi cuMemcpyDtoH all_v GEMM".into());
+            }
+
+            if crate::backend::finite(all_q).is_err()
+                || crate::backend::finite(all_k).is_err()
+                || crate::backend::finite(all_v).is_err()
+            {
+                self.circuit_broken
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err("cuBLAS GEMM QKV output chứa giá trị không hợp lệ (NaN/Inf)".into());
+            }
 
             Ok(())
         }
@@ -863,6 +1236,11 @@ impl PinnedBuffer {
     /// Caller phải đảm bảo không có GPU kernel nào đang đọc/ghi vùng nhớ này đồng thời.
     pub unsafe fn as_mut_slice<T>(&mut self) -> &mut [T] {
         assert_eq!(self.len % std::mem::size_of::<T>(), 0);
+        assert_eq!(
+            (self.ptr as usize) % std::mem::align_of::<T>(),
+            0,
+            "PinnedBuffer con trỏ không căn chỉnh theo alignment của T"
+        );
         std::slice::from_raw_parts_mut(self.ptr as *mut T, self.len / std::mem::size_of::<T>())
     }
 
@@ -871,6 +1249,11 @@ impl PinnedBuffer {
     /// Caller phải đảm bảo không có GPU kernel nào đang ghi vào vùng nhớ này đồng thời.
     pub unsafe fn as_slice<T>(&self) -> &[T] {
         assert_eq!(self.len % std::mem::size_of::<T>(), 0);
+        assert_eq!(
+            (self.ptr as usize) % std::mem::align_of::<T>(),
+            0,
+            "PinnedBuffer con trỏ không căn chỉnh theo alignment của T"
+        );
         std::slice::from_raw_parts(self.ptr as *const T, self.len / std::mem::size_of::<T>())
     }
 
@@ -907,6 +1290,7 @@ pub struct GpuExpertPool {
     scale_slot_bytes: usize,
     pub max_slots: usize,
     free_slots: std::collections::VecDeque<usize>,
+    slot_in_use: Vec<bool>,
     driver: Arc<CudaDriverApi>,
     ctx: CUcontext,
 }
@@ -926,6 +1310,9 @@ impl GpuExpertPool {
         if max_slots == 0 {
             return None;
         }
+        // Đảm bảo kích thước mỗi slot căn chỉnh theo bội số 256 byte để thỏa mãn alignment phần cứng GPU
+        let weight_slot_bytes = (weight_slot_bytes + 255) & !255;
+        let scale_slot_bytes = (scale_slot_bytes + 255) & !255;
         let total_weight_bytes = max_slots * weight_slot_bytes;
         let total_scale_bytes = max_slots * scale_slot_bytes;
         unsafe {
@@ -940,6 +1327,7 @@ impl GpuExpertPool {
                 return None;
             }
             let free_slots = (0..max_slots).collect();
+            let slot_in_use = vec![false; max_slots];
             Some(Self {
                 base_weights,
                 base_scales,
@@ -947,6 +1335,7 @@ impl GpuExpertPool {
                 scale_slot_bytes,
                 max_slots,
                 free_slots,
+                slot_in_use,
                 driver: Arc::clone(&engine.driver),
                 ctx: engine.ctx,
             })
@@ -970,8 +1359,6 @@ impl GpuExpertPool {
 
     /// Upload expert lên một slot rảnh bằng DMA, trả về slot index đã dùng.
     /// Dữ liệu nguồn `weights_src` nên là pinned memory để đạt băng thông tối đa.
-    /// Upload expert lên một slot rảnh bằng DMA, trả về slot index đã dùng.
-    /// Dữ liệu nguồn `weights_src` nên là pinned memory để đạt băng thông tối đa.
     ///
     /// # Safety
     /// Caller phải đảm bảo `weights_src` hợp lệ cho việc đọc ít nhất `weight_bytes` byte,
@@ -987,16 +1374,19 @@ impl GpuExpertPool {
             return None;
         }
         let slot = self.free_slots.pop_front()?;
+        self.slot_in_use[slot] = true;
         let _ = (self.driver.cu_ctx_set_current)(self.ctx);
         if (self.driver.cu_memcpy_h_to_d)(self.weight_ptr(slot), weights_src, weight_bytes)
             != CUDA_SUCCESS
         {
+            self.slot_in_use[slot] = false;
             self.free_slots.push_front(slot);
             return None;
         }
         if (self.driver.cu_memcpy_h_to_d)(self.scale_ptr(slot), scales_src, scale_bytes)
             != CUDA_SUCCESS
         {
+            self.slot_in_use[slot] = false;
             self.free_slots.push_front(slot);
             return None;
         }
@@ -1004,8 +1394,10 @@ impl GpuExpertPool {
     }
 
     /// Trả slot về pool để tái sử dụng (không gọi cuMemFree).
+    /// Kiểm tra trạng thái slot_in_use để chống double-free và memory aliasing.
     pub fn free_slot(&mut self, slot: usize) {
-        if slot < self.max_slots {
+        if slot < self.max_slots && self.slot_in_use[slot] {
+            self.slot_in_use[slot] = false;
             self.free_slots.push_back(slot);
         }
     }
@@ -1213,9 +1605,11 @@ impl GpuExpertCache {
 }
 
 
-/// Toàn bộ cấu trúc Dense Offload và L1 Expert Cache trên VRAM
+/// Toàn bộ cấu trúc Dense Offload và L1 Expert Cache trên VRAM.
+/// Chú ý thứ tự khai báo: `engine` phải được khai báo CUỐI CÙNG để khi Drop,
+/// toàn bộ các buffer VRAM (layers, lm_head, expert_cache, expert_pool, pinned_upload_buf)
+/// được giải phóng (cuMemFree) TRƯỚC KHI CUDA Primary Context bị giải phóng trong `engine.drop()`.
 pub struct GpuDenseStorage {
-    pub engine: GpuComputeEngine,
     pub layers: Vec<LayerDenseGpu>,
     pub lm_head: GpuMatrix,
     pub total_allocated_bytes: usize,
@@ -1224,6 +1618,7 @@ pub struct GpuDenseStorage {
     pub expert_pool: Option<GpuExpertPool>,
     /// Pinned host buffer tái sử dụng cho upload expert — Sub-step 16-C
     pub pinned_upload_buf: Option<PinnedBuffer>,
+    pub engine: GpuComputeEngine,
 }
 
 impl GpuDenseStorage {
@@ -1260,7 +1655,8 @@ impl GpuDenseStorage {
 
             // Dùng PinnedBuffer nếu có để DMA transfer đạt tốc độ tối đa (16-C)
             let (weights_ptr, scales_ptr) = if let Some(pinned) = self.pinned_upload_buf.as_mut() {
-                let total_needed = weight_bytes + scale_bytes;
+                let aligned_weight_bytes = (weight_bytes + 255) & !255;
+                let total_needed = aligned_weight_bytes + scale_bytes;
                 if pinned.len >= total_needed {
                     unsafe {
                         let slice = pinned.as_mut_slice::<u8>();
@@ -1269,10 +1665,11 @@ impl GpuDenseStorage {
                             scales.as_ptr() as *const u8,
                             scale_bytes,
                         );
-                        slice[weight_bytes..weight_bytes + scale_bytes].copy_from_slice(scales_u8);
+                        slice[aligned_weight_bytes..aligned_weight_bytes + scale_bytes]
+                            .copy_from_slice(scales_u8);
                         (
                             pinned.as_ptr(),
-                            pinned.as_ptr().add(weight_bytes),
+                            pinned.as_ptr().add(aligned_weight_bytes),
                         )
                     }
                 } else {
@@ -1659,6 +2056,107 @@ mod tests {
     }
 
     #[test]
+    fn test_gpu_compute_gemm() {
+        if let Some(engine) = GpuComputeEngine::init() {
+            let m = 3;
+            let k = 4;
+            let values = vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ];
+            let matrix = crate::backend::Matrix {
+                rows: m,
+                columns: k,
+                values,
+            };
+            let gpu_matrix = GpuMatrix::from_matrix(&matrix, &engine).expect("upload failed");
+            let batch_input = vec![
+                1.0, 2.0, 3.0, 4.0, // token 0
+                2.0, 0.0, 1.0, -1.0, // token 1
+            ];
+            let mut batch_output = vec![0.0; 2 * m];
+            engine
+                .gemm(&gpu_matrix, &batch_input, &mut batch_output, 2)
+                .expect("gemm failed");
+            eprintln!("cuBLAS SGEMM result: {:?}", batch_output);
+            assert_eq!(batch_output, vec![30.0, 70.0, 110.0, 1.0, 9.0, 17.0]);
+        }
+    }
+
+    #[test]
+    fn test_gpu_compute_gemm_qkv() {
+        if let Some(engine) = GpuComputeEngine::init() {
+            let d = 4;
+            let q_rows = 3;
+            let k_rows = 2;
+            let v_rows = 2;
+            let batch_size = 2;
+
+            let q_mat = crate::backend::Matrix {
+                rows: q_rows,
+                columns: d,
+                values: vec![
+                    1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+                ],
+            };
+            let k_mat = crate::backend::Matrix {
+                rows: k_rows,
+                columns: d,
+                values: vec![0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5],
+            };
+            let v_mat = crate::backend::Matrix {
+                rows: v_rows,
+                columns: d,
+                values: vec![2.0, 1.0, 0.0, -1.0, -2.0, -3.0, 1.0, 2.0],
+            };
+
+            let q_gpu = GpuMatrix::from_matrix(&q_mat, &engine).expect("upload q failed");
+            let k_gpu = GpuMatrix::from_matrix(&k_mat, &engine).expect("upload k failed");
+            let v_gpu = GpuMatrix::from_matrix(&v_mat, &engine).expect("upload v failed");
+
+            let batch_hidden = vec![
+                1.0, 2.0, 3.0, 4.0, // token 0
+                2.0, 0.0, 1.0, -1.0, // token 1
+            ];
+
+            // 1. Tính toán riêng lẻ bằng gemm
+            let mut q_expected = vec![0.0; batch_size * q_rows];
+            let mut k_expected = vec![0.0; batch_size * k_rows];
+            let mut v_expected = vec![0.0; batch_size * v_rows];
+            engine
+                .gemm(&q_gpu, &batch_hidden, &mut q_expected, batch_size)
+                .unwrap();
+            engine
+                .gemm(&k_gpu, &batch_hidden, &mut k_expected, batch_size)
+                .unwrap();
+            engine
+                .gemm(&v_gpu, &batch_hidden, &mut v_expected, batch_size)
+                .unwrap();
+
+            // 2. Tính toán gộp qua gemm_qkv
+            let mut q_actual = vec![0.0; batch_size * q_rows];
+            let mut k_actual = vec![0.0; batch_size * k_rows];
+            let mut v_actual = vec![0.0; batch_size * v_rows];
+
+            engine
+                .gemm_qkv(
+                    &q_gpu,
+                    &k_gpu,
+                    &v_gpu,
+                    &batch_hidden,
+                    batch_size,
+                    &mut q_actual,
+                    &mut k_actual,
+                    &mut v_actual,
+                )
+                .expect("gemm_qkv failed");
+
+            assert_eq!(q_actual, q_expected);
+            assert_eq!(k_actual, k_expected);
+            assert_eq!(v_actual, v_expected);
+        }
+    }
+
+    #[test]
     fn test_gpu_expert_weights_upload_download() {
         if let Some(engine) = GpuComputeEngine::init() {
             let layer = 0;
@@ -1767,6 +2265,9 @@ mod tests {
             assert_eq!(s, dl_s);
 
             // Free 1 slot và upload lại thành công
+            pool.free_slot(slot1);
+            assert_eq!(pool.available_slots(), 1);
+            // Thử free_slot lần 2 trên cùng slot1 (chống double-free)
             pool.free_slot(slot1);
             assert_eq!(pool.available_slots(), 1);
             let slot_reused = unsafe { pool.upload(w.as_ptr() as *const c_void, weight_slot_bytes, s.as_ptr() as *const c_void, scale_slot_bytes).unwrap() };

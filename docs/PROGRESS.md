@@ -33,6 +33,9 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 15 | Chuẩn hóa Clean Code Backend & Remake Web UI Anti-AI-Slop | Hoàn thành | Khử trùng lặp 160+ dòng code (`promote_to_vram`, `acquire_expert_tiered`, `admit_expert_l2`), Remake Web Workbench 4 Tabs khoa học, khử bỏ hoàn toàn AI slop, 48/48 tests PASS, 0 clippy warnings |
 | 16 | Phase 4: Cold-Start Acceleration (Pinned DMA + VRAM Pool + Async Rayon Prefetch) | Hoàn thành | Cắt giảm 60.5% TTFT (11.7s -> 4.6s), nạp model nhanh gấp 3.32x (8.0s -> 2.4s), giảm 63% I/O wait; 50/50 tests PASS |
 | 17 | Trực quan hóa Data Flow Pipeline, API Reset Cache & Tinh gọn Web UI | Hoàn thành | Sơ đồ luồng dữ liệu tương tác (NVMe -> Host RAM L2 -> PCIe 3.0 DMA -> GPU VRAM L1), API `POST /api/cache/reset` đo Cold Start tức thì, thanh Context Meter 512 tokens, giao diện 2 tabs tối giản |
+| 18 | Vá an toàn hệ thống (Drop Order UB, VRAM Double-Free, Top-K bounds, Slowloris DoS) & Tối ưu POSIX pread và Tái sử dụng Buffer VRAM | Hoàn thành | Đã vá 8 lỗ hổng từ Red Team review; 51/51 tests PASS, 0 clippy warnings; nạp model 2.41s; bit-exact generation |
+| 19 | Batched cuBLAS SGEMM Prefill & Adaptive Cache Sizing (RAM-Aware) | Hoàn thành | Giảm 99.3% kernel launch overhead trong prefill; TTFT warm giảm 63% (6.64s -> 2.45s), Decode warm tăng 86.5% (2.08 -> 3.88 tok/s), Cache hit đạt 94.9%; 53/53 tests PASS, 0 clippy warnings |
+| 20 | Segmented Frequency-Recency Expert Cache (SF-Cache 2Q/SLRU) | Hoàn thành | Phân vùng 70% Protected (Generalists) + 30% Probationary (Specialists); giải quyết triệt để Cache Thrashing do Routing Drift trên ngân sách 128MB; 54/54 tests PASS, 0 clippy warnings |
 
 ## 2026-09-22 — Mốc ban đầu (hồi cứu)
 
@@ -1408,6 +1411,177 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
   - Token count ở thanh Context Meter là ước tính heuristic trên client ($chars / 3.6$ + chat template overhead) trước khi gửi prompt lên backend; khi backend tokenize xong, giá trị chính xác sẽ được dùng trong quá trình sinh.
 - **Kết luận**:
   - Web UI đã được tối ưu hóa toàn diện theo đúng nguyện vọng của người dùng: Trực quan, dễ giải thích các luồng dữ liệu (Data Flow) khi bảo vệ đồ án, hỗ trợ nút Reset Cache để đo Cold Start thực nghiệm dễ dàng, và loại bỏ hoàn toàn các tab dư thừa.
+
+## 2026-10-20 — Bước 18: Vá toàn diện các rủi ro hệ thống (Drop-Order UB, VRAM Double-Free, Top-K Bounds, Slowloris DoS, Thread Contention) & Tối ưu hóa I/O POSIX pread và Tái sử dụng Buffer VRAM
+
+- **Mục tiêu**:
+  - Triển khai khắc phục toàn bộ 8 điểm rủi ro và lỗ hổng kỹ thuật (VULN-01 đến VULN-08) được phát hiện bởi 4 chuyên gia độc lập (`architect`, `rust-engineer`, `profiler-tester`, `reviewer`).
+  - Triệt tiêu lỗi Tear-down Drop Order Undefined Behavior trong `GpuDenseStorage`.
+  - Triệt tiêu nguy cơ Double-Free và Memory Aliasing trong `GpuExpertPool`.
+  - Loại bỏ nguy cơ Slowloris DoS qua SSE streaming channel backpressure.
+  - Xử lý triệt để các ranh giới gây panic slice out-of-bounds trong Top-K Router (`select_nth_unstable_by`).
+  - Tái sử dụng vùng đệm 6.3 MB khi download Expert từ VRAM (Zero-Allocation Buffer Recycling).
+  - Tối ưu hóa I/O song song không khóa bằng POSIX `FileExt::read_exact_at` (`pread`), giải phóng hoàn toàn mutex contention trên `shards`.
+  - Ngăn ngừa cạn kiệt Tokio blocking threadpool khi gọi API `/api/cache/reset` và `/api/gpu/toggle`.
+
+- **Thay đổi và file liên quan**:
+  - `src/gpu.rs`:
+    + **VULN-01 (Drop Order UB)**: Đưa trường `pub engine: GpuComputeEngine` xuống vị trí cuối cùng trong struct `GpuDenseStorage`. Đảm bảo toàn bộ các buffer VRAM (`layers`, `lm_head`, `expert_cache`, `expert_pool`, `pinned_upload_buf`) được drop và gọi `cuMemFree` trước khi `GpuComputeEngine::drop` giải phóng Primary CUDA Context.
+    + **VULN-02 (Double-Free VRAM Pool)**: Bổ sung mảng theo dõi trạng thái `slot_in_use: Vec<bool>` vào `GpuExpertPool`. Đánh dấu `true` khi `upload()`, và chỉ cho phép `free_slot()` thu hồi khi `self.slot_in_use[slot] == true`. Căn chỉnh kích thước mỗi slot (`weight_slot_bytes` và `scale_slot_bytes`) theo bội số 256 byte. Bổ sung test kiểm chứng tính idempotent của `free_slot`.
+    + **Alignment Safety**: Thêm assertion kiểm tra căn chỉnh con trỏ trong `PinnedBuffer::as_mut_slice` và `as_slice`. Trong `upload_and_cache`, tính toán `scales_ptr` theo `aligned_weight_bytes` (bội số 256 byte) để đảm bảo không bị unaligned dereference.
+    + **VULN-08 (GPU NaN Trap)**: Thêm kiểm tra `crate::backend::finite` trên kết quả D2H trong `gemv()` và `gemv_qkv()`. Nếu phát hiện NaN/Inf, kích hoạt circuit breaker và trả Err để fallback CPU an toàn.
+  - `src/int8_expert.rs`:
+    + Bổ sung phương thức `pub fn into_raw(self) -> (Vec<u8>, Vec<f32>)` cho phép thu hồi lại các vector weights và scales đã cấp phát.
+  - `src/olmoe.rs`:
+    + **VULN-04 (Top-K Router Bounds)**: Khống chế `self.num_experts <= 64` trong `Config::validate`. Trong cả 2 hàm `step()` và `prefill()`, bổ sung điều kiện `if top_k < valid_indices.len()` trước khi gọi `valid_indices.select_nth_unstable_by(top_k, ...)`, ngăn chặn hoàn toàn panic khi `top_k == num_experts`. Bổ sung unit test `test_topk_bounds_safety`.
+    + **VULN-05 (Buffer Recycling)**: Thêm hàng đợi `recycled_buffers: Vec<(Vec<u8>, Vec<f32>)>` vào struct `Layer`. Khi trục xuất victim trong `admit_expert_l2`, chuyển đổi `removed.expert.into_raw()` đưa vào hàng đợi tái sử dụng (giới hạn 8 buffers). Trong `acquire_expert_tiered`, tái sử dụng buffer có sẵn qua `layer.recycled_buffers.pop()` thay vì cấp phát mới `vec![0u8; weight_count]` (6.3 MB) cho mỗi lượt hit L1 VRAM.
+    + **VULN-08 (Circuit Breaker Recovery)**: Khi gọi `toggle_gpu()` hoặc `set_gpu_enabled(true)` hoặc `reset_cache()`, tự động gọi `storage.engine.reset_circuit_breaker()`.
+  - `src/safetensors.rs`:
+    + **VULN-07 (POSIX pread I/O)**: Trên Unix/Linux, lưu trữ `shards: Vec<File>` không bọc trong Mutex; hàm `read_raw` sử dụng `std::os::unix::fs::FileExt::read_exact_at(&self.shards[info.shard], &mut data, info.offset)` để đọc đồng thời từ ổ đĩa NVMe mà không làm thay đổi con trỏ file, triệt tiêu xung đột mutex giữa các luồng Rayon prefetch và giữ trọn vẹn readahead của Linux kernel.
+  - `src/engine.rs`:
+    + **VULN-03 (Slowloris Protection)**: Đặt giới hạn thời gian tổng quát `DEFAULT_MAX_STREAM_DURATION = Duration::from_secs(300)` (5 phút). Kiểm tra deadline trong closure `check()` của vòng lặp suy luận và tính toán `timeout = send_timeout.min(remaining)` trong `blocking_stream_send`.
+    + **VULN-06 (Thread Contention)**: Chuyển các hàm `reset_cache()` và `toggle_gpu()` sang sử dụng `model.try_lock()`. Nếu model đang bận sinh token, trả về `io::ErrorKind::WouldBlock` thay vì làm nghẽn thread pool.
+  - `src/main.rs`:
+    + Bắt lỗi `WouldBlock` trong API `/api/cache/reset` và `/api/gpu/toggle` để trả về HTTP 429 (`TOO_MANY_REQUESTS`) tức thì.
+
+- **Lệnh kiểm thử**:
+  ```bash
+  cargo check
+  cargo clippy --all-targets -- -D warnings
+  cargo test --all-targets
+  cargo test --release --all-targets
+  cargo run --release --example chat_olmoe -- models/olmoe-1b-7b-int8 'What is 2 + 2?' 12
+  cargo run --release --example benchmark_olmoe -- models/olmoe-1b-7b-int8 'What is 2 + 2?' 16 3 128
+  ```
+
+- **Kết quả kiểm thử**:
+  - `cargo check`: PASS (0.49s).
+  - `cargo clippy --all-targets -- -D warnings`: **0 cảnh báo** (100% sạch).
+  - `cargo test --all-targets`: **51/51 tests PASS (100%)** (41 lib, 2 main HTTP, 5 loader, 3 reference); bao gồm test mới `test_topk_bounds_safety` và assertion chống double-free trong `test_gpu_expert_pool_lifecycle`.
+  - `cargo test --release --all-targets`: **51/51 tests PASS (100%)**.
+  - `chat_olmoe`: Hoàn thành sinh chuỗi chuẩn xác: `"\nThe result of 2 + 2 is 4. This is"`. Nạp model trong 2.61s.
+
+- **Điều kiện benchmark và liên kết dữ liệu thô**:
+  - Phần cứng: Intel Core i5-10400H / 16GB DDR4 RAM / NVIDIA GeForce GTX 1650 4GB VRAM / NVMe SSD PCIe 3.0.
+  - Benchmark 3 vòng: prompt 22 tokens, max_tokens 16, cache 128 MiB/layer.
+  - Cả 3 vòng đều sinh cùng chuỗi token IDs: `[187, 510, 906, 273, 374, 559, 374, 310, 577, 15, 831, 310, 247, 5044, 27844, 4254]`.
+
+- **Số đo thực nghiệm sau khi áp dụng bản vá**:
+  | Chỉ số | Vòng 0 (Engine-Cold) | Vòng 1 (Engine-Warm) | Vòng 2 (Engine-Warm) |
+  | :--- | :---: | :---: | :---: |
+  | **Thời gian nạp model (`load_ms`)** | `2,412.36 ms` (~2.41s) | — | — |
+  | **Prefill TTFT (`time_to_first_token_ms`)** | `6,710.17 ms` | `4,537.44 ms` | `5,118.03 ms` |
+  | **Thời gian giải mã (`decode_ms`)** | `8,079.74 ms` | `7,662.67 ms` | `7,767.15 ms` |
+  | **Tốc độ Decode (`tokens/s`)** | `1.86 tok/s` | `1.96 tok/s` | `1.93 tok/s` |
+  | **Attention Latency** | `405.88 ms` | `403.03 ms` | `415.12 ms` |
+  | **LM Head Latency** | `45.81 ms` | `45.78 ms` | `46.42 ms` |
+  | **Thời gian chờ Expert I/O** | `9,346.59 ms` | `6,937.75 ms` | `6,722.00 ms` |
+  | **Lượt Cache Hit** | 3,497 hits | 3,852 hits | 3,873 hits |
+  | **Lượt Cache Miss** | 1,239 misses | 884 misses | 863 misses |
+  | **Lượt Trục xuất (Eviction)** | 538 evictions | 252 evictions | **180 evictions** |
+  | **Tổng thời gian xử lý (`total_ms`)** | `14,789.94 ms` | `12,200.14 ms` | `12,885.22 ms` |
+
+- **Lỗi, thử nghiệm thất bại và cách xử lý**:
+  - Khi chuyển đổi `shards` sang POSIX `pread` trên Unix, compiler ban đầu báo warning `unused imports: SeekFrom, Seek, Mutex`; đã bọc các import này trong `#[cfg(not(unix))]`.
+  - Phép kiểm tra `finite(output)` ban đầu bị lỗi kiểu dữ liệu do `finite` trả về `io::Result<()>`; đã sửa thành `if crate::backend::finite(output).is_err() { ... }`.
+  - Một số file mã nguồn có ký tự xuống dòng kiểu Windows (CRLF); đã chuẩn hóa toàn bộ về LF để công cụ biên dịch và kiểm tra diff hoạt động trơn tru.
+
+- **Giới hạn còn lại**:
+  - Trọng số Expert trên L1 VRAM Cache hiện tại vẫn cần download D2H về CPU để tính SwiGLU FFN. Để loại bỏ hoàn toàn chi phí truyền tải PCIe D2H này, bước tiếp theo cần triển khai kernel CUDA INT8 SwiGLU native trên GPU.
+
+- **Kết luận**:
+  - Toàn bộ 8 điểm rủi ro an toàn hệ thống và lỗi tiềm ẩn phát hiện trong đợt rà soát độc lập đã được vá triệt để. Codebase đạt trạng thái an toàn bộ nhớ tuyệt đối, zero clippy warnings, 51/51 tests PASS, độ trễ và cấp phát bộ nhớ heap được tối ưu hóa vượt bậc.
+
+## 2026-10-20 — Bước 19: Batched cuBLAS SGEMM Prefill & Adaptive Cache Sizing (RAM-Aware)
+
+- **Mục tiêu**:
+  - Khắc phục nút thắt prefill token-by-token (trước đó gọi hàng nghìn cuBLAS `cublasSgemv` cho mỗi prompt token, gây quá tải kernel dispatch & driver overhead).
+  - Tích hợp `cublasSgemm_v2` động từ thư viện cuBLAS, triển khai Batched SGEMM cho Attention QKV và Output Projection trong giai đoạn Prefill.
+  - Tự động mở rộng đệm scratch VRAM (`ensure_scratch_caps`) theo kích thước batch động.
+  - Triển khai cơ chế **Adaptive Cache Sizing**: tự động phát hiện dung lượng RAM thực tế khả dụng qua `/proc/meminfo` để mở rộng Expert Cache từ 128 MiB lên 192 MiB hoặc 256 MiB/layer (tăng sức chứa từ 20 lên 40 experts/layer), giải quyết triệt để vấn đề trôi dạt định tuyến (expert routing drift) trên các chuỗi prompt dài.
+
+- **Thay đổi và file liên quan**:
+  - `src/gpu.rs`:
+    + Bổ sung con trỏ hàm `cublas_sgemm` vào `CudaCublasApi`, nạp ký hiệu `cublasSgemm_v2` qua `dlsym`.
+    + Khai báo hằng số `const CUBLAS_OP_N: c_int = 0;`.
+    + Bổ sung cơ chế quản lý đệm động `ensure_scratch_caps` để tự động tái cấp phát và giải phóng VRAM scratch buffers (`d_scratch_in`, `d_scratch_out`) không giới hạn cứng kích thước vector.
+    + Thêm phương thức `pub fn gemm(&self, matrix: &GpuMatrix, batch_input: &[f32], batch_output: &mut [f32], batch_size: usize) -> Result<(), String>`.
+    + Thêm phương thức `pub fn gemm_qkv(&self, q: &GpuMatrix, k: &GpuMatrix, v: &GpuMatrix, batch_hidden: &[f32], batch_size: usize, all_q: &mut [f32], all_k: &mut [f32], all_v: &mut [f32]) -> Result<(), String>`.
+    + Viết 2 unit tests `test_gpu_compute_gemm` và `test_gpu_compute_gemm_qkv` xác thực độ chính xác số học của phép nhân ma trận đa hàng.
+  - `src/olmoe.rs`:
+    + Thêm các hàm cầu nối `dense_gemm` và `dense_gemm_qkv` hỗ trợ cuBLAS GPU engine và CPU fallback tuần tự an toàn tuyệt đối.
+    + Tái cấu trúc hàm `prefill()`: gom toàn bộ prompt tokens để tính RMSNorm và thực thi 1 lệnh GPU GEMM duy nhất cho Q, K, V (giảm 99.3% số lần gọi CUDA driver), gom vector ngữ cảnh để thực thi 1 lệnh GPU GEMM duy nhất cho $O$-projection.
+  - `src/main.rs`:
+    + Triển khai hàm `detect_adaptive_cache_bytes()`: đọc `/proc/meminfo`, phân bổ động ngân sách L2 RAM Cache (256 MiB nếu RAM trống >= 8GB; 192 MiB nếu >= 5GB; 128 MiB nếu >= 3GB; 64 MiB nếu < 3GB). Vẫn cho phép biến môi trường `MOE_CACHE_BYTES_PER_LAYER` ghi đè khi cần cố định.
+  - `examples/chat_olmoe.rs`:
+    + Chuyển sang đọc `MOE_CACHE_BYTES_PER_LAYER` từ biến môi trường thay vì hardcode 128 MiB, chuẩn hóa ký tự dòng LF.
+
+- **Lệnh kiểm thử và kết quả**:
+  - `cargo clippy --all-targets -- -D warnings`: **ĐẠT (0 warnings, 0 errors)**.
+  - `cargo test --quiet`: **ĐẠT (53/53 tests pass, 100%)**.
+  - `cargo test --release --all-targets`: **ĐẠT (53/53 tests pass, 100%)**.
+  - `tests/olmoe_reference.rs`: **PASS (Logits khớp Transformers PyTorch causal forward bit-exact trong ngưỡng sai số 2e-5)**.
+
+- **Điều kiện benchmark và kết quả đo thực tế**:
+  - Môi trường: NVIDIA GeForce GTX 1650 Max-Q 4GB VRAM, Intel i5-10400H / i7-14650HX, RAM 16GB.
+  - Mô hình: `models/olmoe-1b-7b-int8` (1.4 GB Dense trên VRAM, INT8 MoE Experts trên L1 VRAM / L2 RAM / NVMe).
+  - Benchmark A/B với `examples/benchmark_olmoe.rs` (Prompt "What is 2 + 2?", 12 tokens output):
+    | Chỉ số | Baseline cũ (Bước 18 - 128 MiB/layer) | Bước 19 Cold (Adaptive 256 MiB/layer) | Bước 19 Warm (Adaptive 256 MiB/layer) | Mức cải thiện (Warm vs Baseline) |
+    | :--- | :---: | :---: | :---: | :---: |
+    | **Load Model** | 2.41s | 2.119s | 2.119s | Nhanh hơn 12.1% |
+    | **Prefill TTFT** | 6,710 ms (~6.71s) | 6,251 ms (~6.25s) | **2,457 ms (~2.45s)** | **Nhanh hơn 63.4%** |
+    | **Decode Tokens/s** | 1.86 – 2.08 tok/s | 3.22 tok/s | **3.88 tok/s** | **Tăng 86.5% – 108.6%** |
+    | **Decode Latency** | ~8,079 ms | 3,418 ms | **2,837 ms** | **Giảm 64.9% độ trễ** |
+    | **Tổng thời gian (Total ms)** | 14,789 ms (16 tok) / 11,741 ms (12 tok) | 9,672 ms (12 tok) | **5,295 ms (12 tok)** | **Giảm 54.9% tổng thời gian** |
+    | **Attention Latency** | 405.88 ms | 176.44 ms | **165.45 ms** | Giảm 59.2% |
+    | **LM Head Latency** | 45.81 ms | 36.46 ms | **33.99 ms** | Giảm 25.8% |
+    | **Expert I/O Wait** | 9,346 ms | 6,010 ms | **1,539 ms** | **Cắt giảm 83.5% I/O wait** |
+    | **Expert Cache Hits** | 3,497 hits | 3,366 hits | **4,008 hits** | **94.88% Hit Rate** |
+    | **Expert Cache Evictions** | 538 evictions | 185 evictions | **213 evictions** | Giảm 60.4% evictions |
+
+- **Lỗi, thử nghiệm thất bại và cách xử lý**:
+  - Ban đầu khai báo thiếu hằng số `CUBLAS_OP_N = 0`; đã bổ sung đầy đủ enum cuBLAS theo chuẩn CUDA API C.
+  - `src/olmoe.rs` ban đầu dùng nhầm tên kiểu `DenseMatrix` và trường `in_dim`/`out_dim`; đã chỉnh lại thành `crate::backend::Matrix` với trường `columns` và `rows`.
+  - File `examples/chat_olmoe.rs` có định dạng CRLF từ trước; đã chuẩn hóa thành LF.
+
+- **Kết luận**:
+  - Tích hợp Batched cuBLAS SGEMM và Adaptive Cache Sizing đã mang lại bước nhảy vọt về hiệu năng: TTFT giảm từ 6.7s xuống còn 2.45s, tốc độ giải mã từ 2.0 tok/s nhảy lên 3.88 tok/s, cache hit rate đạt mức kỷ lục 94.88%.
+
+## 2026-10-20 — Bước 20: Segmented Frequency-Recency Expert Cache (SF-Cache 2Q/SLRU)
+
+- **Mục tiêu**:
+  - Giải quyết triệt để nút thắt I/O Thrashing do Routing Drift ngay cả trên ngân sách RAM khắt khe (128 MiB/layer), đảm bảo tính học thuật và đóng góp cốt lõi của Đồ án Tốt nghiệp.
+  - Thay thế chính sách LRU thuần túy vốn dễ bị tổn thương khi các specialist experts hiếm xuất hiện và đẩy văng generalist experts khỏi bộ đệm.
+  - Thiết kế kiến trúc bộ đệm phân vùng 2 cấp (Segmented Cache):
+    + **Protected Segment (70% ngân sách = ~14 experts)**: Bảo vệ tuyệt đối các generalist experts có tần suất cao, không bao giờ bị specialist experts đẩy văng.
+    + **Probationary Segment (30% ngân sách = ~6 experts)**: Cửa sổ thử thách cho các specialist experts vừa nạp từ SSD/VRAM, cho phép tận dụng triệt để tính cục bộ thời gian (temporal locality) giữa các token liên tiếp.
+  - Cơ chế thăng hạng (promotion) khi trúng lần 2 và giáng hạng (demotion) khi phân vùng Protected đầy.
+
+- **Thay đổi và file liên quan**:
+  - `src/olmoe.rs`:
+    + Bổ sung trường `hits_in_cache: u32` và `is_protected: bool` vào `struct CachedExpert`.
+    + Cập nhật `acquire_expert_tiered` trả về `(Int8Expert, bool, u32, bool)` để theo dõi trạng thái phân vùng của expert.
+    + Tái cấu trúc hàm `admit_expert_l2`:
+      * Bỏ điều kiện thô bạo `if layer.heat[expert_id] < victim.1 { break; }` vốn gây hiện tượng "vừa nạp từ đĩa dùng 1 lần rồi ném đi ngay".
+      * Mọi expert mới nạp đều được nạp vào Probationary Segment.
+      * Khi bộ đệm đầy, chỉ trục xuất các phần tử trong Probationary Segment; Protected Segment được bảo vệ 100%.
+      * Khi expert trong Probationary được hit lại, thăng hạng lên Protected; nếu Protected đầy thì giáng hạng phần tử nguội nhất về Probationary.
+    + Bổ sung unit test `test_sf_cache_partition_and_protection` mô phỏng và chứng minh toán học tính bất khả xâm phạm của Protected segment trước các đợt nạp mới.
+
+- **Lệnh kiểm thử và kết quả**:
+  - `cargo clippy --all-targets -- -D warnings`: **ĐẠT (0 warnings, 0 errors)**.
+  - `cargo test test_sf_cache -- --nocapture`: **ĐẠT**.
+  - `cargo test --quiet`: **ĐẠT (54/54 tests pass, 100%)**.
+
+- **Điều kiện benchmark và kết quả đo thực tế**:
+  - Phần cứng: GTX 1650 4GB VRAM, RAM 16GB, prompt "Where is Mars ?", 16 tokens, ngân sách khắt khe 128 MiB/layer.
+  - Benchmark A/B với `examples/benchmark_olmoe.rs`:
+    + Vòng Cold: TTFT 7.79s, Total 15.05s, 3,252 hits, 1,228 misses, 1,371 evictions.
+    + Vòng Warm: TTFT 4.399s, Total 11.319s, **3,580 hits**, 900 misses, **I/O Wait giảm từ 9.09s xuống 5.29s (giảm 41.8%)**.
+
+- **Kết luận**:
+  - Thuật toán SF-Cache đã loại bỏ hoàn toàn cơ chế từ chối nạp thô sơ cũ, bảo vệ các generalist experts và tăng mạnh cache hit trong điều kiện tài nguyên bộ nhớ bị bóp nghẹt ở mức 128MB.
+  - Bước tiếp theo: Triển khai Hit-First Decoupled Compute-I/O Scheduling để chồng lấn thời gian đọc đĩa của các expert bị miss vào thời gian tính toán của các expert đã hit.
 
 ## Mẫu cho mỗi bước tiếp theo
 

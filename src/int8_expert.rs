@@ -104,6 +104,11 @@ impl Int8Expert {
         }
     }
 
+    /// Thu hồi lại buffers (weights, scales) từ expert để tái sử dụng, triệt tiêu cấp phát heap
+    pub fn into_raw(self) -> (Vec<u8>, Vec<f32>) {
+        (self.weights, self.scales)
+    }
+
     pub fn weights(&self) -> &[u8] {
         &self.weights
     }

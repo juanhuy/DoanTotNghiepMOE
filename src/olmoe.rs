@@ -68,7 +68,7 @@ impl Config {
             || self.num_attention_heads % self.num_key_value_heads != 0
             || (d / self.num_attention_heads) % 2 != 0
             || self.num_experts == 0
-            || self.num_experts > 1024
+            || self.num_experts > 64
             || self.num_experts_per_tok == 0
             || self.num_experts_per_tok > self.num_experts
             || self.vocab_size == 0
@@ -94,6 +94,8 @@ struct CachedExpert {
     id: usize,
     expert: Int8Expert,
     last_used: u64,
+    hits_in_cache: u32,
+    is_protected: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -137,6 +139,7 @@ struct Layer {
     bytes: usize,
     heat: Vec<u32>,
     clock: u64,
+    recycled_buffers: Vec<(Vec<u8>, Vec<f32>)>,
 }
 #[derive(Default)]
 struct Kv {
@@ -359,6 +362,7 @@ impl OlmoeModel {
                 bytes: 0,
                 heat: vec![0; config.num_experts],
                 clock: 0,
+                recycled_buffers: Vec::new(),
             });
         }
         let tokenizer = if path.join("tokenizer.json").exists() {
@@ -439,13 +443,13 @@ impl OlmoeModel {
                             "Khởi tạo L1 VRAM Expert Cache (Pre-allocated VRAM Pool & Pinned Host Memory)"
                         );
                         Some(crate::gpu::GpuDenseStorage {
-                            engine,
                             layers: gpu_layers,
                             lm_head: lm_head_gpu,
                             total_allocated_bytes: total_bytes,
                             expert_cache: crate::gpu::GpuExpertCache::new(expert_cache_budget),
                             expert_pool,
                             pinned_upload_buf,
+                            engine,
                         })
                     } else {
                         None
@@ -527,13 +531,23 @@ impl OlmoeModel {
 
     /// Đảo trạng thái Bật / Tắt GPU Tier khi chạy ứng dụng
     pub fn toggle_gpu(&mut self) -> crate::gpu::GpuTierStatus {
-        self.gpu_tier.toggle_enabled();
+        let new_state = self.gpu_tier.toggle_enabled();
+        if new_state {
+            if let Some(storage) = self.gpu_dense.as_mut() {
+                storage.engine.reset_circuit_breaker();
+            }
+        }
         self.gpu_tier.status()
     }
 
     /// Thiết lập trạng thái Bật / Tắt GPU Tier
     pub fn set_gpu_enabled(&mut self, enabled: bool) -> crate::gpu::GpuTierStatus {
         self.gpu_tier.set_enabled(enabled);
+        if enabled {
+            if let Some(storage) = self.gpu_dense.as_mut() {
+                storage.engine.reset_circuit_breaker();
+            }
+        }
         self.gpu_tier.status()
     }
 
@@ -548,6 +562,7 @@ impl OlmoeModel {
         // 2. Xóa toàn bộ Host RAM L2 expert cache và đặt lại heatmap
         for layer in &mut self.layers {
             layer.cache.clear();
+            layer.recycled_buffers.clear();
             layer.bytes = 0;
             layer.heat.fill(0);
             layer.clock = 0;
@@ -556,6 +571,7 @@ impl OlmoeModel {
         // 3. Xóa GPU VRAM L1 expert cache và hoàn trả các slot về VRAM Pool
         if let Some(storage) = self.gpu_dense.as_mut() {
             storage.clear_expert_cache();
+            storage.engine.reset_circuit_breaker();
         }
     }
 
@@ -685,6 +701,105 @@ impl OlmoeModel {
             .multiply_loaded_into(&scratch.hidden, &mut scratch.value)
     }
 
+    fn dense_gemm<F>(
+        gpu_dense: &Option<crate::gpu::GpuDenseStorage>,
+        gpu_enabled: bool,
+        matrix_cpu: &crate::backend::Matrix,
+        matrix_gpu: F,
+        batch_input: &[f32],
+        batch_output: &mut [f32],
+        batch_size: usize,
+    ) -> io::Result<()>
+    where
+        F: FnOnce(&crate::gpu::GpuDenseStorage) -> &crate::gpu::GpuMatrix,
+    {
+        if gpu_enabled {
+            if let Some(storage) = gpu_dense {
+                if storage.engine.is_healthy() {
+                    let m_gpu = matrix_gpu(storage);
+                    match storage
+                        .engine
+                        .gemm(m_gpu, batch_input, batch_output, batch_size)
+                    {
+                        Ok(()) => return Ok(()),
+                        Err(err) => {
+                            warn!(
+                                error = %err,
+                                "cuBLAS GEMM gặp lỗi! Kích hoạt Circuit Breaker, tự động vô hiệu hóa GPU và chuyển về CPU."
+                            );
+                            storage.engine.trip_circuit_breaker();
+                        }
+                    }
+                }
+            }
+        }
+        let in_dim = matrix_cpu.columns;
+        let out_dim = matrix_cpu.rows;
+        for (x_chunk, out_chunk) in batch_input
+            .chunks_exact(in_dim)
+            .zip(batch_output.chunks_exact_mut(out_dim))
+        {
+            matrix_cpu.multiply_loaded_into(x_chunk, out_chunk)?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn dense_gemm_qkv(
+        gpu_dense: &Option<crate::gpu::GpuDenseStorage>,
+        gpu_enabled: bool,
+        layer_id: usize,
+        layer: &Layer,
+        batch_hidden: &[f32],
+        batch_size: usize,
+        all_q: &mut [f32],
+        all_k: &mut [f32],
+        all_v: &mut [f32],
+    ) -> io::Result<()> {
+        if gpu_enabled {
+            if let Some(storage) = gpu_dense {
+                if storage.engine.is_healthy() {
+                    let g_layer = &storage.layers[layer_id];
+                    match storage.engine.gemm_qkv(
+                        &g_layer.q_proj,
+                        &g_layer.k_proj,
+                        &g_layer.v_proj,
+                        batch_hidden,
+                        batch_size,
+                        all_q,
+                        all_k,
+                        all_v,
+                    ) {
+                        Ok(()) => return Ok(()),
+                        Err(err) => {
+                            warn!(
+                                error = %err,
+                                "cuBLAS GEMM QKV gặp lỗi! Kích hoạt Circuit Breaker, tự động vô hiệu hóa GPU và chuyển về CPU."
+                            );
+                            storage.engine.trip_circuit_breaker();
+                        }
+                    }
+                }
+            }
+        }
+        let d = layer.q.columns;
+        let q_dim = layer.q.rows;
+        let k_dim = layer.k.rows;
+        let v_dim = layer.v.rows;
+        for (i, h_chunk) in batch_hidden.chunks_exact(d).enumerate() {
+            layer
+                .q
+                .multiply_loaded_into(h_chunk, &mut all_q[i * q_dim..(i + 1) * q_dim])?;
+            layer
+                .k
+                .multiply_loaded_into(h_chunk, &mut all_k[i * k_dim..(i + 1) * k_dim])?;
+            layer
+                .v
+                .multiply_loaded_into(h_chunk, &mut all_v[i * v_dim..(i + 1) * v_dim])?;
+        }
+        Ok(())
+    }
+
     /// Thăng hạng một Expert INT8 lên L1 VRAM Cache nếu còn ngân sách và chưa có trong cache
     fn promote_to_vram(
         gpu_dense: &mut Option<crate::gpu::GpuDenseStorage>,
@@ -765,14 +880,14 @@ impl OlmoeModel {
         profile: &mut RequestProfile,
         uses_count: u64,
         preloaded: &mut HashMap<usize, Int8Expert>,
-    ) -> io::Result<(Int8Expert, bool)> {
-        let (expert, l2_hit) = if let Some(pos) =
+    ) -> io::Result<(Int8Expert, bool, u32, bool)> {
+        let (expert, l2_hit, hits_in_cache, is_protected) = if let Some(pos) =
             layer.cache.iter().position(|entry| entry.id == expert_id)
         {
             profile.cache_hits += uses_count;
             let entry = layer.cache.remove(pos).unwrap();
             layer.bytes = layer.bytes.saturating_sub(entry.expert.resident_bytes());
-            (entry.expert, true)
+            (entry.expert, true, entry.hits_in_cache.saturating_add(1), entry.is_protected)
         } else {
             // Cấp 1: Kiểm tra L1 GPU VRAM Cache trước khi đọc đĩa SSD NVMe
             let mut from_vram = None;
@@ -785,8 +900,12 @@ impl OlmoeModel {
                     } = storage;
                     if let Some(gpu_weights) = expert_cache.get(layer_id, expert_id) {
                         let io_started = Instant::now();
-                        let mut weights = vec![0u8; weight_count];
-                        let mut scales = vec![0.0f32; scale_count];
+                        let (mut weights, mut scales) = layer
+                            .recycled_buffers
+                            .pop()
+                            .unwrap_or_else(|| (vec![0u8; weight_count], vec![0.0f32; scale_count]));
+                        weights.resize(weight_count, 0);
+                        scales.resize(scale_count, 0.0);
                         if engine
                             .download_expert(gpu_weights, &mut weights, &mut scales)
                             .is_ok()
@@ -796,13 +915,15 @@ impl OlmoeModel {
                             profile.bytes_read += exp.resident_bytes() as u64;
                             profile.cache_hits += uses_count;
                             from_vram = Some(exp);
+                        } else {
+                            layer.recycled_buffers.push((weights, scales));
                         }
                     }
                 }
             }
 
             if let Some(exp) = from_vram {
-                (exp, false)
+                (exp, false, 1, false)
             } else {
                 // Cấp 2: Miss cả L1 và L2 -> Lấy từ preloaded (16-B) hoặc nạp từ SSD NVMe Cold Storage
                 profile.cache_misses += 1;
@@ -833,7 +954,7 @@ impl OlmoeModel {
                     exp.weights(),
                     exp.scales(),
                 );
-                (exp, false)
+                (exp, false, 1, false)
             }
         };
 
@@ -848,49 +969,102 @@ impl OlmoeModel {
             );
         }
 
-        Ok((expert, l2_hit))
+        Ok((expert, l2_hit, hits_in_cache, is_protected))
     }
 
-
     /// Quản lý nạp và trục xuất (admission & eviction) cho L2 Host RAM Cache
+    /// Áp dụng thuật toán Segmented Frequency-Recency (SF-Cache / 2Q Partition):
+    /// - 70% ngân sách cho Protected Segment (các Hot/Generalist Experts thường trực)
+    /// - 30% ngân sách cho Probationary Segment (cửa sổ thử thách cho Specialist Experts mới)
+    /// - Trục xuất (eviction) luôn ưu tiên loại bỏ các phần tử trong Probationary Segment,
+    ///   bảo vệ tuyệt đối các Generalist Experts khỏi hiện tượng Cache Thrashing do Routing Drift.
+    #[allow(clippy::too_many_arguments)]
     fn admit_expert_l2(
         layer: &mut Layer,
         expert_id: usize,
         expert: Int8Expert,
         l2_hit: bool,
+        hits_in_cache: u32,
+        mut is_protected: bool,
         cache_bytes_per_layer: usize,
         profile: &mut RequestProfile,
     ) {
         let bytes = expert.resident_bytes();
-        if bytes <= cache_bytes_per_layer {
-            let mut admit = l2_hit || layer.bytes <= cache_bytes_per_layer - bytes;
-            while !admit && layer.bytes > cache_bytes_per_layer - bytes {
-                let victim = layer
+        if bytes == 0 || bytes > cache_bytes_per_layer {
+            return;
+        }
+
+        // 70% ngân sách cho Protected partition
+        let protected_budget = (cache_bytes_per_layer * 7) / 10;
+
+        if l2_hit {
+            // Đã từng có trong cache -> Thăng hạng lên Protected
+            is_protected = true;
+
+            // Nếu vùng Protected vượt quá ngân sách 70%, giáng hạng (demote) phần tử nguội nhất về Probationary
+            let current_protected_bytes: usize = layer
+                .cache
+                .iter()
+                .filter(|e| e.is_protected)
+                .map(|e| e.expert.resident_bytes())
+                .sum();
+
+            if current_protected_bytes + bytes > protected_budget {
+                if let Some(demote_idx) = layer
                     .cache
                     .iter()
                     .enumerate()
-                    .min_by_key(|(_, entry)| (layer.heat[entry.id], entry.last_used))
-                    .map(|(position, entry)| (position, layer.heat[entry.id], entry.last_used));
-                let Some(victim) = victim else {
-                    break;
-                };
-                if layer.heat[expert_id] < victim.1 {
-                    break;
+                    .filter(|(_, e)| e.is_protected)
+                    .min_by_key(|(_, e)| (layer.heat[e.id], e.last_used))
+                    .map(|(idx, _)| idx)
+                {
+                    layer.cache[demote_idx].is_protected = false;
                 }
-                if let Some(removed) = layer.cache.remove(victim.0) {
-                    layer.bytes = layer.bytes.saturating_sub(removed.expert.resident_bytes());
-                    profile.cache_evictions += 1;
-                }
-                admit = layer.bytes <= cache_bytes_per_layer - bytes;
             }
-            if admit {
-                layer.bytes += bytes;
-                layer.cache.push_back(CachedExpert {
-                    id: expert_id,
-                    expert,
-                    last_used: layer.clock,
+        }
+
+        // Đảm bảo tổng dung lượng không vượt quá cache_bytes_per_layer
+        // Ưu tiên trục xuất (evict) các phần tử trong Probationary segment trước
+        while layer.bytes > cache_bytes_per_layer.saturating_sub(bytes) {
+            let victim_idx = layer
+                .cache
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| !e.is_protected)
+                .min_by_key(|(_, e)| (layer.heat[e.id], e.last_used))
+                .map(|(idx, _)| idx)
+                .or_else(|| {
+                    // Nếu không còn phần tử probationary nào, buộc phải evict phần tử nguội nhất trong protected
+                    layer
+                        .cache
+                        .iter()
+                        .enumerate()
+                        .min_by_key(|(_, e)| (layer.heat[e.id], e.last_used))
+                        .map(|(idx, _)| idx)
                 });
+
+            let Some(idx) = victim_idx else {
+                break;
+            };
+
+            if let Some(removed) = layer.cache.remove(idx) {
+                layer.bytes = layer.bytes.saturating_sub(removed.expert.resident_bytes());
+                if layer.recycled_buffers.len() < 8 {
+                    layer.recycled_buffers.push(removed.expert.into_raw());
+                }
+                profile.cache_evictions += 1;
             }
+        }
+
+        if layer.bytes <= cache_bytes_per_layer - bytes {
+            layer.bytes += bytes;
+            layer.cache.push_back(CachedExpert {
+                id: expert_id,
+                expert,
+                last_used: layer.clock,
+                hits_in_cache,
+                is_protected,
+            });
         }
     }
 
@@ -982,11 +1156,13 @@ impl OlmoeModel {
             }
             let valid_indices = &mut expert_indices[..c.num_experts];
             let top_k = c.num_experts_per_tok;
-            valid_indices.select_nth_unstable_by(top_k, |&a, &b| {
-                scratch.router[b]
-                    .total_cmp(&scratch.router[a])
-                    .then_with(|| a.cmp(&b))
-            });
+            if top_k < valid_indices.len() {
+                valid_indices.select_nth_unstable_by(top_k, |&a, &b| {
+                    scratch.router[b]
+                        .total_cmp(&scratch.router[a])
+                        .then_with(|| a.cmp(&b))
+                });
+            }
             let top_experts = &mut valid_indices[..top_k];
             top_experts.sort_by(|&a, &b| {
                 scratch.router[b]
@@ -1020,22 +1196,22 @@ impl OlmoeModel {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
-                let (expert, l2_hit) = Self::acquire_expert_tiered(
-                    id,
-                    expert_id,
-                    d,
-                    intermediate_size,
-                    weight_count,
-                    scale_count,
-                    index,
-                    layer,
-                    gpu_dense,
-                    gpu_tier.is_enabled(),
-                    profile,
-                    1,
-                    &mut preloaded,
-                )?;
-
+                let (expert, l2_hit, hits_in_cache, is_protected) =
+                    Self::acquire_expert_tiered(
+                        id,
+                        expert_id,
+                        d,
+                        intermediate_size,
+                        weight_count,
+                        scale_count,
+                        index,
+                        layer,
+                        gpu_dense,
+                        gpu_tier.is_enabled(),
+                        profile,
+                        1,
+                        &mut preloaded,
+                    )?;
 
                 let expert_started = Instant::now();
                 let result = expert.forward_reuse(&scratch.hidden, &mut scratch.expert)?;
@@ -1049,6 +1225,8 @@ impl OlmoeModel {
                     expert_id,
                     expert,
                     l2_hit,
+                    hits_in_cache,
+                    is_protected,
                     cache_bytes_per_layer,
                     profile,
                 );
@@ -1091,6 +1269,14 @@ impl OlmoeModel {
             output.copy_from_slice(&self.embedding.values[token * d..(token + 1) * d]);
         }
         let mut hidden_batch = vec![0.0; batch.len()];
+        let batch_size = tokens.len();
+        let mut all_q = vec![0.0f32; batch_size * d];
+        let mut all_k = vec![0.0f32; batch_size * kd];
+        let mut all_v = vec![0.0f32; batch_size * kd];
+        let mut norm_batch = vec![0.0f32; batch_size * d];
+        let mut context_batch = vec![0.0f32; batch_size * d];
+        let mut projected_batch = vec![0.0f32; batch_size * d];
+
         let route_count = tokens
             .len()
             .checked_mul(c.num_experts_per_tok)
@@ -1127,49 +1313,77 @@ impl OlmoeModel {
             for list in &mut expert_uses {
                 list.clear();
             }
-            for local_position in 0..tokens.len() {
+
+            let attention_started = Instant::now();
+
+            // 1. Chuẩn hóa RMSNorm cho toàn bộ batch đầu vào
+            for (x_chunk, norm_chunk) in batch.chunks_exact(d).zip(norm_batch.chunks_exact_mut(d)) {
+                rms_norm_into(x_chunk, &layer.input_norm, c.rms_norm_eps, norm_chunk)?;
+            }
+
+            // 2. Batched QKV cuBLAS SGEMM trên GPU (hoặc tuần tự trên CPU fallback)
+            Self::dense_gemm_qkv(
+                &*gpu_dense,
+                gpu_tier.is_enabled(),
+                layer_id,
+                layer,
+                &norm_batch,
+                batch_size,
+                &mut all_q,
+                &mut all_k,
+                &mut all_v,
+            )?;
+
+            // 3. RoPE, KV cache append & Causal Attention cho từng token
+            for local_position in 0..batch_size {
                 check()?;
-                scratch
-                    .x
-                    .copy_from_slice(&batch[local_position * d..(local_position + 1) * d]);
-                let attention_started = Instant::now();
                 let position = base_position + local_position;
-                rms_norm_into(
-                    &scratch.x,
-                    &layer.input_norm,
-                    c.rms_norm_eps,
-                    &mut scratch.hidden,
-                )?;
-                Self::dense_qkv(&*gpu_dense, gpu_tier.is_enabled(), layer_id, layer, scratch)?;
-                rms_norm_in_place(&mut scratch.query, &layer.q_norm, c.rms_norm_eps)?;
-                rms_norm_in_place(&mut scratch.key, &layer.k_norm, c.rms_norm_eps)?;
+                let q_slice = &mut all_q[local_position * d..(local_position + 1) * d];
+                let k_slice = &mut all_k[local_position * kd..(local_position + 1) * kd];
+                let v_slice = &all_v[local_position * kd..(local_position + 1) * kd];
+
+                rms_norm_in_place(q_slice, &layer.q_norm, c.rms_norm_eps)?;
+                rms_norm_in_place(k_slice, &layer.k_norm, c.rms_norm_eps)?;
                 prepare_rope_sincos(&mut scratch.sincos, &scratch.rope_bases, position);
-                apply_rope_cached(&mut scratch.query, hd, &scratch.sincos);
-                apply_rope_cached(&mut scratch.key, hd, &scratch.sincos);
-                kv[layer_id].keys.extend_from_slice(&scratch.key);
-                kv[layer_id].values.extend_from_slice(&scratch.value);
+                apply_rope_cached(q_slice, hd, &scratch.sincos);
+                apply_rope_cached(k_slice, hd, &scratch.sincos);
+                kv[layer_id].keys.extend_from_slice(k_slice);
+                kv[layer_id].values.extend_from_slice(v_slice);
+
+                let ctx_slice = &mut context_batch[local_position * d..(local_position + 1) * d];
                 causal_attention_into(
-                    &scratch.query,
+                    q_slice,
                     &kv[layer_id].keys,
                     &kv[layer_id].values,
                     c.num_attention_heads,
                     c.num_key_value_heads,
-                    &mut scratch.context,
+                    ctx_slice,
                 )?;
-                Self::dense_gemv(
-                    &*gpu_dense,
-                    gpu_tier.is_enabled(),
-                    &layer.o,
-                    |g| &g.layers[layer_id].o_proj,
-                    &scratch.context,
-                    &mut scratch.projected,
-                )?;
-                for (value, projected) in scratch.x.iter_mut().zip(&scratch.projected) {
-                    *value += projected;
-                }
-                profile.attention += attention_started.elapsed();
-                batch[local_position * d..(local_position + 1) * d].copy_from_slice(&scratch.x);
+            }
 
+            // 4. Batched Output Projection cuBLAS SGEMM trên GPU
+            Self::dense_gemm(
+                &*gpu_dense,
+                gpu_tier.is_enabled(),
+                &layer.o,
+                |g| &g.layers[layer_id].o_proj,
+                &context_batch,
+                &mut projected_batch,
+                batch_size,
+            )?;
+
+            // 5. Cộng Residual Attention vào batch
+            for (value, projected) in batch.iter_mut().zip(&projected_batch) {
+                *value += projected;
+            }
+            profile.attention += attention_started.elapsed();
+
+            // 6. Router và phân bổ MoE experts
+            for local_position in 0..batch_size {
+                check()?;
+                scratch
+                    .x
+                    .copy_from_slice(&batch[local_position * d..(local_position + 1) * d]);
                 rms_norm_into(
                     &scratch.x,
                     &layer.post_norm,
@@ -1189,11 +1403,13 @@ impl OlmoeModel {
                 }
                 let valid_indices = &mut expert_indices[..c.num_experts];
                 let top_k = c.num_experts_per_tok;
-                valid_indices.select_nth_unstable_by(top_k, |&left, &right| {
-                    scratch.router[right]
-                        .total_cmp(&scratch.router[left])
-                        .then_with(|| left.cmp(&right))
-                });
+                if top_k < valid_indices.len() {
+                    valid_indices.select_nth_unstable_by(top_k, |&left, &right| {
+                        scratch.router[right]
+                            .total_cmp(&scratch.router[left])
+                            .then_with(|| left.cmp(&right))
+                    });
+                }
                 let top_experts = &mut valid_indices[..top_k];
                 top_experts.sort_by(|&left, &right| {
                     scratch.router[right]
@@ -1248,22 +1464,22 @@ impl OlmoeModel {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(uses_u32);
-                let (expert, l2_hit) = Self::acquire_expert_tiered(
-                    layer_id,
-                    expert_id,
-                    d,
-                    intermediate_size,
-                    weight_count,
-                    scale_count,
-                    index,
-                    layer,
-                    gpu_dense,
-                    gpu_tier.is_enabled(),
-                    profile,
-                    uses.len() as u64,
-                    &mut preloaded,
-                )?;
-
+                let (expert, l2_hit, hits_in_cache, is_protected) =
+                    Self::acquire_expert_tiered(
+                        layer_id,
+                        expert_id,
+                        d,
+                        intermediate_size,
+                        weight_count,
+                        scale_count,
+                        index,
+                        layer,
+                        gpu_dense,
+                        gpu_tier.is_enabled(),
+                        profile,
+                        uses.len() as u64,
+                        &mut preloaded,
+                    )?;
 
                 for &(token, slot, weight) in uses {
                     check()?;
@@ -1287,6 +1503,8 @@ impl OlmoeModel {
                     expert_id,
                     expert,
                     l2_hit,
+                    hits_in_cache,
+                    is_protected,
                     cache_bytes_per_layer,
                     profile,
                 );
@@ -1943,5 +2161,115 @@ mod routing_and_topk_tests {
         x[42] = f32::NAN;
         let result = crate::backend::finite(&x);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_topk_bounds_safety() {
+        // Kiểm tra trường hợp biên: top_k == num_experts không được gây panic
+        let mut router = vec![0.1f32; 64];
+        router[3] = 0.9;
+        router[7] = 0.8;
+        let mut expert_indices = [0usize; 64];
+        let num_experts = 64;
+        let top_k = 64; // top_k == valid_indices.len()
+        for (i, idx) in expert_indices.iter_mut().enumerate().take(num_experts) {
+            *idx = i;
+        }
+        let valid_indices = &mut expert_indices[..num_experts];
+        if top_k < valid_indices.len() {
+            valid_indices.select_nth_unstable_by(top_k, |&a, &b| {
+                router[b].total_cmp(&router[a]).then_with(|| a.cmp(&b))
+            });
+        }
+        let top_experts = &mut valid_indices[..top_k];
+        top_experts.sort_by(|&a, &b| {
+            router[b].total_cmp(&router[a]).then_with(|| a.cmp(&b))
+        });
+        assert_eq!(top_experts[0], 3);
+        assert_eq!(top_experts[1], 7);
+        assert_eq!(top_experts.len(), 64);
+    }
+
+    #[test]
+    fn test_sf_cache_partition_and_protection() {
+        // Kiểm tra tính bảo vệ của phân vùng Segmented Frequency-Recency (SF-Cache)
+        let d = 4;
+        let intermediate = 4;
+        let make_expert = || {
+            let weights = vec![1u8; d * intermediate * 3];
+            let scales = vec![1.0f32; intermediate * 2 + d];
+            Int8Expert::from_raw(d, intermediate, weights, scales)
+        };
+
+        let expert_bytes = make_expert().resident_bytes();
+        let cache_capacity = expert_bytes * 4; // Ngân sách chứa tối đa 4 experts
+
+        let mut layer = Layer {
+            input_norm: vec![],
+            post_norm: vec![],
+            q_norm: vec![],
+            k_norm: vec![],
+            q: Matrix { rows: 0, columns: 0, values: vec![] },
+            k: Matrix { rows: 0, columns: 0, values: vec![] },
+            v: Matrix { rows: 0, columns: 0, values: vec![] },
+            o: Matrix { rows: 0, columns: 0, values: vec![] },
+            router: Matrix { rows: 0, columns: 0, values: vec![] },
+            cache: VecDeque::new(),
+            bytes: 0,
+            heat: vec![0; 64],
+            clock: 0,
+            recycled_buffers: Vec::new(),
+        };
+        let mut profile = RequestProfile::default();
+
+        // 1. Nạp expert 10 (miss) -> Probationary
+        layer.clock = 1;
+        layer.heat[10] = 1;
+        OlmoeModel::admit_expert_l2(&mut layer, 10, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        assert_eq!(layer.cache.len(), 1);
+        assert!(!layer.cache[0].is_protected);
+
+        // 2. Expert 10 được hit (acquire_expert_tiered lấy ra khỏi cache để tính toán) -> Thăng hạng lên Protected
+        let _ = layer.cache.pop_back().unwrap();
+        layer.bytes -= expert_bytes;
+        layer.clock = 2;
+        layer.heat[10] = 2;
+        OlmoeModel::admit_expert_l2(&mut layer, 10, make_expert(), true, 2, false, cache_capacity, &mut profile);
+        assert_eq!(layer.cache.len(), 1);
+        assert!(layer.cache[0].is_protected);
+
+        // 3. Nạp expert 20 và thăng hạng lên Protected
+        layer.clock = 3;
+        layer.heat[20] = 1;
+        OlmoeModel::admit_expert_l2(&mut layer, 20, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        let _ = layer.cache.pop_back().unwrap();
+        layer.bytes -= expert_bytes;
+        layer.clock = 4;
+        layer.heat[20] = 2;
+        OlmoeModel::admit_expert_l2(&mut layer, 20, make_expert(), true, 2, false, cache_capacity, &mut profile);
+
+        // 4. Nạp expert 30 (probationary) và 40 (probationary) -> Bộ đệm đầy 4/4 slots
+        layer.clock = 5;
+        layer.heat[30] = 1;
+        OlmoeModel::admit_expert_l2(&mut layer, 30, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        layer.clock = 6;
+        layer.heat[40] = 1;
+        OlmoeModel::admit_expert_l2(&mut layer, 40, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        assert_eq!(layer.cache.len(), 4);
+        assert_eq!(layer.bytes, cache_capacity);
+
+        // 5. Nạp expert mới 50 (miss). SF-Cache BUỘC PHẢI trục xuất phần tử Probationary (30), KHÔNG ĐƯỢC trục xuất 10 hoặc 20!
+        layer.clock = 7;
+        layer.heat[50] = 1;
+        OlmoeModel::admit_expert_l2(&mut layer, 50, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        assert_eq!(layer.cache.len(), 4);
+        assert_eq!(layer.bytes, cache_capacity);
+
+        // Thẩm định: Expert 10 và 20 vẫn an toàn tuyệt đối trong cache!
+        let cached_ids: Vec<usize> = layer.cache.iter().map(|e| e.id).collect();
+        assert!(cached_ids.contains(&10), "Expert 10 (protected) không được bị trục xuất");
+        assert!(cached_ids.contains(&20), "Expert 20 (protected) không được bị trục xuất");
+        assert!(cached_ids.contains(&50), "Expert 50 mới phải được nạp vào cache");
+        assert!(!cached_ids.contains(&30), "Expert 30 (probationary cũ nhất) phải bị trục xuất");
     }
 }

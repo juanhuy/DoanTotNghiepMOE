@@ -8,8 +8,12 @@ use serde::{
 use std::{
     collections::BTreeMap,
     fs::{self, File},
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, Read},
     path::Path,
+};
+#[cfg(not(unix))]
+use std::{
+    io::{Seek, SeekFrom},
     sync::Mutex,
 };
 
@@ -75,6 +79,9 @@ impl<'de> Deserialize<'de> for Header {
 
 pub struct TensorIndex {
     tensors: BTreeMap<String, TensorInfo>,
+    #[cfg(unix)]
+    shards: Vec<File>,
+    #[cfg(not(unix))]
     shards: Vec<Mutex<File>>,
 }
 impl TensorIndex {
@@ -165,6 +172,9 @@ impl TensorIndex {
         if cursor != file_len - start {
             return Err(invalid("unindexed tensor data"));
         }
+        #[cfg(unix)]
+        self.shards.push(file);
+        #[cfg(not(unix))]
         self.shards.push(Mutex::new(file));
         Ok(())
     }
@@ -185,13 +195,19 @@ impl TensorIndex {
             return Err(invalid(format!("{name}: tensor exceeds read budget")));
         }
         let mut data = vec![0; info.byte_len];
-        // Keep seek and read under one lock: readers share this file's cursor.
-        // Allocate before locking so other readers can keep using the shard.
-        let mut file = self.shards[info.shard]
-            .lock()
-            .map_err(|_| io::Error::other("Safetensors shard lock poisoned"))?;
-        file.seek(SeekFrom::Start(info.offset))?;
-        file.read_exact(&mut data)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileExt;
+            self.shards[info.shard].read_exact_at(&mut data, info.offset)?;
+        }
+        #[cfg(not(unix))]
+        {
+            let mut file = self.shards[info.shard]
+                .lock()
+                .map_err(|_| io::Error::other("Safetensors shard lock poisoned"))?;
+            file.seek(SeekFrom::Start(info.offset))?;
+            file.read_exact(&mut data)?;
+        }
         Ok(data)
     }
 
