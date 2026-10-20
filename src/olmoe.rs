@@ -237,6 +237,7 @@ pub struct OlmoeModel {
     session_cache_bytes: usize,
     gpu_tier: crate::gpu::GpuTierManager,
     gpu_dense: Option<crate::gpu::GpuDenseStorage>,
+    inter_layer_transitions: Vec<Vec<u16>>,
 }
 
 fn mat(
@@ -471,6 +472,7 @@ impl OlmoeModel {
             warn!("Không thể offload Dense weights lên GPU VRAM (OOM hoặc lỗi driver). Tự động chuyển 100% về CPU.");
         }
 
+        let num_layers = layers.len();
         Ok(Self {
             config,
             index,
@@ -487,6 +489,7 @@ impl OlmoeModel {
             session_cache_bytes: 256 * 1024 * 1024,
             gpu_tier,
             gpu_dense,
+            inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
         })
     }
 
@@ -573,6 +576,11 @@ impl OlmoeModel {
         if let Some(storage) = self.gpu_dense.as_mut() {
             storage.clear_expert_cache();
             storage.engine.reset_circuit_breaker();
+        }
+
+        // 4. Đặt lại ma trận chuyển tiếp liên tầng (Inter-layer transition matrix)
+        for trans in &mut self.inter_layer_transitions {
+            trans.fill(0);
         }
     }
 
@@ -865,6 +873,76 @@ impl OlmoeModel {
         (loaded, elapsed)
     }
 
+    /// Dự đoán danh sách expert của tầng tiếp theo (Lookahead Speculative Routing)
+    /// dựa trên:
+    /// 1. Ma trận xác suất chuyển tiếp giữa 2 tầng liên tiếp (Inter-Layer Markov Transition)
+    /// 2. Tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
+    /// 3. Lọc bỏ các expert đã có sẵn trong L2 Host RAM Cache hoặc L1 GPU VRAM Cache
+    #[allow(clippy::too_many_arguments)]
+    fn predict_next_layer_experts(
+        transitions: &[Vec<u16>],
+        curr_layer_id: usize,
+        curr_top_experts: &[usize],
+        next_layer_heat: &[u32],
+        next_layer_cache: &VecDeque<CachedExpert>,
+        gpu_dense: Option<&crate::gpu::GpuDenseStorage>,
+        gpu_enabled: bool,
+        max_candidates: usize,
+    ) -> Vec<usize> {
+        if curr_layer_id >= transitions.len() || max_candidates == 0 {
+            return Vec::new();
+        }
+        let trans = &transitions[curr_layer_id];
+        let mut scores = [0u32; 64];
+
+        // 1. Tích lũy xác suất chuyển tiếp từ các expert đang hoạt động ở tầng hiện tại
+        for &src in curr_top_experts {
+            if src < 64 {
+                let row_offset = src * 64;
+                for (dst, score) in scores.iter_mut().enumerate() {
+                    *score = score.saturating_add(trans[row_offset + dst] as u32);
+                }
+            }
+        }
+
+        // 2. Kết hợp với tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
+        for (dst, score) in scores.iter_mut().enumerate() {
+            if dst < next_layer_heat.len() {
+                *score = score.saturating_add(next_layer_heat[dst] / 4);
+            }
+        }
+
+        // 3. Lọc các expert CHƯA CÓ trong cache của tầng tiếp theo (và chỉ lấy expert có điểm tin cậy > 0)
+        let next_layer_id = curr_layer_id + 1;
+        let mut candidates: Vec<(usize, u32)> = (0..64)
+            .filter(|&eid| {
+                if scores[eid] == 0 {
+                    return false;
+                }
+                if next_layer_cache.iter().any(|entry| entry.id == eid) {
+                    return false;
+                }
+                if let Some(storage) = gpu_dense {
+                    if gpu_enabled && storage.expert_cache.contains(next_layer_id, eid) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|eid| (eid, scores[eid]))
+            .collect();
+
+        // 4. Sắp xếp giảm dần theo điểm số dự đoán
+        candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        // 5. Chọn top max_candidates ứng viên có xác suất cao nhất
+        candidates
+            .into_iter()
+            .take(max_candidates)
+            .map(|(eid, _)| eid)
+            .collect()
+    }
+
     /// Tra cứu Expert theo thứ tự phân tầng 3 cấp: L2 Host RAM -> L1 GPU VRAM -> SSD NVMe Cold Storage
     #[allow(clippy::too_many_arguments)]
     fn acquire_expert_tiered(
@@ -1091,16 +1169,25 @@ impl OlmoeModel {
             .x
             .copy_from_slice(&self.embedding.values[token * d..(token + 1) * d]);
 
-        let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer) = (
+        let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer, transitions) = (
             &mut self.layers,
             &mut self.gpu_dense,
             &self.gpu_tier,
             &self.index,
             self.cache_bytes_per_layer,
+            &mut self.inter_layer_transitions,
         );
 
-        for (id, layer) in layers.iter_mut().enumerate() {
+        let num_layers = layers.len();
+        let mut lookahead_prefetched: HashMap<usize, Int8Expert> = HashMap::new();
+        let mut prev_top_experts: Vec<usize> = Vec::with_capacity(8);
+
+        for id in 0..num_layers {
             check()?;
+            let (prev_and_curr, remaining) = layers.split_at_mut(id + 1);
+            let layer = &mut prev_and_curr[id];
+            let next_layer_opt = remaining.first();
+
             let attention_started = Instant::now();
             let position = kv[id].keys.len() / kd;
             if position >= self.context_limit {
@@ -1179,10 +1266,30 @@ impl OlmoeModel {
                 1.0
             };
 
-            // Hit-First Decoupled Compute-I/O Scheduling:
-            // Phân loại các expert thành 2 nhóm: Hit (nằm sẵn trong L1 VRAM / L2 RAM) và Miss (cần nạp SSD).
+            // 1. Cập nhật Inter-Layer Markov Transition Matrix:
+            // Tích lũy tần suất chuyển tiếp giữa top_experts của tầng trước (id - 1) và tầng hiện tại (id)
+            if id > 0 && !prev_top_experts.is_empty() && id - 1 < transitions.len() {
+                let trans = &mut transitions[id - 1];
+                for &src in &prev_top_experts {
+                    if src < 64 {
+                        let row_offset = src * 64;
+                        for &dst in top_experts.iter() {
+                            if dst < 64 {
+                                let idx = row_offset + dst;
+                                trans[idx] = trans[idx].saturating_add(1);
+                            }
+                        }
+                    }
+                }
+            }
+            prev_top_experts.clear();
+            prev_top_experts.extend_from_slice(top_experts);
+
+            // 2. Phân loại Expert Hit/Miss kết hợp trúng Lookahead Prefetch từ tầng trước:
+            let mut preloaded = HashMap::new();
             let mut hit_ids = Vec::with_capacity(top_experts.len());
             let mut miss_ids = Vec::with_capacity(top_experts.len());
+
             for &eid in top_experts.iter() {
                 let is_hit = layer.cache.iter().any(|entry| entry.id == eid)
                     || gpu_dense
@@ -1190,19 +1297,55 @@ impl OlmoeModel {
                         .is_some_and(|s| gpu_tier.is_enabled() && s.expert_cache.contains(id, eid));
                 if is_hit {
                     hit_ids.push(eid);
+                } else if let Some(exp) = lookahead_prefetched.remove(&eid) {
+                    // TRÚNG LOOKAHEAD PREFETCH TỪ TẦNG TRƯỚC!
+                    // Biến 1 Miss I/O từ SSD thành 1 Hit tức thời trong RAM!
+                    preloaded.insert(eid, exp);
+                    hit_ids.push(eid);
                 } else {
                     miss_ids.push(eid);
                 }
             }
 
-            // Nếu vừa có Hit vừa có Miss:
-            // Kích hoạt Rayon I/O bất đồng bộ nạp Miss từ SSD, trong khi Main Thread lập tức tính toán các Hit!
-            // Thời gian I/O của Miss được chồng lấn hoàn toàn (overlapped) vào thời gian tính toán của Hit!
-            let (mut preloaded, prefetch_io) = if !miss_ids.is_empty() && !hit_ids.is_empty() {
-                let (prefetch_res, ()) = rayon::join(
+            // Hoàn trả các expert còn lại trong lookahead_prefetched (nếu không dùng đến) vào recycled_buffers
+            for (_, unused_exp) in lookahead_prefetched.drain() {
+                if layer.recycled_buffers.len() < 8 {
+                    layer.recycled_buffers.push(unused_exp.into_raw());
+                }
+            }
+
+            // 3. Dự đoán Speculative Lookahead Candidates cho tầng tiếp theo (id + 1):
+            // Opportunistic Lookahead: Chỉ kích hoạt nạp trước khi tầng hiện tại KHÔNG CÓ MISS (toàn bộ Hit).
+            // Nếu tầng hiện tại có miss, ưu tiên 100% băng thông I/O nạp miss để tránh hiện tượng Prefetch Contention.
+            let next_candidates = if miss_ids.is_empty() {
+                if let Some(next_l) = next_layer_opt {
+                    Self::predict_next_layer_experts(
+                        transitions,
+                        id,
+                        top_experts,
+                        &next_l.heat,
+                        &next_l.cache,
+                        gpu_dense.as_ref(),
+                        gpu_tier.is_enabled(),
+                        2, // Window = 2 candidates sáng giá nhất có score > 0
+                    )
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+
+            // 4. Hit-First Decoupled Compute-I/O Scheduling kết hợp Inter-Layer Lookahead Prefetch:
+            // - Nhánh I/O Worker (Rayon): nạp miss_ids của tầng hiện tại VÀ lookahead next_candidates của tầng sau
+            // - Nhánh Compute (Main Thread): lập tức tính toán toàn bộ hit_ids của tầng hiện tại
+            let has_io_work = !miss_ids.is_empty() || !next_candidates.is_empty();
+
+            let (prefetch_curr, prefetch_next, prefetch_io) = if !hit_ids.is_empty() && has_io_work {
+                let (io_res, ()) = rayon::join(
                     || {
                         let started = Instant::now();
-                        let loaded: HashMap<usize, Int8Expert> = miss_ids
+                        let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
                             .par_iter()
                             .filter_map(|&eid| {
                                 Int8Expert::load(index, id, eid, d, intermediate_size, 256 * 1024 * 1024)
@@ -1210,7 +1353,21 @@ impl OlmoeModel {
                                     .map(|exp| (eid, exp))
                             })
                             .collect();
-                        (loaded, started.elapsed())
+
+                        let next_loaded: HashMap<usize, Int8Expert> = if !next_candidates.is_empty() {
+                            next_candidates
+                                .par_iter()
+                                .filter_map(|&eid| {
+                                    Int8Expert::load(index, id + 1, eid, d, intermediate_size, 256 * 1024 * 1024)
+                                        .ok()
+                                        .map(|exp| (eid, exp))
+                                })
+                                .collect()
+                        } else {
+                            HashMap::new()
+                        };
+
+                        (curr_loaded, next_loaded, started.elapsed())
                     },
                     || {
                         for &expert_id in &hit_ids {
@@ -1220,6 +1377,7 @@ impl OlmoeModel {
                             }
                             layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
                             let mut empty_map = HashMap::new();
+                            let is_preloaded = preloaded.contains_key(&expert_id);
                             if let Ok((expert, l2_hit, hits_in_cache, is_protected)) =
                                 Self::acquire_expert_tiered(
                                     id,
@@ -1234,7 +1392,11 @@ impl OlmoeModel {
                                     gpu_tier.is_enabled(),
                                     profile,
                                     1,
-                                    &mut empty_map,
+                                    if is_preloaded {
+                                        &mut preloaded
+                                    } else {
+                                        &mut empty_map
+                                    },
                                 )
                             {
                                 let expert_started = Instant::now();
@@ -1258,10 +1420,10 @@ impl OlmoeModel {
                         }
                     },
                 );
-                prefetch_res
-            } else if !miss_ids.is_empty() {
+                io_res
+            } else if has_io_work {
                 let started = Instant::now();
-                let loaded: HashMap<usize, Int8Expert> = miss_ids
+                let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
                     .par_iter()
                     .filter_map(|&eid| {
                         Int8Expert::load(index, id, eid, d, intermediate_size, 256 * 1024 * 1024)
@@ -1269,19 +1431,38 @@ impl OlmoeModel {
                             .map(|exp| (eid, exp))
                     })
                     .collect();
-                (loaded, started.elapsed())
+
+                let next_loaded: HashMap<usize, Int8Expert> = if !next_candidates.is_empty() {
+                    next_candidates
+                        .par_iter()
+                        .filter_map(|&eid| {
+                            Int8Expert::load(index, id + 1, eid, d, intermediate_size, 256 * 1024 * 1024)
+                                .ok()
+                                .map(|exp| (eid, exp))
+                        })
+                        .collect()
+                } else {
+                    HashMap::new()
+                };
+
+                (curr_loaded, next_loaded, started.elapsed())
             } else {
-                (HashMap::new(), Duration::ZERO)
+                (HashMap::new(), HashMap::new(), Duration::ZERO)
             };
+
             profile.expert_io += prefetch_io;
+            preloaded.extend(prefetch_curr);
+            lookahead_prefetched = prefetch_next;
 
             // Xử lý các phần tử còn lại cần tính toán
-            let remaining_to_compute = if !hit_ids.is_empty() && !miss_ids.is_empty() {
+            let remaining_to_compute = if !hit_ids.is_empty() && has_io_work {
                 // Nhóm Hit đã được tính toán trong rayon::join song song với I/O, chỉ còn nhóm Miss cần tính
                 &miss_ids[..]
             } else if hit_ids.is_empty() {
+                // Không có phần tử Hit nào, toàn bộ nhóm Miss cần tính toán
                 &miss_ids[..]
             } else {
+                // has_io_work là false: không có I/O nào chạy, nhóm Hit chưa được tính
                 &hit_ids[..]
             };
 
@@ -2367,5 +2548,57 @@ mod routing_and_topk_tests {
         assert!(cached_ids.contains(&20), "Expert 20 (protected) không được bị trục xuất");
         assert!(cached_ids.contains(&50), "Expert 50 mới phải được nạp vào cache");
         assert!(!cached_ids.contains(&30), "Expert 30 (probationary cũ nhất) phải bị trục xuất");
+    }
+
+    #[test]
+    fn test_inter_layer_lookahead_prefetch_and_markov_transition() {
+        // Kiểm tra cơ chế dự đoán Lookahead và cập nhật Ma trận chuyển tiếp liên tầng
+        let num_layers = 4;
+        let mut transitions = vec![vec![0u16; 64 * 64]; num_layers - 1];
+
+        // 1. Tầng 0 kích hoạt expert 7 và 12
+        let layer0_experts = vec![7, 12];
+        // Tầng 1 kích hoạt expert 25 và 48
+        let layer1_experts = vec![25, 48];
+
+        // Cập nhật ma trận chuyển tiếp tầng 0 -> 1
+        let trans0 = &mut transitions[0];
+        for &src in &layer0_experts {
+            for &dst in &layer1_experts {
+                trans0[src * 64 + dst] = trans0[src * 64 + dst].saturating_add(10);
+            }
+        }
+
+        assert_eq!(transitions[0][7 * 64 + 25], 10);
+        assert_eq!(transitions[0][7 * 64 + 48], 10);
+        assert_eq!(transitions[0][12 * 64 + 25], 10);
+        assert_eq!(transitions[0][12 * 64 + 48], 10);
+        assert_eq!(transitions[0][7 * 64], 0);
+
+        // 2. Dự đoán cho tầng 1 dựa trên router tầng 0
+        let mut next_layer_heat = vec![0u32; 64];
+        next_layer_heat[25] = 20; // heat cao
+        next_layer_heat[9] = 100; // heat rất cao nhưng không có transition
+
+        let next_layer_cache = VecDeque::new();
+
+        let candidates = OlmoeModel::predict_next_layer_experts(
+            &transitions,
+            0,
+            &layer0_experts,
+            &next_layer_heat,
+            &next_layer_cache,
+            None,
+            false,
+            3,
+        );
+
+        // Expert 25 có cả transition (10 + 10 = 20) và heat (20/4 = 5) -> Score = 25
+        // Expert 48 có transition (10 + 10 = 20) và heat (0) -> Score = 20
+        // Expert 9 có heat (100/4 = 25) và transition (0) -> Score = 25
+        assert_eq!(candidates.len(), 3);
+        assert!(candidates.contains(&25), "Expert 25 phải nằm trong top candidates");
+        assert!(candidates.contains(&48), "Expert 48 phải nằm trong top candidates");
+        assert!(candidates.contains(&9), "Expert 9 (high heat) phải nằm trong top candidates");
     }
 }
