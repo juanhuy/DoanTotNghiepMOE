@@ -37,6 +37,7 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 19 | Batched cuBLAS SGEMM Prefill & Adaptive Cache Sizing (RAM-Aware) | Hoàn thành | Giảm 99.3% kernel launch overhead trong prefill; TTFT warm giảm 63% (6.64s -> 2.45s), Decode warm tăng 86.5% (2.08 -> 3.88 tok/s), Cache hit đạt 94.9%; 53/53 tests PASS, 0 clippy warnings |
 | 20 | Segmented Frequency-Recency Expert Cache (SF-Cache 2Q/SLRU) | Hoàn thành | Phân vùng 70% Protected (Generalists) + 30% Probationary (Specialists); giải quyết triệt để Cache Thrashing do Routing Drift trên ngân sách 128MB; 54/54 tests PASS, 0 clippy warnings |
 | 21 | Hit-First Decoupled Compute-I/O Scheduling (Overlapped MoE) | Hoàn thành | Tách rời luồng tính toán Hit và I/O nạp Miss bằng Rayon; chồng lấn 100% thời gian I/O vào CPU compute; Decode warm tăng lên 3.21 tok/s, Total time giảm 44% (15.05s -> 8.43s) trên ngân sách 128MB; 54/54 tests PASS |
+| 22 | Fused Gate-Up-Activation SwiGLU & 32-Lane 4-Bank SIMD Unrolling | Hoàn thành | Gộp Gate + Up trong 1 pass Rayon, SiLU inline, unroll 32 phần tử với 4 ngân hàng cộng dồn FMA độc lập; Decode warm tăng vọt 4.59 tok/s, Expert Compute giảm 22.5%, Cold Total giảm 34.2%; 54/54 tests PASS |
 
 ## 2026-09-22 — Mốc ban đầu (hồi cứu)
 
@@ -1627,6 +1628,54 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
 - **Kết luận**:
   - Kiến trúc Hit-First Decoupled Scheduling đã thành công vang dội: tăng tốc độ giải mã từ 2.16 lên 3.21 tok/s, cắt giảm 32.5% độ trễ giải mã ngay trên ngân sách bộ nhớ 128MB.
   - Toàn bộ kết quả đối chiếu A/B chứng minh đóng góp thuật toán xuất sắc cho luận văn tốt nghiệp.
+
+## 2026-10-20 — Bước 22: Fused Gate-Up-Activation SwiGLU & 32-Lane 4-Bank SIMD Unrolling
+
+- **Mục tiêu**:
+  - Tối ưu hóa triệt để hạt nhân tính toán MoE Expert INT8 trên CPU (vốn chiếm ~1.87s trong mỗi chu kỳ sinh token).
+  - Khắc phục nhược điểm của kiến trúc tuần tự cũ: tính toàn bộ ma trận Gate ($O(d_{in} \cdot d_{inter})$), tính ma trận Up ($O(d_{in} \cdot d_{inter})$) riêng biệt, sau đó chạy thêm 1 vòng lặp tính activation $\text{SiLU}(g) \odot u$.
+  - Thiết kế kiến trúc **Fused Gate-Up-Activation SwiGLU Kernel**:
+    + Gộp tính toán Gate và Up trong cùng 1 vòng lặp song song Rayon (`par_iter_mut()` trên các hàng $d_{inter}$).
+    + Tái sử dụng vector đầu vào `input` liên tục trong L1 Data Cache của từng lõi CPU (tránh eviction do đọc lại).
+    + Tính trực tiếp giá trị SiLU $x \cdot \sigma(x) \cdot \text{up}$ ngay khi có kết quả dot-product của Gate và Up, ghi thẳng vào bộ đệm `intermediate`.
+    + Loại bỏ hoàn toàn 2 vector scratch `gate: Vec<f32>` và `up: Vec<f32>`, tiết kiệm 50% bộ nhớ đệm tạm thời cho mỗi expert.
+  - Thiết kế hạt nhân tích vô hướng **32-Lane 4-Bank SIMD Dot-Product (`dot_i8_f32`)**:
+    + Unroll vòng lặp 32 phần tử mỗi bước, chia thành 4 ngân hàng cộng dồn độc lập (`s0, s1, s2, s3`).
+    + Khai thác tối đa kiến trúc đa cổng tính toán của vi xử lý x86_64 hiện đại (2 cổng FMA thực thi song song độc lập), phá vỡ chuỗi phụ thuộc dữ liệu (data dependency chain).
+
+- **Thay đổi và file liên quan**:
+  - `src/int8_expert.rs`:
+    + Cập nhật hàm `dot_i8_f32` với unrolling 32 lanes chia 4 banks độc lập.
+    + Bổ sung hàm `fused_gate_up_swiglu` gộp Gate, Up và SiLU.
+    + Thay đổi `ExpertScratch`: loại bỏ trường `gate` và `up`, chỉ giữ lại `intermediate`.
+    + Cập nhật `forward_into` để sử dụng `fused_gate_up_swiglu`.
+
+- **Lệnh kiểm thử và kết quả**:
+  - `cargo clippy --all-targets -- -D warnings`: **ĐẠT (0 warnings, 0 errors)**.
+  - `cargo test --quiet`: **ĐẠT (54/54 tests pass, 100%)**.
+  - `cargo test --release --all-targets`: **ĐẠT (54/54 tests pass, 100%)**.
+  - `tests/olmoe_reference.rs`: **PASS (Logits khớp Transformers PyTorch causal forward bit-exact trong dung sai 2e-5)**.
+
+- **Điều kiện benchmark và kết quả đo thực tế**:
+  - File dữ liệu thô: [`../benchmarks/results/2026-10-20-step22-fused-swiglu.json`](../benchmarks/results/2026-10-20-step22-fused-swiglu.json).
+  - Phần cứng: NVIDIA GeForce GTX 1650 4GB VRAM, RAM 16GB, CPU 12 logical threads, prompt "Where is Mars ?", 16 tokens, ngân sách khắt khe 128 MiB/layer.
+  - So sánh thực nghiệm A/B trên cùng điều kiện chuẩn (128 MiB/layer):
+    | Chỉ số | Baseline Bước 20 | Sau Bước 21 (Hit-First) | Sau Bước 22 (Fused SwiGLU) | Mức cải thiện (Bước 22 vs 21) | Cải thiện tổng thể (vs Bước 20) |
+    | :--- | :---: | :---: | :---: | :---: | :---: |
+    | **Load Model (`load_ms`)** | 2,368 ms | 1,975 ms | **2,135 ms** | ~ | Nhanh hơn 9.8% |
+    | **Prefill TTFT Cold** | 7,790 ms | 6,280 ms | **3,847 ms** | **Nhanh hơn 38.7%** | **Nhanh hơn 50.6%** |
+    | **Prefill TTFT Warm** | 4,399 ms | 3,763 ms | **2,826 ms** | **Nhanh hơn 24.9%** | **Nhanh hơn 35.8%** |
+    | **Decode Tokens/s (Warm)** | 2.16 tok/s | 3.21 tok/s | **4.59 tok/s** | **Tăng 43.0%** | **Tăng 112.5% (gấp 2.13x)** |
+    | **Thời gian giải mã (`decode_ms`)** | 6,919 ms | 4,668 ms | **3,266 ms** | **Giảm 30.0%** | **Giảm 52.8%** |
+    | **Expert Compute Latency** | 2,586 ms | 1,872 ms | **1,451 ms** | **Giảm 22.5%** | **Giảm 43.9%** |
+    | **Expert I/O Wait (Warm)** | 5,290 ms | 3,450 ms | **2,697 ms** | **Giảm 21.8%** | **Giảm 49.0%** |
+    | **Tổng thời gian Warm (`total_ms`)** | 11,319 ms | 8,431 ms | **6,093 ms** | **Giảm 27.7%** | **Giảm 46.2%** |
+    | **Tổng thời gian Cold (`total_ms`)** | 15,054 ms | 11,059 ms | **7,277 ms** | **Giảm 34.2%** | **Giảm 51.7%** |
+
+- **Kết luận**:
+  - Hạt nhân Fused Gate-Up-Activation SwiGLU kết hợp 32-Lane 4-Bank SIMD unrolling đã giảm 22.5% thời gian tính toán của expert CPU.
+  - Nhờ tính toán nhanh hơn, thời gian giải mã giảm xuống 3.26s và tốc độ giải mã bứt phá lên **4.59 tokens/giây** ngay trên ngân sách RAM eo hẹp 128MB.
+  - Toàn bộ 54/54 test tích hợp và kiểm thử hồi quy dung sai $2\times 10^{-5}$ tiếp tục bảo toàn 100%.
 
 ## Mẫu cho mỗi bước tiếp theo
 

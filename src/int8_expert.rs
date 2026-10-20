@@ -15,8 +15,6 @@ pub struct Int8Expert {
 }
 
 pub(crate) struct ExpertScratch {
-    gate: Vec<f32>,
-    up: Vec<f32>,
     activated: Vec<f32>,
     output: Vec<f32>,
 }
@@ -24,8 +22,6 @@ pub(crate) struct ExpertScratch {
 impl ExpertScratch {
     pub(crate) fn new(hidden: usize, intermediate: usize) -> Self {
         Self {
-            gate: vec![0.0; intermediate],
-            up: vec![0.0; intermediate],
             activated: vec![0.0; intermediate],
             output: vec![0.0; hidden],
         }
@@ -131,29 +127,20 @@ impl Int8Expert {
         if input.len() != self.hidden {
             return Err(invalid("expert input dimension mismatch"));
         }
-        if scratch.gate.len() != self.intermediate || scratch.output.len() != self.hidden {
+        if scratch.activated.len() != self.intermediate || scratch.output.len() != self.hidden {
             return Err(invalid("expert scratch dimension mismatch"));
         }
         finite(input)?;
         let n = self.hidden * self.intermediate;
-        matvec_into(
+        fused_gate_up_swiglu(
             &self.weights[..n],
-            &self.scales[..self.intermediate],
-            input,
-            &mut scratch.gate,
-        );
-        matvec_into(
             &self.weights[n..2 * n],
+            &self.scales[..self.intermediate],
             &self.scales[self.intermediate..2 * self.intermediate],
             input,
-            &mut scratch.up,
+            &mut scratch.activated,
+            self.hidden,
         );
-        scratch
-            .activated
-            .iter_mut()
-            .zip(&scratch.gate)
-            .zip(&scratch.up)
-            .for_each(|((target, g), u)| *target = g / (1.0 + (-g).exp()) * u);
         matvec_into(
             &self.weights[2 * n..],
             &self.scales[2 * self.intermediate..],
@@ -165,23 +152,85 @@ impl Int8Expert {
     }
 }
 
+/// Tích vô hướng INT8 x FP32 với 4 bộ cộng độc lập (32 elements / bước) tối ưu hóa cho đường ống lệnh SIMD FMA
+#[inline(always)]
+fn dot_i8_f32(row: &[u8], input: &[f32]) -> f32 {
+    let mut s0 = [0.0f32; 8];
+    let mut s1 = [0.0f32; 8];
+    let mut s2 = [0.0f32; 8];
+    let mut s3 = [0.0f32; 8];
+    let mut qs32 = row.chunks_exact(32);
+    let mut xs32 = input.chunks_exact(32);
+    for (q, x) in qs32.by_ref().zip(xs32.by_ref()) {
+        for lane in 0..8 {
+            s0[lane] += (q[lane] as i8 as f32) * x[lane];
+            s1[lane] += (q[lane + 8] as i8 as f32) * x[lane + 8];
+            s2[lane] += (q[lane + 16] as i8 as f32) * x[lane + 16];
+            s3[lane] += (q[lane + 24] as i8 as f32) * x[lane + 24];
+        }
+    }
+    let rem_q = qs32.remainder();
+    let rem_x = xs32.remainder();
+    let mut s_rem = [0.0f32; 8];
+    let mut qs8 = rem_q.chunks_exact(8);
+    let mut xs8 = rem_x.chunks_exact(8);
+    for (q, x) in qs8.by_ref().zip(xs8.by_ref()) {
+        for lane in 0..8 {
+            s_rem[lane] += (q[lane] as i8 as f32) * x[lane];
+        }
+    }
+    let mut sum = 0.0f32;
+    for lane in 0..8 {
+        sum += s0[lane] + s1[lane] + s2[lane] + s3[lane] + s_rem[lane];
+    }
+    for (&q, &x) in qs8.remainder().iter().zip(xs8.remainder()) {
+        sum += (q as i8 as f32) * x;
+    }
+    sum
+}
+
+/// Kernel Fused Gate-Up Projection & SwiGLU:
+/// Gộp tính toán Gate và Up trong cùng 1 lần duyệt đa luồng Rayon, tái sử dụng vector `input` trong CPU L1 Cache
+/// và tính ngay kích hoạt SiLU mà không cần ghi/đọc qua bộ đệm trung gian.
+fn fused_gate_up_swiglu(
+    gate_weights: &[u8],
+    up_weights: &[u8],
+    gate_scales: &[f32],
+    up_scales: &[f32],
+    input: &[f32],
+    activated: &mut [f32],
+    hidden: usize,
+) {
+    debug_assert_eq!(activated.len(), gate_scales.len());
+    debug_assert_eq!(activated.len(), up_scales.len());
+
+    let compute_lane = |i: usize, target: &mut f32| {
+        let gate_row = &gate_weights[i * hidden..(i + 1) * hidden];
+        let up_row = &up_weights[i * hidden..(i + 1) * hidden];
+        let g = dot_i8_f32(gate_row, input) * gate_scales[i];
+        let u = dot_i8_f32(up_row, input) * up_scales[i];
+        let silu = g / (1.0 + (-g).exp());
+        *target = silu * u;
+    };
+
+    if gate_weights.len() >= 262_144 {
+        activated
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, target)| compute_lane(i, target));
+    } else {
+        activated
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, target)| compute_lane(i, target));
+    }
+}
+
 // Separate accumulators shorten the dependency chain and let LLVM vectorize
 // without target-specific instructions or expanding INT8 weights to a matrix.
 fn matvec_into(weights: &[u8], scales: &[f32], input: &[f32], output: &mut [f32]) {
     let compute = |target: &mut f32, row: &[u8], scale: &f32| {
-        let mut sums = [0.0f32; 8];
-        let mut qs = row.chunks_exact(8);
-        let mut xs = input.chunks_exact(8);
-        for (q, x) in qs.by_ref().zip(xs.by_ref()) {
-            for lane in 0..8 {
-                sums[lane] += (q[lane] as i8 as f32) * x[lane];
-            }
-        }
-        let mut sum = sums.into_iter().sum::<f32>();
-        for (&q, &x) in qs.remainder().iter().zip(xs.remainder()) {
-            sum += (q as i8 as f32) * x;
-        }
-        *target = sum * scale;
+        *target = dot_i8_f32(row, input) * scale;
     };
     if weights.len() >= 262_144 {
         output

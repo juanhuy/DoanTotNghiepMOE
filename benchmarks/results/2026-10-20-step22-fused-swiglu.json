@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "step": 22,
+  "description": "Fused Gate-Up-Activation SwiGLU & 32-Lane 4-Bank SIMD Unrolling",
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "prompt": "Where is Mars ?",
+  "max_tokens": 16,
+  "cache_bytes_per_layer": 134217728,
+  "context_limit": 512,
+  "dense_budget_bytes": 3221225472,
+  "logical_cpus": 12,
+  "load_ms": 2135.3170499999997,
+  "runs": [
+    {
+      "index": 0,
+      "cache_state": "engine-cold",
+      "response": {
+        "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+        "token_ids": [
+          13648,
+          310,
+          253,
+          7002,
+          8859,
+          432,
+          253,
+          5101,
+          275,
+          776,
+          9666,
+          985,
+          15,
+          733,
+          310,
+          4441
+        ],
+        "prompt_tokens": 20,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 3.582529,
+          "prefill_ms": 3843.931456,
+          "time_to_first_token_ms": 3847.703712,
+          "decode_ms": 3429.8732809999997,
+          "total_ms": 7277.6069339999995,
+          "decode_tokens_per_second": 4.373339412593885,
+          "attention_ms": 217.493632,
+          "expert_compute_ms": 1451.297914,
+          "lm_head_ms": 48.021324,
+          "expert_io_ms": 3902.7519,
+          "expert_cache_hits": 3263,
+          "expert_cache_misses": 1217,
+          "expert_cache_evictions": 1350,
+          "expert_bytes_read": 10635018240,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9175040,
+          "cached_prompt_tokens": 0
+        }
+      }
+    },
+    {
+      "index": 1,
+      "cache_state": "engine-warm",
+      "response": {
+        "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+        "token_ids": [
+          13648,
+          310,
+          253,
+          7002,
+          8859,
+          432,
+          253,
+          5101,
+          275,
+          776,
+          9666,
+          985,
+          15,
+          733,
+          310,
+          4441
+        ],
+        "prompt_tokens": 20,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 0.06413300000000001,
+          "prefill_ms": 2826.451744,
+          "time_to_first_token_ms": 2826.52701,
+          "decode_ms": 3266.6238989999997,
+          "total_ms": 6093.166177,
+          "decode_tokens_per_second": 4.591896852463456,
+          "attention_ms": 194.246368,
+          "expert_compute_ms": 1451.151286,
+          "lm_head_ms": 45.044931000000005,
+          "expert_io_ms": 2697.391643,
+          "expert_cache_hits": 3587,
+          "expert_cache_misses": 893,
+          "expert_cache_evictions": 1282,
+          "expert_bytes_read": 8086650880,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9175040,
+          "cached_prompt_tokens": 0
+        }
+      }
+    }
+  ]
+}
