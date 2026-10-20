@@ -38,6 +38,7 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 20 | Segmented Frequency-Recency Expert Cache (SF-Cache 2Q/SLRU) | Hoàn thành | Phân vùng 70% Protected (Generalists) + 30% Probationary (Specialists); giải quyết triệt để Cache Thrashing do Routing Drift trên ngân sách 128MB; 54/54 tests PASS, 0 clippy warnings |
 | 21 | Hit-First Decoupled Compute-I/O Scheduling (Overlapped MoE) | Hoàn thành | Tách rời luồng tính toán Hit và I/O nạp Miss bằng Rayon; chồng lấn 100% thời gian I/O vào CPU compute; Decode warm tăng lên 3.21 tok/s, Total time giảm 44% (15.05s -> 8.43s) trên ngân sách 128MB; 54/54 tests PASS |
 | 22 | Fused Gate-Up-Activation SwiGLU & 32-Lane 4-Bank SIMD Unrolling | Hoàn thành | Gộp Gate + Up trong 1 pass Rayon, SiLU inline, unroll 32 phần tử với 4 ngân hàng cộng dồn FMA độc lập; Decode warm tăng vọt 4.59 tok/s, Expert Compute giảm 22.5%, Cold Total giảm 34.2%; 54/54 tests PASS |
+| 22-Fix | Vá lỗi CUDA Driver Context trong Đa luồng (Tokio Threadpool & Scratch Expansion) | Hoàn thành | Đảm bảo TLS CUDA Context trước khi gọi cuMemAlloc/GEMM; loại bỏ hoàn toàn lỗi ngắt mạch Circuit Breaker; 55/55 tests PASS, 0 clippy warnings |
 
 ## 2026-09-22 — Mốc ban đầu (hồi cứu)
 
@@ -1676,6 +1677,43 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
   - Hạt nhân Fused Gate-Up-Activation SwiGLU kết hợp 32-Lane 4-Bank SIMD unrolling đã giảm 22.5% thời gian tính toán của expert CPU.
   - Nhờ tính toán nhanh hơn, thời gian giải mã giảm xuống 3.26s và tốc độ giải mã bứt phá lên **4.59 tokens/giây** ngay trên ngân sách RAM eo hẹp 128MB.
   - Toàn bộ 54/54 test tích hợp và kiểm thử hồi quy dung sai $2\times 10^{-5}$ tiếp tục bảo toàn 100%.
+
+## 2026-10-20 — Bản vá: Sửa lỗi CUDA Driver Context trong môi trường Đa luồng (Tokio Threadpool & cuBLAS Scratch Expansion)
+
+- **Mục tiêu**:
+  - Khắc phục lỗi ngắt mạch Circuit Breaker khi khởi động và gọi HTTP chat server `moe-tier-engine`: `cuBLAS GEMM QKV gặp lỗi! Kích hoạt Circuit Breaker, tự động vô hiệu hóa GPU và chuyển về CPU. error=Lỗi cuMemAlloc mở rộng scratch_in: 262144 bytes`.
+  - Phân tích nguyên nhân gốc rễ:
+    + Trong kiến trúc CUDA Driver API, context CUDA được lưu trữ theo từng luồng trong Thread-Local Storage (TLS).
+    + Khi chạy qua máy chủ HTTP Axum / Tokio, các yêu cầu suy luận được thực thi trong blocking threadpool (`tokio::task::spawn_blocking`), tạo ra các worker threads mới của hệ điều hành.
+    + Khi worker thread này gọi Batched cuBLAS SGEMM `gemm_qkv` trong giai đoạn `prefill`, hàm `ensure_scratch_caps` được kích hoạt để mở rộng buffer VRAM `d_scratch_in` từ 32 KB lên 262,144 bytes (256 KB).
+    + Tuy nhiên, lời gọi `cu_mem_alloc` được thực hiện **trước khi** thread mới thiết lập ngữ cảnh CUDA (`cu_ctx_set_current`). Vì thiếu context, CUDA Driver API trả về mã lỗi `CUDA_ERROR_INVALID_CONTEXT` (mã 201). Hệ thống nhận định nhầm là lỗi phần cứng VRAM và kích hoạt Circuit Breaker, ngắt GPU về CPU.
+
+- **Thay đổi và file liên quan**:
+  - `src/gpu.rs`:
+    + Bổ sung thiết lập ngữ cảnh CUDA `(self.driver.cu_ctx_set_current)(self.ctx)` ngay đầu hàm `ensure_scratch_caps`.
+    + Đưa việc kích hoạt ngữ cảnh CUDA `cu_ctx_set_current` lên vị trí ngay sau khi nhận khóa Mutex `state` tại cả 4 hàm tính toán: `gemv`, `gemv_qkv`, `gemm`, và `gemm_qkv`. Đảm bảo mọi luồng (Tokio, Rayon, Main) đều sở hữu CUDA context trước khi tương tác với VRAM hoặc cuBLAS.
+    + Thêm mã lỗi chi tiết vào thông báo lỗi của `cu_mem_alloc` để phục vụ quan sát telemetry.
+    + Bổ sung bài kiểm thử tự động đa luồng `test_gpu_compute_gemm_qkv_across_threads_and_scratch_expansion`: mô phỏng một OS thread độc lập gọi `gemm_qkv` với batch 200 tokens (vượt quá 32 KB scratch, ép mở rộng buffer lên 262,144 bytes).
+
+- **Lệnh kiểm thử và kết quả**:
+  - `cargo clippy --all-targets -- -D warnings`: **ĐẠT (0 warnings, 0 errors)**.
+  - `cargo test test_gpu_compute_gemm_qkv_across_threads_and_scratch_expansion -- --nocapture`: **ĐẠT (PASS)**.
+  - `cargo test --quiet`: **ĐẠT (55/55 tests pass, 100%)**.
+  - Kiểm thử trực tiếp với HTTP server `moe-tier-engine` (ngân sách 256 MiB/layer):
+    ```bash
+    MOE_MODEL_DIR=./models/olmoe-1b-7b-int8 \
+    MOE_BIND=127.0.0.1:8081 \
+    MOE_CONTEXT=512 \
+    MOE_CACHE_BYTES_PER_LAYER=268435456 \
+    cargo run --release --bin moe-tier-engine
+    ```
+    Gửi request:
+    `curl -s -X POST http://127.0.0.1:8081/v1/chat/completions -H "Content-Type: application/json" -d '{"messages": [{"role": "user", "content": "Where is Mars ?"}], "max_tokens": 16}'`
+    + Kết quả phản hồi HTTP 200: Sinh chính xác câu trả lời: `" Mars is the fourth planet from the sun in our solar system. It is located"`.
+    + Server log: Hoàn toàn sạch, không có cảnh báo Circuit Breaker, GPU cuBLAS SGEMM chạy 100%.
+
+- **Kết luận**:
+  - Đã vá triệt để lỗi quản lý ngữ cảnh đa luồng CUDA. Toàn bộ tính năng cuBLAS Batched GEMM hoạt động hoàn hảo trên mọi luồng Tokio web server.
 
 ## Mẫu cho mỗi bước tiếp theo
 

@@ -516,13 +516,18 @@ impl GpuComputeEngine {
         out_bytes: usize,
     ) -> Result<(), String> {
         unsafe {
+            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
             if in_bytes > state.d_scratch_in_cap {
                 let new_cap = in_bytes.next_power_of_two().max(8192 * std::mem::size_of::<f32>());
                 let mut new_ptr = 0;
-                if (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap) != CUDA_SUCCESS {
+                let status = (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap);
+                if status != CUDA_SUCCESS {
                     self.circuit_broken
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    return Err(format!("Lỗi cuMemAlloc mở rộng scratch_in: {} bytes", new_cap));
+                    return Err(format!(
+                        "Lỗi cuMemAlloc mở rộng scratch_in: {} bytes (mã lỗi CUDA: {})",
+                        new_cap, status
+                    ));
                 }
                 if state.d_scratch_in != 0 {
                     let _ = (self.driver.cu_mem_free)(state.d_scratch_in);
@@ -533,10 +538,14 @@ impl GpuComputeEngine {
             if out_bytes > state.d_scratch_out_cap {
                 let new_cap = out_bytes.next_power_of_two().max(65536 * std::mem::size_of::<f32>());
                 let mut new_ptr = 0;
-                if (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap) != CUDA_SUCCESS {
+                let status = (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap);
+                if status != CUDA_SUCCESS {
                     self.circuit_broken
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    return Err(format!("Lỗi cuMemAlloc mở rộng scratch_out: {} bytes", new_cap));
+                    return Err(format!(
+                        "Lỗi cuMemAlloc mở rộng scratch_out: {} bytes (mã lỗi CUDA: {})",
+                        new_cap, status
+                    ));
                 }
                 if state.d_scratch_out != 0 {
                     let _ = (self.driver.cu_mem_free)(state.d_scratch_out);
@@ -577,9 +586,11 @@ impl GpuComputeEngine {
             .lock()
             .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
 
-        self.ensure_scratch_caps(&mut state, in_bytes, out_bytes)?;
         unsafe {
             let _ = (self.driver.cu_ctx_set_current)(self.ctx);
+        }
+        self.ensure_scratch_caps(&mut state, in_bytes, out_bytes)?;
+        unsafe {
             if (self.driver.cu_memcpy_h_to_d)(
                 state.d_scratch_in,
                 input.as_ptr() as *const c_void,
@@ -676,10 +687,12 @@ impl GpuComputeEngine {
             .lock()
             .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
 
+        unsafe {
+            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
+        }
         self.ensure_scratch_caps(&mut state, in_bytes, total_out_bytes)?;
 
         unsafe {
-            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
             // 1. Copy H2D hidden một lần duy nhất
             if (self.driver.cu_memcpy_h_to_d)(
                 state.d_scratch_in,
@@ -825,10 +838,12 @@ impl GpuComputeEngine {
             .lock()
             .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
 
+        unsafe {
+            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
+        }
         self.ensure_scratch_caps(&mut state, in_bytes, out_bytes)?;
 
         unsafe {
-            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
             if (self.driver.cu_memcpy_h_to_d)(
                 state.d_scratch_in,
                 batch_input.as_ptr() as *const c_void,
@@ -936,10 +951,12 @@ impl GpuComputeEngine {
             .lock()
             .map_err(|_| "GpuComputeEngine mutex poisoned".to_string())?;
 
+        unsafe {
+            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
+        }
         self.ensure_scratch_caps(&mut state, in_bytes, total_out_bytes)?;
 
         unsafe {
-            let _ = (self.driver.cu_ctx_set_current)(self.ctx);
             // 1. Copy H2D batch_hidden một lần duy nhất
             if (self.driver.cu_memcpy_h_to_d)(
                 state.d_scratch_in,
@@ -2153,6 +2170,67 @@ mod tests {
             assert_eq!(q_actual, q_expected);
             assert_eq!(k_actual, k_expected);
             assert_eq!(v_actual, v_expected);
+        }
+    }
+
+    #[test]
+    fn test_gpu_compute_gemm_qkv_across_threads_and_scratch_expansion() {
+        if let Some(engine) = GpuComputeEngine::init() {
+            let engine = std::sync::Arc::new(engine);
+            let d = 256;
+            let q_rows = 128;
+            let k_rows = 64;
+            let v_rows = 64;
+            // Batch lớn: 200 tokens x 256 floats = 51,200 floats = 204,800 bytes
+            // Vượt quá d_scratch_in_cap mặc định (32,768 bytes), buộc mở rộng lên 262,144 bytes!
+            let batch_size = 200;
+
+            let q_mat = crate::backend::Matrix {
+                rows: q_rows,
+                columns: d,
+                values: vec![0.01; q_rows * d],
+            };
+            let k_mat = crate::backend::Matrix {
+                rows: k_rows,
+                columns: d,
+                values: vec![0.02; k_rows * d],
+            };
+            let v_mat = crate::backend::Matrix {
+                rows: v_rows,
+                columns: d,
+                values: vec![0.03; v_rows * d],
+            };
+
+            let q_gpu = GpuMatrix::from_matrix(&q_mat, &engine).expect("upload q failed");
+            let k_gpu = GpuMatrix::from_matrix(&k_mat, &engine).expect("upload k failed");
+            let v_gpu = GpuMatrix::from_matrix(&v_mat, &engine).expect("upload v failed");
+
+            let batch_hidden = vec![0.5f32; batch_size * d];
+
+            // Gọi trên một OS thread hoàn toàn mới (mô phỏng worker thread của Tokio / Axum)
+            let handle = std::thread::spawn(move || {
+                let mut q_actual = vec![0.0; batch_size * q_rows];
+                let mut k_actual = vec![0.0; batch_size * k_rows];
+                let mut v_actual = vec![0.0; batch_size * v_rows];
+
+                engine
+                    .gemm_qkv(
+                        &q_gpu,
+                        &k_gpu,
+                        &v_gpu,
+                        &batch_hidden,
+                        batch_size,
+                        &mut q_actual,
+                        &mut k_actual,
+                        &mut v_actual,
+                    )
+                    .expect("gemm_qkv on new thread with scratch expansion must succeed");
+
+                assert!(!q_actual.is_empty());
+                assert!((q_actual[0] - (d as f32) * 0.5 * 0.01).abs() < 1e-4);
+            });
+
+            handle.join().expect("thread join failed");
         }
     }
 
