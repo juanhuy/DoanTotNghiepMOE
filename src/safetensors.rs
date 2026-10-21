@@ -195,10 +195,25 @@ impl TensorIndex {
             return Err(invalid(format!("{name}: tensor exceeds read budget")));
         }
         let mut data = vec![0; info.byte_len];
+        self.read_raw_into(name, &mut data)?;
+        Ok(data)
+    }
+
+    /// Đọc trực tiếp byte thô từ file shard vào bộ đệm `buf` có sẵn thông qua POSIX pread(2).
+    /// Hoàn toàn không cấp phát heap memory.
+    pub fn read_raw_into(&self, name: &str, buf: &mut [u8]) -> io::Result<()> {
+        let info = self.tensor(name)?;
+        if buf.len() != info.byte_len {
+            return Err(invalid(format!(
+                "{name}: buffer size mismatch (expected {}, got {})",
+                info.byte_len,
+                buf.len()
+            )));
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::FileExt;
-            self.shards[info.shard].read_exact_at(&mut data, info.offset)?;
+            self.shards[info.shard].read_exact_at(buf, info.offset)?;
         }
         #[cfg(not(unix))]
         {
@@ -206,9 +221,9 @@ impl TensorIndex {
                 .lock()
                 .map_err(|_| io::Error::other("Safetensors shard lock poisoned"))?;
             file.seek(SeekFrom::Start(info.offset))?;
-            file.read_exact(&mut data)?;
+            file.read_exact(buf)?;
         }
-        Ok(data)
+        Ok(())
     }
 
     /// Limit applies to decoded f32 bytes. Peak memory also includes raw bytes.
@@ -221,23 +236,62 @@ impl TensorIndex {
         if count > max_decoded_bytes / 4 {
             return Err(invalid("decoded tensor exceeds read budget"));
         }
-        let raw = self.read_raw(name, info.byte_len)?;
-        let values = match info.dtype {
-            DType::F32 => raw
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
-                .collect(),
-            DType::BF16 => raw
-                .chunks_exact(2)
-                .map(|b| f32::from_bits((u16::from_le_bytes([b[0], b[1]]) as u32) << 16))
-                .collect(),
-            DType::F16 => raw
-                .chunks_exact(2)
-                .map(|b| half_to_f32(u16::from_le_bytes([b[0], b[1]])))
-                .collect(),
-            DType::I8 => unreachable!(),
-        };
+        let mut raw = vec![0u8; info.byte_len];
+        let mut values = vec![0.0f32; count];
+        self.read_f32_into(name, &mut raw, &mut values)?;
         Ok(values)
+    }
+
+    /// Đọc tensor kiểu F32/BF16/F16 trực tiếp vào buffer `buf: &mut [f32]` mà không cấp phát heap.
+    /// `raw_scratch` được mượn làm vùng đệm tạm nhận byte nhị phân từ đĩa trước khi decode.
+    pub fn read_f32_into(
+        &self,
+        name: &str,
+        raw_scratch: &mut [u8],
+        buf: &mut [f32],
+    ) -> io::Result<()> {
+        let info = self.tensor(name)?;
+        if info.dtype == DType::I8 {
+            return Err(invalid("I8 requires explicit quantization scales"));
+        }
+        let count = info.byte_len / info.dtype.size();
+        if buf.len() != count {
+            return Err(invalid(format!(
+                "{name}: decoded buffer length mismatch (expected {}, got {})",
+                count,
+                buf.len()
+            )));
+        }
+        if raw_scratch.len() < info.byte_len {
+            return Err(invalid(format!(
+                "{name}: raw scratch buffer too small (need {}, got {})",
+                info.byte_len,
+                raw_scratch.len()
+            )));
+        }
+        let raw = &mut raw_scratch[..info.byte_len];
+        self.read_raw_into(name, raw)?;
+
+        match info.dtype {
+            DType::F32 => {
+                for (chunk, target) in raw.chunks_exact(4).zip(buf.iter_mut()) {
+                    *target = f32::from_le_bytes(chunk.try_into().unwrap());
+                }
+            }
+            DType::BF16 => {
+                for (chunk, target) in raw.chunks_exact(2).zip(buf.iter_mut()) {
+                    *target =
+                        f32::from_bits((u16::from_le_bytes([chunk[0], chunk[1]]) as u32) << 16);
+                }
+            }
+            DType::F16 => {
+                for (chunk, target) in raw.chunks_exact(2).zip(buf.iter_mut()) {
+                    *target = half_to_f32(u16::from_le_bytes([chunk[0], chunk[1]]));
+                }
+            }
+            DType::I8 => unreachable!(),
+        }
+        Ok(())
     }
 }
 

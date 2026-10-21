@@ -29,6 +29,80 @@ impl ExpertScratch {
 }
 
 impl Int8Expert {
+    /// Nạp một Expert INT8 tái sử dụng bộ đệm `weights` và `scales` đã cấp phát trước.
+    /// Nếu capacity của buffers đã đủ, hàm đảm bảo ZERO HEAP ALLOCATIONS.
+    pub fn load_reusing(
+        index: &TensorIndex,
+        layer: usize,
+        expert: usize,
+        hidden: usize,
+        intermediate: usize,
+        mut weights: Vec<u8>,
+        mut scales: Vec<f32>,
+    ) -> io::Result<Self> {
+        if hidden == 0 || intermediate == 0 {
+            return Err(invalid("expert dimensions must be positive"));
+        }
+        let weight_count = hidden
+            .checked_mul(intermediate)
+            .and_then(|n| n.checked_mul(3))
+            .ok_or_else(|| invalid("expert shape overflow"))?;
+        let scale_count = intermediate
+            .checked_mul(2)
+            .and_then(|n| n.checked_add(hidden))
+            .ok_or_else(|| invalid("scale shape overflow"))?;
+
+        // Tái sử dụng vùng nhớ: resize không cấp phát lại nếu capacity đã đủ
+        if weights.capacity() < weight_count {
+            weights.reserve_exact(weight_count - weights.len());
+        }
+        weights.resize(weight_count, 0);
+
+        if scales.capacity() < scale_count {
+            scales.reserve_exact(scale_count - scales.len());
+        }
+        scales.resize(scale_count, 0.0);
+
+        let prefix = format!("model.layers.{layer}.mlp.experts.{expert}");
+        let weight_name = format!("{prefix}.merged_weight");
+        let scale_name = format!("{prefix}.qs");
+
+        let weight_info = index.tensor(&weight_name)?;
+        let scale_info = index.tensor(&scale_name)?;
+        if weight_info.dtype != DType::I8
+            || weight_info.shape != [weight_count]
+            || scale_info.dtype != DType::F32
+            || scale_info.shape != [scale_count]
+        {
+            return Err(invalid(
+                "expected flat I8 merged_weight and flat F32 qs with exact expert dimensions",
+            ));
+        }
+
+        // Tận dụng đầu mảng weights làm scratch buffer đọc scales (nếu weights đủ lớn)
+        let scale_raw_bytes = scale_count * 4;
+        if weights.len() >= scale_raw_bytes {
+            index.read_f32_into(&scale_name, &mut weights[..scale_raw_bytes], &mut scales)?;
+        } else {
+            let mut scale_scratch = vec![0u8; scale_raw_bytes];
+            index.read_f32_into(&scale_name, &mut scale_scratch, &mut scales)?;
+        }
+
+        if scales.iter().any(|x| !x.is_finite() || *x <= 0.0) {
+            return Err(invalid("expert scales must be finite and positive"));
+        }
+
+        // Đọc toàn bộ 6.3 MB weights qua POSIX DMA pread, ghi đè hoàn toàn vùng tạm
+        index.read_raw_into(&weight_name, &mut weights)?;
+
+        Ok(Self {
+            hidden,
+            intermediate,
+            weights,
+            scales,
+        })
+    }
+
     pub fn load(
         index: &TensorIndex,
         layer: usize,
@@ -37,9 +111,6 @@ impl Int8Expert {
         intermediate: usize,
         max_bytes: usize,
     ) -> io::Result<Self> {
-        if hidden == 0 || intermediate == 0 {
-            return Err(invalid("expert dimensions must be positive"));
-        }
         let weight_count = hidden
             .checked_mul(intermediate)
             .and_then(|n| n.checked_mul(3))
@@ -55,31 +126,9 @@ impl Int8Expert {
         if total > max_bytes {
             return Err(invalid("expert exceeds read budget"));
         }
-        let prefix = format!("model.layers.{layer}.mlp.experts.{expert}");
-        let weight_name = format!("{prefix}.merged_weight");
-        let scale_name = format!("{prefix}.qs");
-        let weights = index.tensor(&weight_name)?;
-        let scales = index.tensor(&scale_name)?;
-        if weights.dtype != DType::I8
-            || weights.shape != [weight_count]
-            || scales.dtype != DType::F32
-            || scales.shape != [scale_count]
-        {
-            return Err(invalid(
-                "expected flat I8 merged_weight and flat F32 qs with exact expert dimensions",
-            ));
-        }
-        let scales = index.read_f32(&scale_name, scale_count * 4)?;
-        if scales.iter().any(|x| !x.is_finite() || *x <= 0.0) {
-            return Err(invalid("expert scales must be finite and positive"));
-        }
-        let weights = index.read_raw(&weight_name, weight_count)?;
-        Ok(Self {
-            hidden,
-            intermediate,
-            weights,
-            scales,
-        })
+        let weights = Vec::with_capacity(weight_count);
+        let scales = Vec::with_capacity(scale_count);
+        Self::load_reusing(index, layer, expert, hidden, intermediate, weights, scales)
     }
 
     pub fn resident_bytes(&self) -> usize {

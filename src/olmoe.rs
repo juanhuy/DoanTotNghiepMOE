@@ -839,7 +839,7 @@ impl OlmoeModel {
         d: usize,
         intermediate_size: usize,
         index: &TensorIndex,
-        layer: &Layer,
+        layer: &mut Layer,
         gpu_dense: Option<&crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
     ) -> (HashMap<usize, Int8Expert>, Duration) {
@@ -865,17 +865,29 @@ impl OlmoeModel {
             return (HashMap::new(), Duration::ZERO);
         }
 
+        let weight_count = d * intermediate_size * 3;
+        let scale_count = intermediate_size * 2 + d;
+        let mut buffers = Vec::with_capacity(missing_ids.len());
+        for _ in 0..missing_ids.len() {
+            let buf = layer.recycled_buffers.pop().unwrap_or_else(|| {
+                (vec![0u8; weight_count], vec![0.0f32; scale_count])
+            });
+            buffers.push(buf);
+        }
+
         let started = Instant::now();
         let loaded: HashMap<usize, Int8Expert> = missing_ids
             .into_par_iter()
-            .filter_map(|eid| {
-                Int8Expert::load(
+            .zip(buffers.into_par_iter())
+            .filter_map(|(eid, (w, s))| {
+                Int8Expert::load_reusing(
                     index,
                     layer_id,
                     eid,
                     d,
                     intermediate_size,
-                    256 * 1024 * 1024,
+                    w,
+                    s,
                 )
                 .ok()
                 .map(|exp| (eid, exp))
@@ -1028,13 +1040,18 @@ impl OlmoeModel {
                     (p, Duration::ZERO)
                 } else {
                     let io_started = Instant::now();
-                    let loaded = Int8Expert::load(
+                    let (w, s) = layer
+                        .recycled_buffers
+                        .pop()
+                        .unwrap_or_else(|| (vec![0u8; weight_count], vec![0.0f32; scale_count]));
+                    let loaded = Int8Expert::load_reusing(
                         index,
                         layer_id,
                         expert_id,
                         d,
                         intermediate_size,
-                        256 * 1024 * 1024,
+                        w,
+                        s,
                     )?;
                     (loaded, io_started.elapsed())
                 };
@@ -1145,7 +1162,7 @@ impl OlmoeModel {
 
             if let Some(removed) = layer.cache.remove(idx) {
                 layer.bytes = layer.bytes.saturating_sub(removed.expert.resident_bytes());
-                if layer.recycled_buffers.len() < 8 {
+                if layer.recycled_buffers.len() < 16 {
                     layer.recycled_buffers.push(removed.expert.into_raw());
                 }
                 profile.cache_evictions += 1;
@@ -1203,7 +1220,6 @@ impl OlmoeModel {
             check()?;
             let (prev_and_curr, remaining) = layers.split_at_mut(id + 1);
             let layer = &mut prev_and_curr[id];
-            let next_layer_opt = remaining.first();
 
             let attention_started = Instant::now();
             let position = kv[id].keys.len() / kd;
@@ -1328,7 +1344,7 @@ impl OlmoeModel {
 
             // Hoàn trả các expert còn lại trong lookahead_prefetched (nếu không dùng đến) vào recycled_buffers
             for (_, unused_exp) in lookahead_prefetched.drain() {
-                if layer.recycled_buffers.len() < 8 {
+                if layer.recycled_buffers.len() < 16 {
                     layer.recycled_buffers.push(unused_exp.into_raw());
                 }
             }
@@ -1337,7 +1353,7 @@ impl OlmoeModel {
             // Opportunistic Lookahead: Chỉ kích hoạt nạp trước khi tầng hiện tại KHÔNG CÓ MISS (toàn bộ Hit).
             // Nếu tầng hiện tại có miss, ưu tiên 100% băng thông I/O nạp miss để tránh hiện tượng Prefetch Contention.
             let next_candidates = if miss_slots.is_empty() {
-                if let Some(next_l) = next_layer_opt {
+                if let Some(next_l) = remaining.first() {
                     Self::predict_next_layer_experts(
                         transitions,
                         id,
@@ -1405,9 +1421,32 @@ impl OlmoeModel {
             }
 
             // 5. Coarse-Grained Parallel Multi-Expert Dispatching kết hợp Compute-I/O Scheduling:
-            // - Nhánh I/O Worker (Rayon): nạp miss_ids của tầng hiện tại VÀ lookahead next_candidates của tầng sau
+            // - Rút sẵn các bộ đệm tái sử dụng (Zero-Allocation Recycled Buffers) từ pool
+            // - Nhánh I/O Worker (Rayon): nạp miss_ids và next_candidates trực tiếp vào recycled buffers
             // - Nhánh Compute: Tính toán song song các Hit experts bằng forward_single_threaded (0 nested Rayon barriers!)
             let has_io_work = !miss_slots.is_empty() || !next_candidates.is_empty();
+
+            let (curr_buffers, next_buffers) = if has_io_work {
+                let mut cb = Vec::with_capacity(miss_ids.len());
+                for _ in 0..miss_ids.len() {
+                    let buf = layer.recycled_buffers.pop().unwrap_or_else(|| {
+                        (vec![0u8; weight_count], vec![0.0f32; scale_count])
+                    });
+                    cb.push(buf);
+                }
+                let mut nb = Vec::with_capacity(next_candidates.len());
+                if let Some(next_l) = remaining.first_mut() {
+                    for _ in 0..next_candidates.len() {
+                        let buf = next_l.recycled_buffers.pop().unwrap_or_else(|| {
+                            (vec![0u8; weight_count], vec![0.0f32; scale_count])
+                        });
+                        nb.push(buf);
+                    }
+                }
+                (cb, nb)
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
             if !hit_ready.is_empty() && has_io_work {
                 let num_hits = hit_ready.len();
@@ -1418,15 +1457,17 @@ impl OlmoeModel {
                     || {
                         let started = Instant::now();
                         let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
-                            .par_iter()
-                            .filter_map(|&eid| {
-                                Int8Expert::load(
+                            .into_par_iter()
+                            .zip(curr_buffers.into_par_iter())
+                            .filter_map(|(eid, (w, s))| {
+                                Int8Expert::load_reusing(
                                     index,
                                     id,
                                     eid,
                                     d,
                                     intermediate_size,
-                                    256 * 1024 * 1024,
+                                    w,
+                                    s,
                                 )
                                 .ok()
                                 .map(|exp| (eid, exp))
@@ -1436,15 +1477,17 @@ impl OlmoeModel {
                         let next_loaded: HashMap<usize, Int8Expert> = if !next_candidates.is_empty()
                         {
                             next_candidates
-                                .par_iter()
-                                .filter_map(|&eid| {
-                                    Int8Expert::load(
+                                .into_par_iter()
+                                .zip(next_buffers.into_par_iter())
+                                .filter_map(|(eid, (w, s))| {
+                                    Int8Expert::load_reusing(
                                         index,
                                         id + 1,
                                         eid,
                                         d,
                                         intermediate_size,
-                                        256 * 1024 * 1024,
+                                        w,
+                                        s,
                                     )
                                     .ok()
                                     .map(|exp| (eid, exp))
@@ -1478,9 +1521,10 @@ impl OlmoeModel {
                 // hit_ready rỗng (toàn bộ là Miss)
                 let started = Instant::now();
                 let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
-                    .par_iter()
-                    .filter_map(|&eid| {
-                        Int8Expert::load(index, id, eid, d, intermediate_size, 256 * 1024 * 1024)
+                    .into_par_iter()
+                    .zip(curr_buffers.into_par_iter())
+                    .filter_map(|(eid, (w, s))| {
+                        Int8Expert::load_reusing(index, id, eid, d, intermediate_size, w, s)
                             .ok()
                             .map(|exp| (eid, exp))
                     })
@@ -1488,15 +1532,17 @@ impl OlmoeModel {
 
                 let next_loaded: HashMap<usize, Int8Expert> = if !next_candidates.is_empty() {
                     next_candidates
-                        .par_iter()
-                        .filter_map(|&eid| {
-                            Int8Expert::load(
+                        .into_par_iter()
+                        .zip(next_buffers.into_par_iter())
+                        .filter_map(|(eid, (w, s))| {
+                            Int8Expert::load_reusing(
                                 index,
                                 id + 1,
                                 eid,
                                 d,
                                 intermediate_size,
-                                256 * 1024 * 1024,
+                                w,
+                                s,
                             )
                             .ok()
                             .map(|exp| (eid, exp))

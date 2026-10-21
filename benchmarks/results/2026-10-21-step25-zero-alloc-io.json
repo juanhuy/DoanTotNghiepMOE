@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "model_directory": "models/olmoe-1b-7b-int8",
+  "prompt": "Where is Mars ?",
+  "max_tokens": 16,
+  "cache_bytes_per_layer": 134217728,
+  "context_limit": 512,
+  "dense_budget_bytes": 3221225472,
+  "logical_cpus": 12,
+  "load_ms": 2307.5964620000004,
+  "runs": [
+    {
+      "index": 0,
+      "cache_state": "engine-cold",
+      "response": {
+        "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+        "token_ids": [
+          13648,
+          310,
+          253,
+          7002,
+          8859,
+          432,
+          253,
+          5101,
+          275,
+          776,
+          9666,
+          985,
+          15,
+          733,
+          310,
+          4441
+        ],
+        "prompt_tokens": 20,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 1.440267,
+          "prefill_ms": 6777.5986459999995,
+          "time_to_first_token_ms": 6779.183698,
+          "decode_ms": 7258.163563,
+          "total_ms": 14037.395265000001,
+          "decode_tokens_per_second": 2.0666384643721205,
+          "attention_ms": 236.16442800000002,
+          "expert_compute_ms": 1467.556102,
+          "lm_head_ms": 48.07221,
+          "expert_io_ms": 10211.313049999999,
+          "expert_cache_hits": 3263,
+          "expert_cache_misses": 1217,
+          "expert_cache_evictions": 1305,
+          "expert_bytes_read": 10351165440,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9175040,
+          "cached_prompt_tokens": 0
+        }
+      }
+    },
+    {
+      "index": 1,
+      "cache_state": "engine-warm",
+      "response": {
+        "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+        "token_ids": [
+          13648,
+          310,
+          253,
+          7002,
+          8859,
+          432,
+          253,
+          5101,
+          275,
+          776,
+          9666,
+          985,
+          15,
+          733,
+          310,
+          4441
+        ],
+        "prompt_tokens": 20,
+        "finish_reason": "length",
+        "metrics": {
+          "tokenizer_ms": 0.106891,
+          "prefill_ms": 4484.615965999999,
+          "time_to_first_token_ms": 4484.747611000001,
+          "decode_ms": 6727.074991,
+          "total_ms": 11211.838805,
+          "decode_tokens_per_second": 2.229795270614369,
+          "attention_ms": 219.70295000000002,
+          "expert_compute_ms": 1763.4885709999999,
+          "lm_head_ms": 46.624491,
+          "expert_io_ms": 7148.662738999999,
+          "expert_cache_hits": 3587,
+          "expert_cache_misses": 893,
+          "expert_cache_evictions": 1253,
+          "expert_bytes_read": 7903723520,
+          "expert_cache_bytes": 2119434240,
+          "kv_cache_bytes": 9175040,
+          "cached_prompt_tokens": 0
+        }
+      }
+    }
+  ],
+  "notes": [
+    "engine-cold means the in-process expert cache starts empty",
+    "the operating-system page cache is not cleared or measured",
+    "decode_tokens_per_second counts model steps after the first sampled token"
+  ]
+}

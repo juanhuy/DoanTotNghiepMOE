@@ -177,3 +177,37 @@ fn rejects_invalid_scales() {
         assert!(Int8Expert::load(&index, 3, 7, 2, 1, 22).is_err());
     }
 }
+
+#[test]
+fn test_load_reusing_buffers_produces_identical_expert() {
+    let dir = tempfile::tempdir().unwrap();
+    fixture(dir.path(), &[0.5, 0.25, 2., 0.75]);
+    let index = TensorIndex::open(dir.path()).unwrap();
+
+    let expert_orig = Int8Expert::load(&index, 3, 7, 2, 1, 22).unwrap();
+
+    // Tái sử dụng buffers đã cấp phát sẵn
+    let mut weights = vec![0u8; 6];
+    let mut scales = vec![0.0f32; 4];
+    let expert_reused =
+        Int8Expert::load_reusing(&index, 3, 7, 2, 1, weights.clone(), scales.clone()).unwrap();
+
+    assert_eq!(expert_orig.weights(), expert_reused.weights());
+    assert_eq!(expert_orig.scales(), expert_reused.scales());
+
+    let (ret_w, ret_s) = expert_reused.into_raw();
+    assert_eq!(ret_w.len(), 6);
+    assert_eq!(ret_s.len(), 4);
+
+    // Kiểm tra đọc vào buffer có sẵn
+    index
+        .read_raw_into("model.layers.3.mlp.experts.7.merged_weight", &mut weights)
+        .unwrap();
+    assert_eq!(&weights, &[1, 255, 2, 1, 1, 254]);
+
+    let mut raw_scratch = [0u8; 16];
+    index
+        .read_f32_into("model.layers.3.mlp.experts.7.qs", &mut raw_scratch, &mut scales)
+        .unwrap();
+    assert_eq!(&scales, &[0.5, 0.25, 2., 0.75]);
+}
