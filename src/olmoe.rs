@@ -8,8 +8,8 @@ use crate::{
     int8_expert::{ExpertScratch, Int8Expert},
     safetensors::TensorIndex,
 };
-use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
     fs, io,
@@ -178,6 +178,7 @@ struct RequestProfile {
 
 struct StepScratch {
     expert: ExpertScratch,
+    expert_scratches: Vec<ExpertScratch>,
     x: Vec<f32>,
     hidden: Vec<f32>,
     query: Vec<f32>,
@@ -203,8 +204,13 @@ impl StepScratch {
             .map(|i| config.rope_theta.powf(2.0 * i as f32 / hd as f32))
             .collect();
         let sincos = vec![(0.0f32, 0.0f32); half_hd];
+        let num_expert_slots = config.num_experts_per_tok.max(1);
+        let expert_scratches = (0..num_expert_slots)
+            .map(|_| ExpertScratch::new(hidden, config.intermediate_size))
+            .collect();
         Self {
             expert: ExpertScratch::new(hidden, config.intermediate_size),
+            expert_scratches,
             x: vec![0.0; hidden],
             hidden: vec![0.0; hidden],
             query: vec![0.0; hidden],
@@ -825,7 +831,6 @@ impl OlmoeModel {
         }
     }
 
-
     /// Nạp trước (prefetch) song song các expert bị miss bằng Rayon — Sub-step 16-B
     #[allow(clippy::too_many_arguments)]
     fn prefetch_missing_experts(
@@ -864,9 +869,16 @@ impl OlmoeModel {
         let loaded: HashMap<usize, Int8Expert> = missing_ids
             .into_par_iter()
             .filter_map(|eid| {
-                Int8Expert::load(index, layer_id, eid, d, intermediate_size, 256 * 1024 * 1024)
-                    .ok()
-                    .map(|exp| (eid, exp))
+                Int8Expert::load(
+                    index,
+                    layer_id,
+                    eid,
+                    d,
+                    intermediate_size,
+                    256 * 1024 * 1024,
+                )
+                .ok()
+                .map(|exp| (eid, exp))
             })
             .collect();
         let elapsed = started.elapsed();
@@ -966,7 +978,12 @@ impl OlmoeModel {
             profile.cache_hits += uses_count;
             let entry = layer.cache.remove(pos).unwrap();
             layer.bytes = layer.bytes.saturating_sub(entry.expert.resident_bytes());
-            (entry.expert, true, entry.hits_in_cache.saturating_add(1), entry.is_protected)
+            (
+                entry.expert,
+                true,
+                entry.hits_in_cache.saturating_add(1),
+                entry.is_protected,
+            )
         } else {
             // Cấp 1: Kiểm tra L1 GPU VRAM Cache trước khi đọc đĩa SSD NVMe
             let mut from_vram = None;
@@ -979,10 +996,10 @@ impl OlmoeModel {
                     } = storage;
                     if let Some(gpu_weights) = expert_cache.get(layer_id, expert_id) {
                         let io_started = Instant::now();
-                        let (mut weights, mut scales) = layer
-                            .recycled_buffers
-                            .pop()
-                            .unwrap_or_else(|| (vec![0u8; weight_count], vec![0.0f32; scale_count]));
+                        let (mut weights, mut scales) =
+                            layer.recycled_buffers.pop().unwrap_or_else(|| {
+                                (vec![0u8; weight_count], vec![0.0f32; scale_count])
+                            });
                         weights.resize(weight_count, 0);
                         scales.resize(scale_count, 0.0);
                         if engine
@@ -1287,22 +1304,24 @@ impl OlmoeModel {
 
             // 2. Phân loại Expert Hit/Miss kết hợp trúng Lookahead Prefetch từ tầng trước:
             let mut preloaded = HashMap::new();
-            let mut hit_ids = Vec::with_capacity(top_experts.len());
-            let mut miss_ids = Vec::with_capacity(top_experts.len());
+            let mut hit_slots = Vec::with_capacity(top_k);
+            let mut miss_slots = Vec::with_capacity(top_k);
+            let mut miss_ids = Vec::with_capacity(top_k);
 
-            for &eid in top_experts.iter() {
+            for (slot, &eid) in top_experts.iter().enumerate() {
                 let is_hit = layer.cache.iter().any(|entry| entry.id == eid)
                     || gpu_dense
                         .as_ref()
                         .is_some_and(|s| gpu_tier.is_enabled() && s.expert_cache.contains(id, eid));
                 if is_hit {
-                    hit_ids.push(eid);
+                    hit_slots.push(slot);
                 } else if let Some(exp) = lookahead_prefetched.remove(&eid) {
                     // TRÚNG LOOKAHEAD PREFETCH TỪ TẦNG TRƯỚC!
                     // Biến 1 Miss I/O từ SSD thành 1 Hit tức thời trong RAM!
                     preloaded.insert(eid, exp);
-                    hit_ids.push(eid);
+                    hit_slots.push(slot);
                 } else {
+                    miss_slots.push(slot);
                     miss_ids.push(eid);
                 }
             }
@@ -1317,7 +1336,7 @@ impl OlmoeModel {
             // 3. Dự đoán Speculative Lookahead Candidates cho tầng tiếp theo (id + 1):
             // Opportunistic Lookahead: Chỉ kích hoạt nạp trước khi tầng hiện tại KHÔNG CÓ MISS (toàn bộ Hit).
             // Nếu tầng hiện tại có miss, ưu tiên 100% băng thông I/O nạp miss để tránh hiện tượng Prefetch Contention.
-            let next_candidates = if miss_ids.is_empty() {
+            let next_candidates = if miss_slots.is_empty() {
                 if let Some(next_l) = next_layer_opt {
                     Self::predict_next_layer_experts(
                         transitions,
@@ -1336,31 +1355,99 @@ impl OlmoeModel {
                 Vec::new()
             };
 
-            // 4. Hit-First Decoupled Compute-I/O Scheduling kết hợp Inter-Layer Lookahead Prefetch:
-            // - Nhánh I/O Worker (Rayon): nạp miss_ids của tầng hiện tại VÀ lookahead next_candidates của tầng sau
-            // - Nhánh Compute (Main Thread): lập tức tính toán toàn bộ hit_ids của tầng hiện tại
-            let has_io_work = !miss_ids.is_empty() || !next_candidates.is_empty();
+            // 4. Chuẩn bị danh sách Hit Experts sẵn sàng tính toán
+            struct ReadyExpert {
+                slot: usize,
+                expert_id: usize,
+                expert: Int8Expert,
+                l2_hit: bool,
+                hits_in_cache: u32,
+                is_protected: bool,
+            }
 
-            let (prefetch_curr, prefetch_next, prefetch_io) = if !hit_ids.is_empty() && has_io_work {
-                let (io_res, ()) = rayon::join(
+            let mut hit_ready = Vec::with_capacity(hit_slots.len());
+            for &slot in &hit_slots {
+                let expert_id = top_experts[slot];
+                layer.clock = layer.clock.wrapping_add(1);
+                if layer.clock % 65_536 == 0 {
+                    layer.heat.iter_mut().for_each(|heat| *heat /= 2);
+                }
+                layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
+                let mut empty_map = HashMap::new();
+                let is_preloaded = preloaded.contains_key(&expert_id);
+                let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
+                    id,
+                    expert_id,
+                    d,
+                    intermediate_size,
+                    weight_count,
+                    scale_count,
+                    index,
+                    layer,
+                    gpu_dense,
+                    gpu_tier.is_enabled(),
+                    profile,
+                    1,
+                    if is_preloaded {
+                        &mut preloaded
+                    } else {
+                        &mut empty_map
+                    },
+                )?;
+                hit_ready.push(ReadyExpert {
+                    slot,
+                    expert_id,
+                    expert,
+                    l2_hit,
+                    hits_in_cache,
+                    is_protected,
+                });
+            }
+
+            // 5. Coarse-Grained Parallel Multi-Expert Dispatching kết hợp Compute-I/O Scheduling:
+            // - Nhánh I/O Worker (Rayon): nạp miss_ids của tầng hiện tại VÀ lookahead next_candidates của tầng sau
+            // - Nhánh Compute: Tính toán song song các Hit experts bằng forward_single_threaded (0 nested Rayon barriers!)
+            let has_io_work = !miss_slots.is_empty() || !next_candidates.is_empty();
+
+            if !hit_ready.is_empty() && has_io_work {
+                let num_hits = hit_ready.len();
+                let (hit_scratches, _) = scratch.expert_scratches[..top_k].split_at_mut(num_hits);
+                let hidden = &scratch.hidden[..];
+
+                let (io_res, compute_res) = rayon::join(
                     || {
                         let started = Instant::now();
                         let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
                             .par_iter()
                             .filter_map(|&eid| {
-                                Int8Expert::load(index, id, eid, d, intermediate_size, 256 * 1024 * 1024)
-                                    .ok()
-                                    .map(|exp| (eid, exp))
+                                Int8Expert::load(
+                                    index,
+                                    id,
+                                    eid,
+                                    d,
+                                    intermediate_size,
+                                    256 * 1024 * 1024,
+                                )
+                                .ok()
+                                .map(|exp| (eid, exp))
                             })
                             .collect();
 
-                        let next_loaded: HashMap<usize, Int8Expert> = if !next_candidates.is_empty() {
+                        let next_loaded: HashMap<usize, Int8Expert> = if !next_candidates.is_empty()
+                        {
                             next_candidates
                                 .par_iter()
                                 .filter_map(|&eid| {
-                                    Int8Expert::load(index, id + 1, eid, d, intermediate_size, 256 * 1024 * 1024)
-                                        .ok()
-                                        .map(|exp| (eid, exp))
+                                    Int8Expert::load(
+                                        index,
+                                        id + 1,
+                                        eid,
+                                        d,
+                                        intermediate_size,
+                                        256 * 1024 * 1024,
+                                    )
+                                    .ok()
+                                    .map(|exp| (eid, exp))
                                 })
                                 .collect()
                         } else {
@@ -1370,58 +1457,25 @@ impl OlmoeModel {
                         (curr_loaded, next_loaded, started.elapsed())
                     },
                     || {
-                        for &expert_id in &hit_ids {
-                            layer.clock = layer.clock.wrapping_add(1);
-                            if layer.clock % 65_536 == 0 {
-                                layer.heat.iter_mut().for_each(|heat| *heat /= 2);
-                            }
-                            layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
-                            let mut empty_map = HashMap::new();
-                            let is_preloaded = preloaded.contains_key(&expert_id);
-                            if let Ok((expert, l2_hit, hits_in_cache, is_protected)) =
-                                Self::acquire_expert_tiered(
-                                    id,
-                                    expert_id,
-                                    d,
-                                    intermediate_size,
-                                    weight_count,
-                                    scale_count,
-                                    index,
-                                    layer,
-                                    gpu_dense,
-                                    gpu_tier.is_enabled(),
-                                    profile,
-                                    1,
-                                    if is_preloaded {
-                                        &mut preloaded
-                                    } else {
-                                        &mut empty_map
-                                    },
-                                )
-                            {
-                                let expert_started = Instant::now();
-                                if let Ok(result) = expert.forward_reuse(&scratch.hidden, &mut scratch.expert) {
-                                    profile.expert_compute += expert_started.elapsed();
-                                    for (a, b) in scratch.x.iter_mut().zip(result.iter().copied()) {
-                                        *a += scratch.router[expert_id] / normalizer * b;
-                                    }
-                                }
-                                Self::admit_expert_l2(
-                                    layer,
-                                    expert_id,
-                                    expert,
-                                    l2_hit,
-                                    hits_in_cache,
-                                    is_protected,
-                                    cache_bytes_per_layer,
-                                    profile,
-                                );
-                            }
-                        }
+                        let started = Instant::now();
+                        let res = hit_ready
+                            .par_iter()
+                            .zip(hit_scratches.par_iter_mut())
+                            .try_for_each(|(ready, scratch_buf)| {
+                                ready.expert.forward_single_threaded(hidden, scratch_buf)?;
+                                Ok::<(), io::Error>(())
+                            });
+                        (res, started.elapsed())
                     },
                 );
-                io_res
+
+                compute_res.0?;
+                profile.expert_compute += compute_res.1;
+                profile.expert_io += io_res.2;
+                preloaded.extend(io_res.0);
+                lookahead_prefetched = io_res.1;
             } else if has_io_work {
+                // hit_ready rỗng (toàn bộ là Miss)
                 let started = Instant::now();
                 let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
                     .par_iter()
@@ -1436,74 +1490,135 @@ impl OlmoeModel {
                     next_candidates
                         .par_iter()
                         .filter_map(|&eid| {
-                            Int8Expert::load(index, id + 1, eid, d, intermediate_size, 256 * 1024 * 1024)
-                                .ok()
-                                .map(|exp| (eid, exp))
+                            Int8Expert::load(
+                                index,
+                                id + 1,
+                                eid,
+                                d,
+                                intermediate_size,
+                                256 * 1024 * 1024,
+                            )
+                            .ok()
+                            .map(|exp| (eid, exp))
                         })
                         .collect()
                 } else {
                     HashMap::new()
                 };
 
-                (curr_loaded, next_loaded, started.elapsed())
+                profile.expert_io += started.elapsed();
+                preloaded.extend(curr_loaded);
+                lookahead_prefetched = next_loaded;
             } else {
-                (HashMap::new(), HashMap::new(), Duration::ZERO)
-            };
+                // has_io_work là false: 100% Cache Hit, tính song song toàn bộ hit_ready
+                let num_hits = hit_ready.len();
+                let (hit_scratches, _) = scratch.expert_scratches[..top_k].split_at_mut(num_hits);
+                let hidden = &scratch.hidden[..];
+                let started = Instant::now();
+                hit_ready
+                    .par_iter()
+                    .zip(hit_scratches.par_iter_mut())
+                    .try_for_each(|(ready, scratch_buf)| {
+                        ready.expert.forward_single_threaded(hidden, scratch_buf)?;
+                        Ok::<(), io::Error>(())
+                    })?;
+                profile.expert_compute += started.elapsed();
+            }
 
-            profile.expert_io += prefetch_io;
-            preloaded.extend(prefetch_curr);
-            lookahead_prefetched = prefetch_next;
-
-            // Xử lý các phần tử còn lại cần tính toán
-            let remaining_to_compute = if !hit_ids.is_empty() && has_io_work {
-                // Nhóm Hit đã được tính toán trong rayon::join song song với I/O, chỉ còn nhóm Miss cần tính
-                &miss_ids[..]
-            } else if hit_ids.is_empty() {
-                // Không có phần tử Hit nào, toàn bộ nhóm Miss cần tính toán
-                &miss_ids[..]
-            } else {
-                // has_io_work là false: không có I/O nào chạy, nhóm Hit chưa được tính
-                &hit_ids[..]
-            };
-
-            for &expert_id in remaining_to_compute {
-                check()?;
+            // 6. Tính toán song song các Miss Experts vừa được nạp từ SSD vào preloaded
+            let mut miss_ready = Vec::with_capacity(miss_slots.len());
+            for &slot in &miss_slots {
+                let expert_id = top_experts[slot];
                 layer.clock = layer.clock.wrapping_add(1);
                 if layer.clock % 65_536 == 0 {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
-                let (expert, l2_hit, hits_in_cache, is_protected) =
-                    Self::acquire_expert_tiered(
-                        id,
-                        expert_id,
-                        d,
-                        intermediate_size,
-                        weight_count,
-                        scale_count,
-                        index,
-                        layer,
-                        gpu_dense,
-                        gpu_tier.is_enabled(),
-                        profile,
-                        1,
-                        &mut preloaded,
-                    )?;
-
-                let expert_started = Instant::now();
-                let result = expert.forward_reuse(&scratch.hidden, &mut scratch.expert)?;
-                profile.expert_compute += expert_started.elapsed();
-                for (a, b) in scratch.x.iter_mut().zip(result.iter().copied()) {
-                    *a += scratch.router[expert_id] / normalizer * b;
-                }
-
-                Self::admit_expert_l2(
+                let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
+                    id,
+                    expert_id,
+                    d,
+                    intermediate_size,
+                    weight_count,
+                    scale_count,
+                    index,
                     layer,
+                    gpu_dense,
+                    gpu_tier.is_enabled(),
+                    profile,
+                    1,
+                    &mut preloaded,
+                )?;
+                miss_ready.push(ReadyExpert {
+                    slot,
                     expert_id,
                     expert,
                     l2_hit,
                     hits_in_cache,
                     is_protected,
+                });
+            }
+
+            if !miss_ready.is_empty() {
+                let num_hits = hit_ready.len();
+                let (_, miss_scratches) = scratch.expert_scratches[..top_k].split_at_mut(num_hits);
+                let hidden = &scratch.hidden[..];
+                let started = Instant::now();
+                miss_ready
+                    .par_iter()
+                    .zip(miss_scratches.par_iter_mut())
+                    .try_for_each(|(ready, scratch_buf)| {
+                        ready.expert.forward_single_threaded(hidden, scratch_buf)?;
+                        Ok::<(), io::Error>(())
+                    })?;
+                profile.expert_compute += started.elapsed();
+            }
+
+            // 7. Deterministic Fused Reduction vào scratch.x theo đúng thứ tự Top-K ban đầu
+            let mut slot_to_scratch = [0usize; 64];
+            for (i, item) in hit_ready.iter().enumerate() {
+                if item.slot < 64 {
+                    slot_to_scratch[item.slot] = i;
+                }
+            }
+            let num_hits = hit_ready.len();
+            for (j, item) in miss_ready.iter().enumerate() {
+                if item.slot < 64 {
+                    slot_to_scratch[item.slot] = num_hits + j;
+                }
+            }
+
+            for (slot, &expert_id) in top_experts.iter().enumerate() {
+                let scratch_idx = slot_to_scratch[slot];
+                let weight = scratch.router[expert_id] / normalizer;
+                let out = &scratch.expert_scratches[scratch_idx].output;
+                for (a, b) in scratch.x.iter_mut().zip(out.iter().copied()) {
+                    *a += weight * b;
+                }
+            }
+
+            // 8. Hoàn trả và nạp lại Cache L2: Ưu tiên trả Hit entries trước, sau đó mới nạp Miss entries
+            for item in hit_ready {
+                Self::admit_expert_l2(
+                    layer,
+                    item.expert_id,
+                    item.expert,
+                    item.l2_hit,
+                    item.hits_in_cache,
+                    item.is_protected,
+                    cache_bytes_per_layer,
+                    profile,
+                );
+            }
+
+            for item in miss_ready {
+                Self::admit_expert_l2(
+                    layer,
+                    item.expert_id,
+                    item.expert,
+                    item.l2_hit,
+                    item.hits_in_cache,
+                    item.is_protected,
                     cache_bytes_per_layer,
                     profile,
                 );
@@ -1741,22 +1856,21 @@ impl OlmoeModel {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(uses_u32);
-                let (expert, l2_hit, hits_in_cache, is_protected) =
-                    Self::acquire_expert_tiered(
-                        layer_id,
-                        expert_id,
-                        d,
-                        intermediate_size,
-                        weight_count,
-                        scale_count,
-                        index,
-                        layer,
-                        gpu_dense,
-                        gpu_tier.is_enabled(),
-                        profile,
-                        uses.len() as u64,
-                        &mut preloaded,
-                    )?;
+                let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
+                    layer_id,
+                    expert_id,
+                    d,
+                    intermediate_size,
+                    weight_count,
+                    scale_count,
+                    index,
+                    layer,
+                    gpu_dense,
+                    gpu_tier.is_enabled(),
+                    profile,
+                    uses.len() as u64,
+                    &mut preloaded,
+                )?;
 
                 for &(token, slot, weight) in uses {
                     check()?;
@@ -2459,9 +2573,7 @@ mod routing_and_topk_tests {
             });
         }
         let top_experts = &mut valid_indices[..top_k];
-        top_experts.sort_by(|&a, &b| {
-            router[b].total_cmp(&router[a]).then_with(|| a.cmp(&b))
-        });
+        top_experts.sort_by(|&a, &b| router[b].total_cmp(&router[a]).then_with(|| a.cmp(&b)));
         assert_eq!(top_experts[0], 3);
         assert_eq!(top_experts[1], 7);
         assert_eq!(top_experts.len(), 64);
@@ -2486,11 +2598,31 @@ mod routing_and_topk_tests {
             post_norm: vec![],
             q_norm: vec![],
             k_norm: vec![],
-            q: Matrix { rows: 0, columns: 0, values: vec![] },
-            k: Matrix { rows: 0, columns: 0, values: vec![] },
-            v: Matrix { rows: 0, columns: 0, values: vec![] },
-            o: Matrix { rows: 0, columns: 0, values: vec![] },
-            router: Matrix { rows: 0, columns: 0, values: vec![] },
+            q: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            k: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            v: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            o: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            router: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
             cache: VecDeque::new(),
             bytes: 0,
             heat: vec![0; 64],
@@ -2502,7 +2634,16 @@ mod routing_and_topk_tests {
         // 1. Nạp expert 10 (miss) -> Probationary
         layer.clock = 1;
         layer.heat[10] = 1;
-        OlmoeModel::admit_expert_l2(&mut layer, 10, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            10,
+            make_expert(),
+            false,
+            1,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
         assert_eq!(layer.cache.len(), 1);
         assert!(!layer.cache[0].is_protected);
 
@@ -2511,43 +2652,109 @@ mod routing_and_topk_tests {
         layer.bytes -= expert_bytes;
         layer.clock = 2;
         layer.heat[10] = 2;
-        OlmoeModel::admit_expert_l2(&mut layer, 10, make_expert(), true, 2, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            10,
+            make_expert(),
+            true,
+            2,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
         assert_eq!(layer.cache.len(), 1);
         assert!(layer.cache[0].is_protected);
 
         // 3. Nạp expert 20 và thăng hạng lên Protected
         layer.clock = 3;
         layer.heat[20] = 1;
-        OlmoeModel::admit_expert_l2(&mut layer, 20, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            20,
+            make_expert(),
+            false,
+            1,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
         let _ = layer.cache.pop_back().unwrap();
         layer.bytes -= expert_bytes;
         layer.clock = 4;
         layer.heat[20] = 2;
-        OlmoeModel::admit_expert_l2(&mut layer, 20, make_expert(), true, 2, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            20,
+            make_expert(),
+            true,
+            2,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
 
         // 4. Nạp expert 30 (probationary) và 40 (probationary) -> Bộ đệm đầy 4/4 slots
         layer.clock = 5;
         layer.heat[30] = 1;
-        OlmoeModel::admit_expert_l2(&mut layer, 30, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            30,
+            make_expert(),
+            false,
+            1,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
         layer.clock = 6;
         layer.heat[40] = 1;
-        OlmoeModel::admit_expert_l2(&mut layer, 40, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            40,
+            make_expert(),
+            false,
+            1,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
         assert_eq!(layer.cache.len(), 4);
         assert_eq!(layer.bytes, cache_capacity);
 
         // 5. Nạp expert mới 50 (miss). SF-Cache BUỘC PHẢI trục xuất phần tử Probationary (30), KHÔNG ĐƯỢC trục xuất 10 hoặc 20!
         layer.clock = 7;
         layer.heat[50] = 1;
-        OlmoeModel::admit_expert_l2(&mut layer, 50, make_expert(), false, 1, false, cache_capacity, &mut profile);
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            50,
+            make_expert(),
+            false,
+            1,
+            false,
+            cache_capacity,
+            &mut profile,
+        );
         assert_eq!(layer.cache.len(), 4);
         assert_eq!(layer.bytes, cache_capacity);
 
         // Thẩm định: Expert 10 và 20 vẫn an toàn tuyệt đối trong cache!
         let cached_ids: Vec<usize> = layer.cache.iter().map(|e| e.id).collect();
-        assert!(cached_ids.contains(&10), "Expert 10 (protected) không được bị trục xuất");
-        assert!(cached_ids.contains(&20), "Expert 20 (protected) không được bị trục xuất");
-        assert!(cached_ids.contains(&50), "Expert 50 mới phải được nạp vào cache");
-        assert!(!cached_ids.contains(&30), "Expert 30 (probationary cũ nhất) phải bị trục xuất");
+        assert!(
+            cached_ids.contains(&10),
+            "Expert 10 (protected) không được bị trục xuất"
+        );
+        assert!(
+            cached_ids.contains(&20),
+            "Expert 20 (protected) không được bị trục xuất"
+        );
+        assert!(
+            cached_ids.contains(&50),
+            "Expert 50 mới phải được nạp vào cache"
+        );
+        assert!(
+            !cached_ids.contains(&30),
+            "Expert 30 (probationary cũ nhất) phải bị trục xuất"
+        );
     }
 
     #[test]
@@ -2597,8 +2804,81 @@ mod routing_and_topk_tests {
         // Expert 48 có transition (10 + 10 = 20) và heat (0) -> Score = 20
         // Expert 9 có heat (100/4 = 25) và transition (0) -> Score = 25
         assert_eq!(candidates.len(), 3);
-        assert!(candidates.contains(&25), "Expert 25 phải nằm trong top candidates");
-        assert!(candidates.contains(&48), "Expert 48 phải nằm trong top candidates");
-        assert!(candidates.contains(&9), "Expert 9 (high heat) phải nằm trong top candidates");
+        assert!(
+            candidates.contains(&25),
+            "Expert 25 phải nằm trong top candidates"
+        );
+        assert!(
+            candidates.contains(&48),
+            "Expert 48 phải nằm trong top candidates"
+        );
+        assert!(
+            candidates.contains(&9),
+            "Expert 9 (high heat) phải nằm trong top candidates"
+        );
+    }
+
+    #[test]
+    fn test_coarse_grained_multi_expert_scratch_and_reduction() {
+        let hidden = 64;
+        let intermediate = 32;
+        let top_k = 4;
+
+        // Tạo 4 experts giả lập
+        let experts: Vec<Int8Expert> = (0..top_k)
+            .map(|e| {
+                let n = hidden * intermediate;
+                let weights = (0..3 * n).map(|i| ((i * 13 + e * 7) % 256) as u8).collect();
+                let scales = (0..2 * intermediate + hidden)
+                    .map(|i| 0.002 * (1 + (i + e) % 5) as f32)
+                    .collect();
+                Int8Expert::from_raw(hidden, intermediate, weights, scales)
+            })
+            .collect();
+
+        let input: Vec<f32> = (0..hidden).map(|i| ((i % 17) as f32 - 8.0) / 9.0).collect();
+        let weights = [0.4f32, 0.3f32, 0.2f32, 0.1f32];
+
+        // 1. Tính toán theo mô hình tuần tự (baseline)
+        let mut expected_x = vec![0.0f32; hidden];
+        for (i, expert) in experts.iter().enumerate() {
+            let mut scratch = ExpertScratch::new(hidden, intermediate);
+            let out = expert
+                .forward_single_threaded(&input, &mut scratch)
+                .unwrap();
+            for (x_val, &o_val) in expected_x.iter_mut().zip(out) {
+                *x_val += weights[i] * o_val;
+            }
+        }
+
+        // 2. Tính toán theo mô hình song song Coarse-Grained Rayon (Bước 24)
+        let mut expert_scratches: Vec<ExpertScratch> = (0..top_k)
+            .map(|_| ExpertScratch::new(hidden, intermediate))
+            .collect();
+
+        experts
+            .par_iter()
+            .zip(expert_scratches.par_iter_mut())
+            .for_each(|(expert, scratch)| {
+                expert.forward_single_threaded(&input, scratch).unwrap();
+            });
+
+        let mut actual_x = vec![0.0f32; hidden];
+        for (i, scratch) in expert_scratches.iter().enumerate() {
+            for (x_val, &o_val) in actual_x.iter_mut().zip(&scratch.output) {
+                *x_val += weights[i] * o_val;
+            }
+        }
+
+        // Thẩm định bit-exact 100%
+        for i in 0..hidden {
+            assert_eq!(
+                expected_x[i].to_bits(),
+                actual_x[i].to_bits(),
+                "Bit mismatch at index {i}: {} vs {}",
+                expected_x[i],
+                actual_x[i]
+            );
+        }
     }
 }

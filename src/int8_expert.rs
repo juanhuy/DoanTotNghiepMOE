@@ -15,8 +15,8 @@ pub struct Int8Expert {
 }
 
 pub(crate) struct ExpertScratch {
-    activated: Vec<f32>,
-    output: Vec<f32>,
+    pub(crate) activated: Vec<f32>,
+    pub(crate) output: Vec<f32>,
 }
 
 impl ExpertScratch {
@@ -150,6 +150,40 @@ impl Int8Expert {
         finite(&scratch.output)?;
         Ok(&scratch.output)
     }
+
+    /// Tính toán tuần tự trên 1 CPU core duy nhất, tận dụng 100% đường ống SIMD 32-lane 4-bank.
+    /// Dành cho mô hình Coarse-Grained Parallelism (nhiều experts chạy song song trên các workers độc lập của Rayon).
+    pub(crate) fn forward_single_threaded<'a>(
+        &self,
+        input: &[f32],
+        scratch: &'a mut ExpertScratch,
+    ) -> io::Result<&'a [f32]> {
+        if input.len() != self.hidden {
+            return Err(invalid("expert input dimension mismatch"));
+        }
+        if scratch.activated.len() != self.intermediate || scratch.output.len() != self.hidden {
+            return Err(invalid("expert scratch dimension mismatch"));
+        }
+        finite(input)?;
+        let n = self.hidden * self.intermediate;
+        fused_gate_up_swiglu_seq(
+            &self.weights[..n],
+            &self.weights[n..2 * n],
+            &self.scales[..self.intermediate],
+            &self.scales[self.intermediate..2 * self.intermediate],
+            input,
+            &mut scratch.activated,
+            self.hidden,
+        );
+        matvec_into_seq(
+            &self.weights[2 * n..],
+            &self.scales[2 * self.intermediate..],
+            &scratch.activated,
+            &mut scratch.output,
+        );
+        finite(&scratch.output)?;
+        Ok(&scratch.output)
+    }
 }
 
 /// Tích vô hướng INT8 x FP32 với 4 bộ cộng độc lập (32 elements / bước) tối ưu hóa cho đường ống lệnh SIMD FMA
@@ -245,6 +279,48 @@ fn matvec_into(weights: &[u8], scales: &[f32], input: &[f32], output: &mut [f32]
             .zip(scales)
             .for_each(|((target, row), scale)| compute(target, row, scale));
     }
+}
+
+/// Phiên bản tuần tự 100% của Fused Gate-Up SwiGLU: không gọi par_iter_mut()
+#[inline]
+fn fused_gate_up_swiglu_seq(
+    gate_weights: &[u8],
+    up_weights: &[u8],
+    gate_scales: &[f32],
+    up_scales: &[f32],
+    input: &[f32],
+    activated: &mut [f32],
+    hidden: usize,
+) {
+    debug_assert_eq!(activated.len(), gate_scales.len());
+    debug_assert_eq!(activated.len(), up_scales.len());
+
+    let compute_lane = |i: usize, target: &mut f32| {
+        let gate_row = &gate_weights[i * hidden..(i + 1) * hidden];
+        let up_row = &up_weights[i * hidden..(i + 1) * hidden];
+        let g = dot_i8_f32(gate_row, input) * gate_scales[i];
+        let u = dot_i8_f32(up_row, input) * up_scales[i];
+        let silu = g / (1.0 + (-g).exp());
+        *target = silu * u;
+    };
+
+    activated
+        .iter_mut()
+        .enumerate()
+        .for_each(|(i, target)| compute_lane(i, target));
+}
+
+/// Phiên bản tuần tự 100% của Down projection: không gọi par_iter_mut()
+#[inline]
+fn matvec_into_seq(weights: &[u8], scales: &[f32], input: &[f32], output: &mut [f32]) {
+    let compute = |target: &mut f32, row: &[u8], scale: &f32| {
+        *target = dot_i8_f32(row, input) * scale;
+    };
+    output
+        .iter_mut()
+        .zip(weights.chunks_exact(input.len()))
+        .zip(scales)
+        .for_each(|((target, row), scale)| compute(target, row, scale));
 }
 
 #[cfg(test)]
@@ -366,5 +442,41 @@ mod kernel_tests {
                 "alternating measurement order; default release target; CPU frequency and background load uncontrolled"]});
         let path = std::env::var("MOE_KERNEL_REPORT").expect("set MOE_KERNEL_REPORT output path");
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn test_forward_single_threaded_matches_forward_reuse() {
+        let hidden = 64;
+        let intermediate = 32;
+        let n = hidden * intermediate;
+        let weights: Vec<u8> = (0..3 * n).map(|i| ((i * 17 + 5) % 256) as u8).collect();
+        let scales: Vec<f32> = (0..2 * intermediate + hidden)
+            .map(|i| 0.005 * (1 + i % 13) as f32)
+            .collect();
+        let expert = Int8Expert::from_raw(hidden, intermediate, weights, scales);
+        let input: Vec<f32> = (0..hidden)
+            .map(|i| ((i * 7 % 23) as f32 - 11.0) / 12.0)
+            .collect();
+
+        let mut scratch1 = ExpertScratch::new(hidden, intermediate);
+        let mut scratch2 = ExpertScratch::new(hidden, intermediate);
+
+        let out_reuse = expert
+            .forward_reuse(&input, &mut scratch1)
+            .unwrap()
+            .to_vec();
+        let out_seq = expert
+            .forward_single_threaded(&input, &mut scratch2)
+            .unwrap()
+            .to_vec();
+
+        assert_eq!(out_reuse.len(), out_seq.len());
+        for (i, (a, b)) in out_reuse.iter().zip(&out_seq).enumerate() {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "Bit mismatch at lane {i}: {a} vs {b}"
+            );
+        }
     }
 }

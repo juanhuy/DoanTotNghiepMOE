@@ -78,9 +78,7 @@ fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn reset_cache(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn reset_cache(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
     tokio::task::spawn_blocking(move || state.engine.reset_cache())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?

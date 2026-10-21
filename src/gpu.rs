@@ -80,7 +80,6 @@ pub(crate) struct CudaDriverApi {
     pub cu_mem_free_host: unsafe extern "C" fn(p: *mut c_void) -> CUresult,
 }
 
-
 unsafe impl Send for CudaDriverApi {}
 unsafe impl Sync for CudaDriverApi {}
 
@@ -518,7 +517,9 @@ impl GpuComputeEngine {
         unsafe {
             let _ = (self.driver.cu_ctx_set_current)(self.ctx);
             if in_bytes > state.d_scratch_in_cap {
-                let new_cap = in_bytes.next_power_of_two().max(8192 * std::mem::size_of::<f32>());
+                let new_cap = in_bytes
+                    .next_power_of_two()
+                    .max(8192 * std::mem::size_of::<f32>());
                 let mut new_ptr = 0;
                 let status = (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap);
                 if status != CUDA_SUCCESS {
@@ -536,7 +537,9 @@ impl GpuComputeEngine {
                 state.d_scratch_in_cap = new_cap;
             }
             if out_bytes > state.d_scratch_out_cap {
-                let new_cap = out_bytes.next_power_of_two().max(65536 * std::mem::size_of::<f32>());
+                let new_cap = out_bytes
+                    .next_power_of_two()
+                    .max(65536 * std::mem::size_of::<f32>());
                 let mut new_ptr = 0;
                 let status = (self.driver.cu_mem_alloc)(&mut new_ptr, new_cap);
                 if status != CUDA_SUCCESS {
@@ -1274,7 +1277,6 @@ impl PinnedBuffer {
         std::slice::from_raw_parts(self.ptr as *const T, self.len / std::mem::size_of::<T>())
     }
 
-
     pub fn as_ptr(&self) -> *const c_void {
         self.ptr
     }
@@ -1455,7 +1457,6 @@ impl GpuExpertPool {
         }
         Ok(())
     }
-
 }
 
 impl Drop for GpuExpertPool {
@@ -1471,8 +1472,6 @@ impl Drop for GpuExpertPool {
         }
     }
 }
-
-
 
 /// Trọng số một Expert INT8 được lưu trực tiếp trên GPU VRAM (L1 VRAM Expert Cache)
 pub struct GpuExpertWeights {
@@ -1621,7 +1620,6 @@ impl GpuExpertCache {
     }
 }
 
-
 /// Toàn bộ cấu trúc Dense Offload và L1 Expert Cache trên VRAM.
 /// Chú ý thứ tự khai báo: `engine` phải được khai báo CUỐI CÙNG để khi Drop,
 /// toàn bộ các buffer VRAM (layers, lm_head, expert_cache, expert_pool, pinned_upload_buf)
@@ -1678,25 +1676,27 @@ impl GpuDenseStorage {
                     unsafe {
                         let slice = pinned.as_mut_slice::<u8>();
                         slice[..weight_bytes].copy_from_slice(weights);
-                        let scales_u8 = std::slice::from_raw_parts(
-                            scales.as_ptr() as *const u8,
-                            scale_bytes,
-                        );
+                        let scales_u8 =
+                            std::slice::from_raw_parts(scales.as_ptr() as *const u8, scale_bytes);
                         slice[aligned_weight_bytes..aligned_weight_bytes + scale_bytes]
                             .copy_from_slice(scales_u8);
-                        (
-                            pinned.as_ptr(),
-                            pinned.as_ptr().add(aligned_weight_bytes),
-                        )
+                        (pinned.as_ptr(), pinned.as_ptr().add(aligned_weight_bytes))
                     }
                 } else {
-                    (weights.as_ptr() as *const c_void, scales.as_ptr() as *const c_void)
+                    (
+                        weights.as_ptr() as *const c_void,
+                        scales.as_ptr() as *const c_void,
+                    )
                 }
             } else {
-                (weights.as_ptr() as *const c_void, scales.as_ptr() as *const c_void)
+                (
+                    weights.as_ptr() as *const c_void,
+                    scales.as_ptr() as *const c_void,
+                )
             };
 
-            let maybe_slot = unsafe { pool.upload(weights_ptr, weight_bytes, scales_ptr, scale_bytes) };
+            let maybe_slot =
+                unsafe { pool.upload(weights_ptr, weight_bytes, scales_ptr, scale_bytes) };
             if let Some(slot) = maybe_slot {
                 let exp_weights = GpuExpertWeights {
                     layer: layer_id,
@@ -1715,9 +1715,11 @@ impl GpuDenseStorage {
             }
         }
 
-
         // 2. Fallback sang upload thông thường nếu không có pool
-        if let Some(uploaded) = self.engine.upload_expert(layer_id, expert_id, weights, scales) {
+        if let Some(uploaded) = self
+            .engine
+            .upload_expert(layer_id, expert_id, weights, scales)
+        {
             self.expert_cache.insert(uploaded);
             return true;
         }
@@ -1730,7 +1732,6 @@ impl GpuDenseStorage {
         self.expert_cache.clear(self.expert_pool.as_mut());
     }
 }
-
 
 /// Trình quản lý tầng phần cứng GPU (Thread-safe)
 pub struct GpuTierManager {
@@ -2318,26 +2319,66 @@ mod tests {
             let max_slots = 3;
             let weight_slot_bytes = 2048;
             let scale_slot_bytes = 64;
-            let mut pool = GpuExpertPool::new(&engine, max_slots, weight_slot_bytes, scale_slot_bytes)
-                .expect("alloc GpuExpertPool");
+            let mut pool =
+                GpuExpertPool::new(&engine, max_slots, weight_slot_bytes, scale_slot_bytes)
+                    .expect("alloc GpuExpertPool");
             assert_eq!(pool.available_slots(), 3);
 
             let w = vec![42u8; weight_slot_bytes];
             let s = vec![1.5f32; scale_slot_bytes / 4];
 
-            let slot0 = unsafe { pool.upload(w.as_ptr() as *const c_void, weight_slot_bytes, s.as_ptr() as *const c_void, scale_slot_bytes).unwrap() };
-            let slot1 = unsafe { pool.upload(w.as_ptr() as *const c_void, weight_slot_bytes, s.as_ptr() as *const c_void, scale_slot_bytes).unwrap() };
-            let _slot2 = unsafe { pool.upload(w.as_ptr() as *const c_void, weight_slot_bytes, s.as_ptr() as *const c_void, scale_slot_bytes).unwrap() };
+            let slot0 = unsafe {
+                pool.upload(
+                    w.as_ptr() as *const c_void,
+                    weight_slot_bytes,
+                    s.as_ptr() as *const c_void,
+                    scale_slot_bytes,
+                )
+                .unwrap()
+            };
+            let slot1 = unsafe {
+                pool.upload(
+                    w.as_ptr() as *const c_void,
+                    weight_slot_bytes,
+                    s.as_ptr() as *const c_void,
+                    scale_slot_bytes,
+                )
+                .unwrap()
+            };
+            let _slot2 = unsafe {
+                pool.upload(
+                    w.as_ptr() as *const c_void,
+                    weight_slot_bytes,
+                    s.as_ptr() as *const c_void,
+                    scale_slot_bytes,
+                )
+                .unwrap()
+            };
             assert_eq!(pool.available_slots(), 0);
 
             // Pool đầy, upload thêm phải trả về None
-            assert!(unsafe { pool.upload(w.as_ptr() as *const c_void, weight_slot_bytes, s.as_ptr() as *const c_void, scale_slot_bytes).is_none() });
+            assert!(unsafe {
+                pool.upload(
+                    w.as_ptr() as *const c_void,
+                    weight_slot_bytes,
+                    s.as_ptr() as *const c_void,
+                    scale_slot_bytes,
+                )
+                .is_none()
+            });
 
             // Download kiểm tra dữ liệu đúng
             let mut dl_w = vec![0u8; weight_slot_bytes];
             let mut dl_s = vec![0.0f32; scale_slot_bytes / 4];
             unsafe {
-                pool.download(slot0, dl_w.as_mut_ptr() as *mut c_void, weight_slot_bytes, dl_s.as_mut_ptr() as *mut c_void, scale_slot_bytes).unwrap();
+                pool.download(
+                    slot0,
+                    dl_w.as_mut_ptr() as *mut c_void,
+                    weight_slot_bytes,
+                    dl_s.as_mut_ptr() as *mut c_void,
+                    scale_slot_bytes,
+                )
+                .unwrap();
             }
             assert_eq!(w, dl_w);
             assert_eq!(s, dl_s);
@@ -2348,10 +2389,16 @@ mod tests {
             // Thử free_slot lần 2 trên cùng slot1 (chống double-free)
             pool.free_slot(slot1);
             assert_eq!(pool.available_slots(), 1);
-            let slot_reused = unsafe { pool.upload(w.as_ptr() as *const c_void, weight_slot_bytes, s.as_ptr() as *const c_void, scale_slot_bytes).unwrap() };
+            let slot_reused = unsafe {
+                pool.upload(
+                    w.as_ptr() as *const c_void,
+                    weight_slot_bytes,
+                    s.as_ptr() as *const c_void,
+                    scale_slot_bytes,
+                )
+                .unwrap()
+            };
             assert_eq!(slot_reused, slot1);
         }
     }
-
 }
-
