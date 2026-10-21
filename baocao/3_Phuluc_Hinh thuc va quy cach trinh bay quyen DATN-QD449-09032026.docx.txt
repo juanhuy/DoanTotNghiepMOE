@@ -1,0 +1,470 @@
+﻿PHỤ LỤC 3:
+HÌNH THỨC, QUY CÁCH VÀ CẤU TRÚC QUYỀN ĐỒ ÁN KHÓA LUẬN TỐT NGHIỆP
+(Kèm theo Quyết định số 449/QĐ-HV ngày 09 tháng 03 năm 2026 của Giám đốc Học viện Công nghệ Bưu chính Viễn thông)
+
+
+Quyển đồ án, luận văn tốt nghiệp thể hiện kết quả cuối cùng của cả quá trình làm đồ án/ khóa luận tốt nghiệp, là cơ sở quan trọng để đánh giá điểm tốt nghiệp. Để thống nhất cách trình bày quyển đồ án/khóa luận tốt nghiệp, Học viện hướng dẫn như sau:
+I. BỐ CỤC
+Số chương của mỗi đồ án/khóa luận tốt nghiệp tuỳ thuộc vào từng chuyên ngành và đề tài cụ thể, nhưng bắt buộc một đồ án/khóa luận tốt nghiệp bao gồm những phần và chương được bố cục theo thứ tự như sau:
+- PHÊ DUYỆT, GIAO NHIỆM VỤ ĐỀ TÀI
+- LỜI CẢM ƠN
+- LỜI CAM ĐOAN
+- MỤC LỤC
+- DANH MỤC CÁC KÝ HIỆU VÀ CHỮ VIẾT TẮT
+- DANH MỤC CÁC BẢNG, SƠ ĐỒ, HÌNH VẼ
+- MỞ ĐẦU
+- BẢNG PHÂN CÔNG NHIỆM VỤ NHÓM THỰC HIỆN
+- CHƯƠNG 1
+- CHƯƠNG ....
+- CHƯƠNG N
+- KẾT LUẬN, KIẾN NGHỊ
+- TÀI LIỆU THAM KHẢO
+- PHỤ LỤC (Nếu có).
+II. TRÌNH BÀY
+1. Trang bìa.
+- Bìa ngoài và gáy: Bìa cứng, màu đỏ, chữ mạ màu vàng, trình bày theo mẫu.
+- Trang đệm (trang lót): để trắng, dùng để dán ép bìa ngoài với các trang trong.
+- Trang bìa phụ: đặt sau trang lót, trình bày nội dung theo mẫu.
+2. Trang nhiệm vụ đề tài (đồ án, khoá luận) (có đủ chữ ký phê duyệt, giao nhiệm vụ)
+3. Trang mục lục: đánh số thứ tự, trình bày theo mẫu
+4. Trang thuật ngữ, chữ viết tắt (nếu có):pdf
+Trình bày theo thứ tự chữ cái A, B, C,.... đánh số trang tương ứng. 
+Nội dung mỗi dòng: Chữ viết tắt, chữ đầy đủ, nghĩa, chữ của từ.
+5. Nội dung đồ án, khoá luận và hướng dẫn trình bày:
+- Nội dung đồ án gồm các phần: đặt vấn đề; giải quyết vấn đề, kết luận. Trong một phần có thể có nhiều chương. Mở đầu (hoặc lời nói đầu) là một phần riêng, hết phần sẽ sang trang, tiếp theo lần lượt là các chương I, II,... và phần kết luận. Đánh số trang dạng : i, ii, iii... từ Lời cảm ơn đến Danh mục hình vẽ; đánh số trang dạng: 1, 2, 3... từ phần Mở đầu đến Phụ lục.
+- Trang Mở đầu: Viết ngắn gọn. Nói rõ lý do chọn đề tài, mục đích nghiên cứu, tình hình nghiên cứu, phạm vi và phương pháp nghiên cứu, kết cấu của đề tài.....
+- Định dạng giấy: Đồ án, khoá luận viết trên khổ giấy A4 (định dạng chuẩn (page setup) tham khảo như sau: top/bottom/right: 2,0 cm; left: 3,0 cm; header/footer: 1,0 cm). Format Paragraph: Alignment: Justified; Spacing: before/after: 3 pt; Line spacing: multiple: 1,1 đến 1,2.
+- Định dạng chữ viết: ở các trang của đồ án, luận văn là size 12 (hoặc 13), Font: Times New Roman, không được dùng các kiểu chữ dạng thư pháp. Không được trích các câu tục ngữ, thành ngữ, sử dụng các hoa văn, hình vẽ để trang trí hoặc làm đề dẫn ở đầu mỗi trang, mỗi chương, mục,...
+- Đề mục của từng chương viết chữ in hoa, in đậm, khổ chữ (font): 13 đến 15; các đề mục của từng phần trong chương cũng in đậm, khổ chữ 13. Trong toàn bộ đồ án/khoá luận phải thống nhất font chữ, cỡ chữ, loại (đậm, nghiêng, thường) cho các phần như tên chương, mục trong chương, mục con, mục nhỏ,... Hình vẽ thể hiện rõ ràng, ghi số thứ tự hình vẽ phía dưới mỗi hình.
+- Đánh số thứ tự các đề mục theo quy cách sau: Số ký tự đầu thể hiện số chương, những ký tự sau là thứ tự các đề mục, các ý của đề mục trong chương, ví dụ: 1.1, 1.1.1, 1.1.1.a,.... Các công thức phải ghi số thứ tự sát lề phải.
+- Mỗi trang phải có phần Header và Footer
+  Header:
+    Phía trái ghi: Đồ án tốt nghiệp Đại học
+    Phía phải ghi: Chương và tên chương
+  Footer:
+    Phía trái ghi: Tên sinh viên, tên lớp
+    Phía phải ghi: số thứ tự trang
+- Nếu đề tài có sản phẩm phần cứng thì phải đảm bảo các chỉ tiêu kỹ thuật về độ bền, an toàn, có vỏ hộp, hoạt động ổn định.
+- Hạn chế viết tắt, nếu phải viết tắt phải mở ngoặc và đóng ngoặc (...) để giải nghĩa ngay từ các chữ viết tắt đầu tiên, sau đó liệt kê thành trang, đưa vào sau các trang Danh mục các Bảng, biểu, hình,...
+6. Một số trang khác (tham khảo mẫu kèm theo):
+- Trang Mục lục
+- Trang Danh mục các bảng biểu, hình vẽ,..
+- Phụ lục: đưa vào sau trang cuối cùng của chương cuối quyển đồ án/khóa luận tốt nghiệp.
+7. Tóm tắt đồ án/khóa luận tốt nghiệp:
+- Bản toàn văn (theo mẫu): Được biên soạn sau khi hoàn thành đồ án/khóa luận tốt nghiệp, tóm tắt đồ án/khóa luận tốt nghiệp phản ánh trung thực nội dung chủ yếu của đồ án/khóa luận tốt nghiệp (khoảng 8-16 trang. Yêu cầu của tóm tắt là ngắn gọn, cô đọng, nêu được cấu trúc của đề tài, nêu bật được những nội dung chính của ĐATN, nhấn mạnh được những nội dung cần thiết, những kết luận rút ra sau khi nghiên cứu đề tài cùng với các giải pháp, đề xuất, kiến nghị. 
+- Cấu trúc (trang slide) báo cáo đồ án tốt nghiệp:
+  + Slide 1: Học viện/Khoa đào tạo chuyên môn; Tên đề tài, Họ tên SV, GVHD, đơn vị công tác
+  + Slide 2: Trình bày cấu trúc đề tài đồ án, khoá luận (có thể nêu những khó khăn, thuận lợi khi thực hiện đề tài)
+  + Slide tiếp theo: Giới thiệu nội dung từng phần của đề tài và những nội dung nhấn mạnh (mỗi chương mục từ 2-4 slide)
+  + Slide cuối: Kết luận, giải pháp, đề xuất, lời cảm ơn (1 đến 2 slide)
+Slide được gửi cho người phản biện để nhận xét và cũng được sử dụng trong buổi bảo vệ trước Hội đồng. Trước buổi bảo vệ, sinh viên nên trình bày thử để đảm bảo không vượt quá 10-12 phút.
+
+
+(Chi tiết mẫu biểu các trang bìa, trang nội dung kèm theo)
+
+
+III- NỘP CUỐN BÁO CÁO: Mỗi nhóm sinh viên thực hiện đồ án/khoá luận tốt nghiệp phải nộp đủ 03 quyển và 03 bản tóm tắt ĐATN như sau:
+
+
+      1. Thời gian nộp quyển sẽ được VPK thông báo cụ thể đến sinh viên ;
+      2. Trước khi bảo vệ: nộp 01 quyển bìa thường ; 
+      3. Trong ngày bảo vệ: nộp 03 báo cáo tóm tắt cho Hội đồng ;  
+      4. Sau khi bảo vệ: nộp 02 quyển bìa cứng (bìa đỏ) đã được hiệu chỉnh theo ý kiến của GVPB và Hội đồng (có chữ ký xác nhận của GVHD, GVPB)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Mẫu 1: Trang bìa  và Gáy
+  
+  
+
+
+
+
+
+
+
+
+
+BỘ KHOA HỌC VÀ CÔNG NGHỆ
+HỌC VIỆN CÔNG NGHỆ BƯU CHÍNH VIỄN THÔNG 
+------------------------------
+  
+
+
+
+ĐỒ ÁN
+TỐT NGHIỆP ĐẠI HỌC
+(Bold, size 36)
+
+
+
+
+
+
+Đề tài : “ ……………………………………..................
+                       ……………………………………………”                                                (Bold, size 16-30, tùy theo số chữ của tên đề tài)
+
+
+                        
+
+
+
+
+Giáo viên hướng dẫn         :  (Bold, size 13, in hoa)
+Nhóm sinh viên thực hiện :  (Bold, size 13, in hoa)
+Mã SV: ……………………..                Họ và tên: ……………………..
+Mã SV: ……………………..                Họ và tên: ……………………..
+Mã SV: ……………………..                Họ và tên: ……………………..
+
+
+
+
+  
+
+
+
+
+
+
+
+TP. HỒ CHÍ MINH, NĂM  ……..
+Mẫu 2: Trang bìa phụ
+
+
+BỘ KHOA HỌC VÀ CÔNG NGHỆ  
+HỌC VIỆN CÔNG NGHỆ BƯU CHÍNH VIỄN THÔNG 
+------------------------------
+
+
+  
+
+
+
+ĐỒ ÁN
+TỐT NGHIỆP ĐẠI HỌC
+(Bold, size 36)
+
+
+
+
+
+
+
+
+Đề tài : “ ……………………………………..................
+                       ……………………………………………”                                                (Bold, size 16-30, tùy theo số chữ của tên đề tài)
+
+
+                        
+
+
+
+
+Giáo viên hướng dẫn         :  (Bold, size 13, in hoa)
+Nhóm sinh viên thực hiện :  (Bold, size 13, in hoa)
+Mã SV: ……………………..                Họ và tên: ……………………..
+Mã SV: ……………………..                Họ và tên: ……………………..
+Mã SV: ……………………..                Họ và tên: ……………………..
+
+
+
+
+
+
+
+
+
+
+TP. HỒ CHÍ MINH, NĂM  …..
+
+
+
+
+Mẫu 3: Lời Cảm ơn
+LỜI CẢM ƠN
+( bold, size 14)
+
+
+Size 12 hoặc 13:..……………………………………………………………………
+……………………………………………………………………………………………………………………………………………………………………………………….………………………………………………………………………………………….…………………………………………………………………………………………..
+Size 12 hoặc 13:..……………………………………………………………………
+……………………………………………………………………………………………………………………………………………………………………………………….………………………………………………………………………………………….…………………………………………………………………………………………..
+
+
+        TPHCM, ngày …… tháng ……  năm …….
+        ĐẠI DIỆN NHÓM SINH VIÊN
+        (Ký và ghi rõ họ tên)
+________________
+Mẫu 4: Lời Cam đoan
+LỜI CAM ĐOAN
+
+
+
+
+        Chúng em xin cam đoan rằng đây là đồ án do nhóm sinh viên thực hiện, có sự hỗ trợ từ tập thể giáo viên hướng dẫn. Các nội dung nghiên cứu và kết quả trong đề tài này là trung thực và do các thành viên trong nhóm thực hiện. Những số liệu trong các bảng biểu phục vụ cho việc phân tích, nhận xét, đánh giá được các thành viên trong nhóm thu thập từ các nguồn khác nhau có ghi trong phần tài liệu tham khảo hoặc lấy từ thực nghiệp.
+        Nếu bị phát hiện có bất kỳ sự gian lận nào các thành viên trong nhóm xin hoàn toàn chịu trách nhiệm.
+        TPHCM, ngày …… tháng ……  năm …….
+        ĐẠI DIỆN NHÓM SINH VIÊN
+        (Ký và ghi rõ họ tên)
+
+
+
+
+
+
+________________
+Mẫu 5: Trang Mục lục 
+MỤC LỤC
+                                
+                                                                                         Trang
+LỜI CẢM ƠN………                                                                i
+LỜI CAM ĐOAN………                                                        ii
+MỤC LỤC ……….                                                                iii
+DANH MỤC CÁC KÝ HIỆU VÀ CHỮ VIẾT TẮT        ……….                iv
+DANH MỤC CÁC BẢNG ……
+DANH MỤC CÁC HÌNH VẼ……… 
+MỞ ĐẦU                                                                        1
+CHƯƠNG 1...................................................                        
+1.1................................................................                                        2 
+            1.1.1……………………………………        
+1.1.2
+1.1.3............................................................
+......................................................................                                
+1.2                                                                                        7
+1.2.1                
+1.2.2….................................
+1.3........................................
+...............................................                                                               22                                                                                                            
+CHƯƠNG 2 .......................................................                                                        
+2.1…..
+2.1.1….
+2.1.2…..
+
+
+2.2
+…..
+…..
+CHƯƠNG 3……………                                                              50   
+3.1…..
+3.1.1….
+3.1.2….
+3.2………………
+KẾT LUẬN, KIẾN NGHỊ                                                               60
+DANH MỤC TÀI LIỆU THAM KHẢO                                        62
+PHỤ LỤC (nếu có)                                                                      64
+
+
+Ghi chú: 
+* In đậm và in hoa  tiêu đề của các chương, mục lớn (toàn bộ size: 12)
+* Chữ số thứ nhất chỉ thứ tự chương
+* Chữ số thứ 2 chỉ thứ tự mục trong chương
+* Chữ số thứ 3,…,chỉ thứ tự các tiểu mục
+
+
+
+
+
+
+________________
+Mẫu 6: Danh mục các ký hiệu và chữ viết tắt
+DANH MỤC CÁC KÝ HIỆU VÀ CHỮ VIẾT TẮT (size 14)
+
+
+
+
+
+
+TDM: Time Division Multiplexing
+	Ghép kênh theo thời gian
+	TĐĐTS: 
+	Tổng đài điện tử số
+	……………………
+	……………….
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+Ghi chú:
+Cụm từ viết viết tắt là các chữ cái và các ký hiệu thay chữ được viết liền nhau, để thay cho một cụm từ có nghĩa thường được lặp nhiều lần trong văn bản hoặc được mọi người mặc nhiên chấp nhận.
+________________
+Mẫu 7: Danh mục các bảng, sơ đồ, hình vẽ
+DANH MỤC CÁC BẢNG, SƠ ĐỒ, HÌNH VẼ
+(In đậm, in hoa, size14)
+                                                                        Trang
+BÁNG 1.1 (size 13)...................................................................................................10
+BẢNG 1.2................................................................................................................. 20
+……..........................................................................................................................  
+……..........................................................................................................................
+……..........................................................................................................................
+SƠ ĐỒ 1.1  ..............................................................................................................  30
+……..........................................................................................................................
+……..........................................................................................................................
+……..........................................................................................................................
+HÌNH 1.1 
+…….........................................................................................................................
+…….........................................................................................................................
+
+
+
+
+Ghi chú:
+* Chữ số thứ nhất chỉ tên chương
+* Chữ số thứ hai chỉ thứ tự bảng biểu, sơ đồ, hình,…trong mỗi chương
+* Ở cuối mỗi bảng biểu, sơ đồ, hình,…trong mỗi chương phải có ghi chú, giải thích, nêu rõ nguồn trích hoặc sao chụp,…
+
+
+________________
+Mẫu 8: Mở đầu
+
+
+MỞ ĐẦU
+(Bold, size 14)
+
+
+Size 12 hoặc 13:..……………………………………………………………………
+……………………………………………………………………………………………………………………………………………………………………………………….………………………………………………………………………………………….…………………………………………………………………………………………..
+Size 12 hoặc 13:..……………………………………………………………………
+……………………………………………………………………………………………………………………………………………………………………………………….………………………………………………………………………………………….…………………………………………………………………………………………..
+
+
+-----------------------------------------
+* Định dạng giấy: khổ giấy A4 (định dạng chuẩn (page setup) tham khảo như sau: top/bottom/right: 2,0 cm; left: 3,0 cm; header/footer: 1,0 cm). Format - Paragraph: Alignment: Justified; Spacing: before/after: 3 pt; Line spacing: multiple: 1,1 đến 1,2.
+* Định dạng chữ viết: ở các trang của báo cáo là size 12 (hoặc 13), Font: Times New Roman, không được dùng các kiểu chữ dạng thư pháp. Không được trích các câu tục ngữ, thành ngữ, sử dụng các hoa văn, hình vẽ để trang trí hoặc làm đề dẫn ở đầu mỗi trang, mỗi chương, mục,…
+-----------------------------------------
+________________
+Mẫu 9: Trang nội dung 
+Trình bày mỗi trang của đồ án, luận văn
+Bắt đầu đánh số trang từ chương 1, in đậm tiêu đề các chương, các mục
+        (Header:  phía trái ghi: Đồ án tốt nghiệp Đại học; 
+                               phía phải ghi: Chương và tên chương
+        Footer:     phía trái ghi: Tên sinh viên, tên lớp; 
+                phía phải ghi: số thứ tự trang)
+  
+
+
+
+CHƯƠNG 1: ……. (size 13, bold, in hoa)
+
+
+Size 12 hoặc 13:..……………………………………………………………………
+……………………………………………………………………………………………………………………………………………………………………………………….………………………………………………………………………………………….…………………………………………………………………………………………..
+Size 12 hoặc 13:..……………………………………………………………………
+……………………………………………………………………………………………………………………………………………………………………………………….………………………………………………………………………………………….…………………………………………………………………………………………..
+
+
+-----------------------------------------
+* Định dạng giấy: khổ giấy A4 (định dạng chuẩn (page setup) tham khảo như sau: top/bottom/right: 2,0 cm; left: 3,0 cm; header/footer: 1,0 cm). Format - Paragraph: Alignment: Justified; Spacing: before/after: 3 pt; Line spacing: multiple: 1,1 đến 1,2.
+* Định dạng chữ viết: ở các trang của báo cáo là size 12 (hoặc 13), Font: Times New Roman, không được dùng các kiểu chữ dạng thư pháp. Không được trích các câu tục ngữ, thành ngữ, sử dụng các hoa văn, hình vẽ để trang trí hoặc làm đề dẫn ở đầu mỗi trang, mỗi chương, mục,…
+-----------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+________________
+Mẫu 10: Trang tài liệu tham khảo 
+DANH MỤC TÀI LIỆU THAM KHẢO
+
+
+Tiếng Việt:
+1. Nguyễn Trung Hiếu, Nguyễn Viết Đảm, Trạm chuyển tiếp thông minh trong thông tin vô tuyến, Tạp chí Bưu chính viễn thông, Số 314(514), trang 33 (kỳ 1, 10/2007).
+2. Tập thể tác giả, Viễn thông số, Nhà xuất bản Bưu điện, Hà Nội, 2002
+3. ……………….
+
+
+Tiếng Anh:
+1. Bouding K.E (1995), Economics Analysis, Hamish Hamilton, London.
+2. Andeson, JE (1985), The RelativeIneffciency of Quota, The Cheese case, American Economic review, 74 (1), pp 78-90.
+3. ………………..
+
+
+Danh mục các Website tham khảo:
+1. Lý thuyết viễn thông: http://support.vnn.vn/tailieu/lythuyetvt/
+2. www.vnpt.com.vn.
+3. ………………..
+
+
+Ghi chú:
+* Danh mục tài liệu tham khảo phải xếp theo abc tên tác giả, tên tài liệu, nơi và năm phát hành.
+* Cách ghi tài liệu tham khảo (xếp theo tên)
++ Nếu là tạp chí: Tên tác giả, tên bài viết, tên tạp chí, tập số, trang, năm (năm để trong ngoặc)
++ Nếu là sách: Tên tác giả, tên sách, trang, nhà xuất bản, nơi xuất bản, lần và năm xuất bản.
++ Nếu là báo cáo khoa học: Tên tác giả, tên báo cáo, tên kỷ yếu, nơi và thời gian tổ chức hội nghị.
+
+
+________________
+Mẫu 11: Báo cáo Tóm tắt ĐATN (toàn văn)
+BÁO CÁO TÓM TẮT ĐỒ ÁN TỐT NGHIỆP
+
+
+1. Tên đồ án tốt nghiệp:
+
+
+2. Nhóm sinh viên:
+
+
+* Mã sinh viên:                                - Họ và tên:                                Lớp:
+* Mã sinh viên:                                - Họ và tên:                                Lớp:
+* Mã sinh viên:                                - Họ và tên:                                Lớp:
+
+
+3. Giáo viên hướng dẫn:
+
+
+4. Mục tiêu của đồ án tốt nghiệp:
+
+
+5. Kết quả đã thực hiện được:
+
+
+6. Kết luận – Hướng phát triển của đồ án:
