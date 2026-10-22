@@ -10,6 +10,7 @@ pub mod model;
 pub mod moe;
 pub mod olmoe;
 pub mod quantization;
+mod ram;
 pub mod router;
 pub mod safetensors;
 pub mod tokenizer;

@@ -1,3 +1,5 @@
+> **Bản thảo lịch sử — chưa rà soát lại toàn bộ số liệu/claim.** Nguồn nghiệm thu hiện hành là [ma trận bằng chứng](../docs/thesis/EVIDENCE_MATRIX.md), [protocol](../benchmarks/README.md) và [review hệ thống](../docs/reviews/2026-10-22-system-review.md). Không trích các khẳng định hiệu năng tuyệt đối trong bản thảo này như số đo mới.
+
 # HỌC VIỆN CÔNG NGHỆ BƯU CHÍNH VIỄN THÔNG
 ## KHOA CÔNG NGHỆ THÔNG TIN
 ***
@@ -863,3 +865,14 @@ Trên nền tảng vững chắc của Giai đoạn 1, nhóm sinh viên đề xu
 10. Shazeer, N. (2020), "GLU Variants Improve Transformer", *arXiv preprint arXiv:2002.05202*.
 11. Su, J., Ahmed, M., Lu, Y., Pan, S., Bo, W., & Liu, Y. (2024), "RoFormer: Enhanced Transformer with Rotary Position Embedding", *Neurocomputing*, 568, pp. 127063.
 12. Williams, S., Waterman, A., & Patterson, D. (2009), "Roofline: An Insightful Visual Performance Model for Multicore Architectures", *Communications of the ACM*, 52(4), pp. 65-76.
+
+
+## Đính chính trước nghiệm thu giai đoạn 1 — 2026-10-22
+
+Các kết luận tuyệt đối trong phần lịch sử bên trên (an toàn bộ nhớ tuyệt đối, zero-allocation toàn hệ thống, triệt tiêu page faults/thrashing, hoặc mức tăng tốc đại diện cho cả hai testbed) chưa được xác nhận bởi bộ bằng chứng hiện hành. Không dùng chúng làm kết luận nghiệm thu.
+
+Nền tảng hiện có gồm engine INT8, cache file/RAM/VRAM, CUDA/cuBLAS tùy thiết bị và HTTP/SSE local. Đợt đóng giai đoạn1 đã vá accounting capacity session, invariant pinned buffer, budget recycled expert/prefetch và kiểm terminal stream phía web; fixture/logits và CUDA targeted tests có giới hạn rõ trong [PROGRESS](../docs/PROGRESS.md). Bộ nhớ cache khác tổng RSS; payload file khác I/O SSD; số VRAM logical chưa gồm toàn pool/scratch; trace routing trên giao diện có phần minh họa.
+
+Baseline revision sạch, nhiều mẫu cùng điều kiện và chất lượng/độ ổn định model thật là điều kiện nghiệm thu tiếp theo trong [PLAN](../docs/PLAN.md). Kết quả exploratory hoặc quality smoke không thay thế baseline/đánh giá chất lượng chuẩn hóa; i7 chỉ được trình bày như phép đo mới khi có raw/provenance tương ứng. Chưa nghiệm thu toàn bộ giai đoạn1 chỉ dựa vào các bản vá này.
+
+Kiểm7B mới trong đợt đóng giai đoạn1: [artifact smoke](../benchmarks/experiments/2026-10-22-stage1-validation/README.md) có16 request hoàn tất và1 request cố ý hủy rồi reset/gửi lại đạt; quality heuristic10/12, còn lỗi thủ đô Việt Nam/truy xuất thông tin. Có swap hệ thống; chưa nghiệm thu baseline sạch hoặc độ ổn định tải dài. Không dùng timing của smoke này để thay các workload128 output tokens.

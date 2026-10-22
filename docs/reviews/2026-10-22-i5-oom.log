@@ -1,0 +1,2 @@
+2026-10-22T15:05:20+00:00 son kernel: oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=user.slice,mems_allowed=0,global_oom,task_memcg=/user.slice/user-1000.slice/user@1000.service/app.slice/app-com.microsoft.VSCode-6942.scope,task=moe-tier-engine,pid=22818,uid=1000
+2026-10-22T15:05:20+00:00 son kernel: Out of memory: Killed process 22818 (moe-tier-engine) total-vm:24000976kB, anon-rss:10416220kB, file-rss:69184kB, shmem-rss:94884kB, UID:1000 pgtables:27712kB oom_score_adj:200

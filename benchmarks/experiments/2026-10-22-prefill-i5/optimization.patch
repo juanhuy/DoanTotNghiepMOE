@@ -1,0 +1,113 @@
+--- before/src/olmoe.rs
++++ after/src/olmoe.rs
+@@ -1895,20 +1895,50 @@
+                     &mut preloaded,
+                 )?;
+ 
+-                for &(token, slot, weight) in uses {
++                // Dispatch tokens sharing this expert together. Each task owns a scratch
++                // slot and uses the serial kernel, avoiding nested row-level fork/joins.
++                // Copy results back in route order before the deterministic Top-K reduction.
++                for routes in uses.chunks(scratch.expert_scratches.len()) {
+                     check()?;
+                     let expert_started = Instant::now();
+-                    let result = expert.forward_reuse(
+-                        &hidden_batch[token * d..(token + 1) * d],
+-                        &mut scratch.expert,
+-                    )?;
+-                    profile.expert_compute += expert_started.elapsed();
+-                    let contribution = (token * c.num_experts_per_tok + slot) * d;
+-                    for (target, value) in contributions[contribution..contribution + d]
+-                        .iter_mut()
+-                        .zip(result)
+-                    {
+-                        *target = weight * value;
++                    if routes.len() == 1 {
++                        let (token, slot, weight) = routes[0];
++                        let result = expert.forward_reuse(
++                            &hidden_batch[token * d..(token + 1) * d],
++                            &mut scratch.expert,
++                        )?;
++                        profile.expert_compute += expert_started.elapsed();
++                        let contribution = (token * c.num_experts_per_tok + slot) * d;
++                        for (target, value) in contributions[contribution..contribution + d]
++                            .iter_mut()
++                            .zip(result)
++                        {
++                            *target = weight * value;
++                        }
++                    } else {
++                        scratch.expert_scratches[..routes.len()]
++                            .par_iter_mut()
++                            .zip(routes.par_iter())
++                            .try_for_each(|(buffer, &(token, _, _))| {
++                                expert.forward_single_threaded(
++                                    &hidden_batch[token * d..(token + 1) * d],
++                                    buffer,
++                                )?;
++                                Ok::<(), io::Error>(())
++                            })?;
++                        profile.expert_compute += expert_started.elapsed();
++                        check()?;
++                        for (&(token, slot, weight), buffer) in
++                            routes.iter().zip(&scratch.expert_scratches)
++                        {
++                            let contribution = (token * c.num_experts_per_tok + slot) * d;
++                            for (target, value) in contributions[contribution..contribution + d]
++                                .iter_mut()
++                                .zip(&buffer.output)
++                            {
++                                *target = weight * value;
++                            }
++                        }
+                     }
+                 }
+ 
+@@ -2395,6 +2425,47 @@
+     }
+ 
+     #[test]
++    fn parallel_prefill_routes_match_tokenwise_logits_with_tails() {
++        for threads in [1, 4] {
++            rayon::ThreadPoolBuilder::new()
++                .num_threads(threads)
++                .build()
++                .unwrap()
++                .install(|| {
++                    for fixture in ["unnormalized-mha", "normalized-gqa"] {
++                        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
++                            .join("tests/fixtures/olmoe")
++                            .join(fixture);
++                        let mut model =
++                            OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
++                        model.set_gpu_enabled(false);
++                        for length in [1, 9, 17] {
++                            let tokens: Vec<_> = (0..length).map(|i| [1, 3, 4, 5][i % 4]).collect();
++                            let expected = model.logits(&tokens).unwrap().pop().unwrap();
++                            let mut kv: Vec<_> =
++                                (0..model.layers.len()).map(|_| Kv::default()).collect();
++                            let mut profile = RequestProfile::default();
++                            let mut scratch = StepScratch::new(&model.config);
++                            model
++                                .prefill(&tokens, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
++                                .unwrap();
++                            let error = scratch
++                                .logits
++                                .iter()
++                                .zip(&expected)
++                                .map(|(actual, expected)| (actual - expected).abs())
++                                .fold(0.0f32, f32::max);
++                            assert!(
++                                error < 2e-5,
++                                "{fixture}, threads={threads}, tokens={length}: error={error}"
++                            );
++                        }
++                    }
++                });
++        }
++    }
++
++    #[test]
+     fn disconnect_after_content_stops_decode_and_preserves_model() {
+         let directory =
+             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");

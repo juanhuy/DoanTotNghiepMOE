@@ -34,13 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if !(1..=2).contains(&args.len()) {
         return Err(
-            "usage: evaluate_quality MODEL_DIRECTORY [SUITE=benchmarks/quality-v1.json]".into(),
+            "usage: evaluate_quality MODEL_DIRECTORY [SUITE=benchmarks/suites/quality-v1.json]"
+                .into(),
         );
     }
     let suite_path = args
         .get(1)
         .map(String::as_str)
-        .unwrap_or("benchmarks/quality-v1.json");
+        .unwrap_or("benchmarks/suites/quality-v1.json");
     let suite: Suite = serde_json::from_slice(&std::fs::read(suite_path)?)?;
     if suite.version != 1 || suite.cases.is_empty() {
         return Err("expected nonempty quality suite version 1".into());

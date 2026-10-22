@@ -1,0 +1,65 @@
+{
+  "id": "quality-translate-hello",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Translate 'hello' into Vietnamese. Answer briefly."
+    }
+  ],
+  "max_tokens": 24,
+  "session_id": "quality-translate-hello",
+  "response": {
+    "text": "\n\"Xin chào\" (pronounced \"sin chow\") is the Vietnamese translation of \"hello",
+    "usage": {
+      "completion_tokens": 24,
+      "prompt_tokens": 27,
+      "total_tokens": 51
+    },
+    "metrics": {
+      "attention_ms": 432.781384,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 2966.3645709999996,
+      "decode_ms": 7339.823411,
+      "decode_tokens_per_second": 3.1335903756935766,
+      "expert_bytes_read": 10143006720,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 1608,
+      "expert_cache_hits": 5688,
+      "expert_cache_misses": 712,
+      "expert_compute_ms": 4503.619839,
+      "expert_file_bytes_read": 6490767360,
+      "expert_file_loads": 1029,
+      "expert_file_read_ms": 1875.0446109999998,
+      "expert_io_ms": 3581.075739,
+      "expert_vram_download_bytes": 5651824640,
+      "expert_vram_download_ms": 1706.031128,
+      "expert_vram_loads": 896,
+      "expert_vram_upload_bytes": 10143006720,
+      "expert_vram_upload_ms": 3234.329627,
+      "kv_cache_bytes": 13107200,
+      "lm_head_ms": 70.040173,
+      "prefill_expert_io_ms": 614.711168,
+      "prefill_ms": 3544.109834,
+      "time_to_first_token_ms": 3556.1963570000003,
+      "tokenizer_ms": 0.25513,
+      "total_ms": 10896.044687
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 3544.2038830005913,
+    "client_wall_ms": 10901.129259999834
+  },
+  "process_before": {
+    "VmHWM": 4802020,
+    "VmRSS": 3967748,
+    "VmSwap": 841244,
+    "read_bytes": 52443774976,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4802020,
+    "VmRSS": 3967824,
+    "VmSwap": 841172,
+    "read_bytes": 52501942272,
+    "write_bytes": 4096
+  }
+}

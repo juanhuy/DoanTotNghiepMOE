@@ -1,0 +1,15 @@
++ /usr/bin/python3 tools/export_benchmark_evidence.py --check
+Validated 40 unique evidence artifacts
++ /usr/bin/python3 tools/test_benchmark_evidence.py
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.006s
+
+OK
++ /usr/bin/python3 tools/test_run_benchmark.py
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 0.054s
+
+OK
+Selected checks passed. Unselected CUDA/converter/model benchmarks are not validated.

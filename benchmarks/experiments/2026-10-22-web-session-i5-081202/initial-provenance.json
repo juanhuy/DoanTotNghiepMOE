@@ -1,0 +1,12 @@
+{
+  "testbed": "i5",
+  "git_head": "1d98587258157a656104f255703da0aeb05f31c5",
+  "git_dirty": true,
+  "source_sha256": {
+    "src/olmoe.rs": "7cecd3a6e8414d719e0f69d7f3a4d9c02b23b4a43d00d2b8de919a1bc74e30c9",
+    "src/generation.rs": "b9527b669b9b8ef71a786536389da6f967a439bf6f00f0422560589bdb59ef07",
+    "src/gpu.rs": "9a6a635c7f9d9d4d5c595b33d5715f1122286a35fc7d8eb0f0d81fac1e74770b",
+    "src/int8_expert.rs": "2e0c05d7ca5b493316f769e94973ee1736fe2e336e0b9cf9ebdcaf55a16722fc",
+    "tools/run_benchmark.py": "d3f00bd09fb8c1adbb36a60f256c80b8f911419d8cc19930db81abb933a53c72"
+  }
+}

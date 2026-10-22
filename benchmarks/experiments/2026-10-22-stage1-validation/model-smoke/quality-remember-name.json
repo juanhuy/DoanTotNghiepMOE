@@ -1,0 +1,73 @@
+{
+  "id": "quality-remember-name",
+  "messages": [
+    {
+      "role": "user",
+      "content": "My name is Linh."
+    },
+    {
+      "role": "assistant",
+      "content": "Hello Linh!"
+    },
+    {
+      "role": "user",
+      "content": "What is my name? Answer briefly."
+    }
+  ],
+  "max_tokens": 24,
+  "session_id": "quality-remember-name",
+  "response": {
+    "text": "\nYour name is Linh.",
+    "usage": {
+      "completion_tokens": 8,
+      "prompt_tokens": 50,
+      "total_tokens": 58
+    },
+    "metrics": {
+      "attention_ms": 309.652197,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 1130.1508979999999,
+      "decode_ms": 2739.4139050000003,
+      "decode_tokens_per_second": 2.5552911107093177,
+      "expert_bytes_read": 6181683200,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 980,
+      "expert_cache_hits": 6691,
+      "expert_cache_misses": 605,
+      "expert_compute_ms": 5152.564694,
+      "expert_file_bytes_read": 4163174400,
+      "expert_file_loads": 660,
+      "expert_file_read_ms": 3112.172559,
+      "expert_io_ms": 3826.240229,
+      "expert_vram_download_bytes": 2365440000,
+      "expert_vram_download_ms": 714.06767,
+      "expert_vram_loads": 375,
+      "expert_vram_upload_bytes": 6181683200,
+      "expert_vram_upload_ms": 1951.349226,
+      "kv_cache_bytes": 14942208,
+      "lm_head_ms": 23.08545,
+      "prefill_expert_io_ms": 2696.089331,
+      "prefill_ms": 8457.314262,
+      "time_to_first_token_ms": 8465.873096,
+      "tokenizer_ms": 0.264965,
+      "total_ms": 11205.296306999999
+    },
+    "finish_reason": "stop",
+    "client_first_content_after_headers_ms": 8457.217836999916,
+    "client_wall_ms": 11210.369948999869
+  },
+  "process_before": {
+    "VmHWM": 4801624,
+    "VmRSS": 4798672,
+    "VmSwap": 0,
+    "read_bytes": 51449774080,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4802020,
+    "VmRSS": 4037780,
+    "VmSwap": 764992,
+    "read_bytes": 52156690432,
+    "write_bytes": 4096
+  }
+}

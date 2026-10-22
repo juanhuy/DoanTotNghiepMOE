@@ -1,0 +1,13 @@
+*.rs text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.safetensors binary
+*.docx binary
+
+# Evidence and fixture hashes must survive clone with core.autocrlf enabled.
+benchmarks/results/** -text
+benchmarks/suites/** -text
+benchmarks/experiments/** -text
+tests/fixtures/** -text

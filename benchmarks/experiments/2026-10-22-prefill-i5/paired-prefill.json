@@ -1,0 +1,598 @@
+{
+  "cache_mib_per_layer": 128,
+  "context": 512,
+  "gpu_end": {
+    "allocated_vram_bytes": 3371876352,
+    "dense_offloaded": true,
+    "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+    "enabled": true,
+    "free_vram_bytes": 539705344,
+    "message": "Hoạt động (3.14 GB / 3.64 GB VRAM · 299 L1 Experts · cuBLAS SGEMV Active)",
+    "total_vram_bytes": 3911581696,
+    "vram_experts_resident": 299
+  },
+  "gpu_start": {
+    "allocated_vram_bytes": 1485832192,
+    "dense_offloaded": true,
+    "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+    "enabled": true,
+    "free_vram_bytes": 2425749504,
+    "message": "Hoạt động (1.38 GB / 3.64 GB VRAM · 0 L1 Experts · cuBLAS SGEMV Active)",
+    "total_vram_bytes": 3911581696,
+    "vram_experts_resident": 0
+  },
+  "max_tokens": 1,
+  "model_directory": "/home/son/son/DATN/Models/olmoe_merged",
+  "notes": [
+    "one loaded model; alternating order within each pair; expert caches evolve",
+    "one output token isolates prefill; no session KV reuse",
+    "same checkpoint as runner A/B; OS cache and desktop load uncontrolled",
+    "serial reference is compiled only in tests; not a production runtime toggle"
+  ],
+  "prompt": "Where is Mars ?",
+  "samples": [
+    {
+      "pair": 0,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.333413,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048989000000000005,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 844.349227,
+          "expert_io_ms": 735.898012,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8161140000000002,
+          "prefill_ms": 2571.891639,
+          "time_to_first_token_ms": 2571.988159,
+          "tokenizer_ms": 0.076375,
+          "total_ms": 2572.041522
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 0,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.549789000000004,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048794000000000004,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 922.2204849999999,
+          "expert_io_ms": 218.868007,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.817315,
+          "prefill_ms": 2132.049679,
+          "time_to_first_token_ms": 2132.146852,
+          "tokenizer_ms": 0.07567900000000001,
+          "total_ms": 2132.199821
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 1,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.809511,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049314000000000004,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 939.8085269999999,
+          "expert_io_ms": 212.338082,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8153259999999998,
+          "prefill_ms": 2143.929998,
+          "time_to_first_token_ms": 2144.025281,
+          "tokenizer_ms": 0.07562400000000001,
+          "total_ms": 2144.079257
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 1,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.82084,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049071,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 815.1980530000001,
+          "expert_io_ms": 378.213011,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8159639999999997,
+          "prefill_ms": 2184.676027,
+          "time_to_first_token_ms": 2184.769654,
+          "tokenizer_ms": 0.07501000000000001,
+          "total_ms": 2184.823018
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 2,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.630969,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048785999999999996,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 799.023375,
+          "expert_io_ms": 202.89177899999999,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.815264,
+          "prefill_ms": 1988.3964569999998,
+          "time_to_first_token_ms": 1988.487513,
+          "tokenizer_ms": 0.07286799999999999,
+          "total_ms": 1988.541441
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 2,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.391116999999994,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048667,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 982.1201619999999,
+          "expert_io_ms": 208.060426,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.823074,
+          "prefill_ms": 2176.766782,
+          "time_to_first_token_ms": 2176.878642,
+          "tokenizer_ms": 0.08791199999999999,
+          "total_ms": 2176.932151
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 3,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.507116,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048964,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 949.57312,
+          "expert_io_ms": 208.588414,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.829292,
+          "prefill_ms": 2151.254742,
+          "time_to_first_token_ms": 2151.357629,
+          "tokenizer_ms": 0.083345,
+          "total_ms": 2151.411025
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 3,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.547261,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049209,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 810.653638,
+          "expert_io_ms": 205.19536399999998,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8244149999999997,
+          "prefill_ms": 2004.2889119999998,
+          "time_to_first_token_ms": 2004.3988170000002,
+          "tokenizer_ms": 0.090198,
+          "total_ms": 2004.452304
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 4,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.13704,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048832,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 761.922432,
+          "expert_io_ms": 201.191392,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.814892,
+          "prefill_ms": 1945.6658579999998,
+          "time_to_first_token_ms": 1945.764072,
+          "tokenizer_ms": 0.079095,
+          "total_ms": 1945.817274
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 4,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.189882000000004,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.04883,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 922.284903,
+          "expert_io_ms": 205.048025,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.818384,
+          "prefill_ms": 2108.075932,
+          "time_to_first_token_ms": 2108.166453,
+          "tokenizer_ms": 0.071687,
+          "total_ms": 2108.222438
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 5,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.713681,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049243999999999996,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 1047.6413559999999,
+          "expert_io_ms": 204.949323,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8598209999999997,
+          "prefill_ms": 2248.372111,
+          "time_to_first_token_ms": 2248.4645950000004,
+          "tokenizer_ms": 0.073688,
+          "total_ms": 2248.522885
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 5,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 43.242644,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048728,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 883.699058,
+          "expert_io_ms": 225.988113,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.815968,
+          "prefill_ms": 2150.463238,
+          "time_to_first_token_ms": 2150.5996440000004,
+          "tokenizer_ms": 0.11549699999999999,
+          "total_ms": 2150.652859
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 6,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.575821999999995,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049006,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 855.187116,
+          "expert_io_ms": 205.64139600000001,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.821733,
+          "prefill_ms": 2046.6795339999999,
+          "time_to_first_token_ms": 2046.7764339999999,
+          "tokenizer_ms": 0.07838099999999999,
+          "total_ms": 2046.8304179999998
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 6,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.852788000000004,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.052467,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 934.329743,
+          "expert_io_ms": 206.724986,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.855248,
+          "prefill_ms": 2129.425784,
+          "time_to_first_token_ms": 2129.544719,
+          "tokenizer_ms": 0.094106,
+          "total_ms": 2129.602752
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 7,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.461755000000004,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049166999999999995,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 925.4534,
+          "expert_io_ms": 208.072957,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.820988,
+          "prefill_ms": 2121.5480740000003,
+          "time_to_first_token_ms": 2121.6891539999997,
+          "tokenizer_ms": 0.11636700000000001,
+          "total_ms": 2121.743194
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 7,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.464565,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048866,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 856.393561,
+          "expert_io_ms": 206.149639,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8231089999999996,
+          "prefill_ms": 2050.8897899999997,
+          "time_to_first_token_ms": 2051.007087,
+          "tokenizer_ms": 0.096391,
+          "total_ms": 2051.0608389999998
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 8,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.857884,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.048754,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 790.076306,
+          "expert_io_ms": 206.87563600000001,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.818402,
+          "prefill_ms": 1985.965426,
+          "time_to_first_token_ms": 1986.06872,
+          "tokenizer_ms": 0.080786,
+          "total_ms": 1986.121888
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 8,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 40.252187,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049137,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2264514560,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 359,
+          "expert_cache_hits": 2201,
+          "expert_cache_misses": 359,
+          "expert_compute_ms": 993.481222,
+          "expert_io_ms": 203.19495700000002,
+          "kv_cache_bytes": 5242880,
+          "lm_head_ms": 2.8207280000000003,
+          "prefill_ms": 2181.0515769999997,
+          "time_to_first_token_ms": 2181.145869,
+          "tokenizer_ms": 0.075865,
+          "total_ms": 2181.19981
+        },
+        "prompt_tokens": 20,
+        "text": " Mars",
+        "token_ids": [
+          13648
+        ]
+      },
+      "variant": "after"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "exploratory paired prefill experiment",
+  "testbed": "i5",
+  "threads": 4,
+  "warmup": 4
+}

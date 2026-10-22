@@ -6,3 +6,11 @@
 __pycache__/
 
 references
+# Local measurement attempts; add only reviewed run directories explicitly.
+/benchmarks/runs/
+*.log
+!/benchmarks/experiments/**/*.log
+!/docs/reviews/2026-10-22-i5-oom.log
+.env
+.env.*
+!.env.example

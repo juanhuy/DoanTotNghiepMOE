@@ -1,0 +1,172 @@
+{
+  "kind": "ram_stability",
+  "status": "failed",
+  "run_id": "20261022T154721.211773Z-ram-8da903c7837d41d1875a873c817a0a3d",
+  "git_commit": "1d98587258157a656104f255703da0aeb05f31c5",
+  "git_dirty": true,
+  "config": {
+    "testbed": "i5",
+    "gpu": "auto",
+    "cache": 256,
+    "model_dir": "models/olmoe-1b-7b-int8",
+    "threads": 8,
+    "context": 512,
+    "cycles": 1,
+    "max_tokens": 1,
+    "keep_cache": false,
+    "ram_limit_mib": 5120,
+    "headroom_mib": 1024,
+    "stop_rss_mib": 5632,
+    "min_available_mib": 1536,
+    "stop_swap_mib": 128,
+    "output_root": "benchmarks/runs",
+    "allow_dirty": true,
+    "dry_run": false
+  },
+  "notes": [
+    "bounded stability observation, not causal performance comparison or proof of no leaks",
+    "checkpoint hashing warms OS cache",
+    "watchdog terminates only its own child server"
+  ],
+  "turns": [],
+  "checkpoint": {
+    "config_sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b",
+    "files": [
+      {
+        "path": ".coli_analysis.json",
+        "size": 1655,
+        "sha256": "d8f8d6d46befe273cc71b355ae614de050d24fca17d58b95ce8606b3a312bec5"
+      },
+      {
+        "path": "_meta/config.json",
+        "size": 759,
+        "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c"
+      },
+      {
+        "path": "_meta/generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "_meta/special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "_meta/tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "_meta/tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      },
+      {
+        "path": "config.json",
+        "size": 784,
+        "sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "model-00000.safetensors",
+        "size": 1834100784,
+        "sha256": "215a2a74ede3b54c81418cab274c835cde1fdf4dc3eee40471a1864f13aae635"
+      },
+      {
+        "path": "model-00001.safetensors",
+        "size": 1657854168,
+        "sha256": "c83c75dbc51b7868e2199cc904e3f1337cd78362bef50b64a86d50e23d4c43e0"
+      },
+      {
+        "path": "model-00002.safetensors",
+        "size": 1628059584,
+        "sha256": "45f9996dcf938fbd9321e729764bb9c6746ae8258c3d50a45403421c0172a4c8"
+      },
+      {
+        "path": "model-00003.safetensors",
+        "size": 1821755792,
+        "sha256": "83984c933d29af5d18c328a68d8a84577c342f8af3d7503920a9dbc14916ee97"
+      },
+      {
+        "path": "model-00004.safetensors",
+        "size": 471116928,
+        "sha256": "56934a3b93691be6857b6d02a5f597f3db7eab49fc3554f8cc76abb6ea465ba6"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      }
+    ]
+  },
+  "hardware_observed": {
+    "logical_cpus": 12,
+    "cpu_model": "Intel(R) Core(TM) i5-10500H CPU @ 2.50GHz",
+    "physical_memory_bytes": 16571330560,
+    "gpu_inventory": {
+      "status": "observed",
+      "format": "name,memory_MiB,driver",
+      "devices": [
+        "NVIDIA GeForce GTX 1650 with Max-Q Design, 4096, 615.78.08"
+      ]
+    }
+  },
+  "binary_sha256": "e877d61a86969cab83e23c9414edde6d5649515549d906a7bf612f8b9f83bdd6",
+  "source_sha256": {
+    "src/expert.rs": "e1209f08374965f80bcd7ac8e269c4d59304dab0fbcde5b30d5248b3443a093c",
+    "src/quantization.rs": "84887691cf88d1ce76918c8012ec77dfbbdaebbb3ab134e5919a18c0a4277b6f",
+    "src/olmoe.rs": "947dbaabdd19e5f065d3013c3695203cdee17ca1fa3eb674ef7685a8e6528892",
+    "src/main.rs": "21cce289c76f87d08869c8986296e2f3563d5ec5fc3aab094027afee0bd879a8",
+    "src/memory.rs": "2f4abb5e94fa29c96b856319482e7f33d5322f5593e5af2c4ed5620a4dc4a861",
+    "src/ram.rs": "33445a1d3243ce533bc45f5344b184d53cbb8ecfd641568053d8ebcdfeed12df",
+    "src/backend.rs": "604025e602d34cf38a791ebe65b11fe817a1445df5cb39f5dd28a85d93a20a68",
+    "src/attention.rs": "c2b0a3f8b8104f934c55f78d45d198c82cc9765e7f9b9575e828714800d79317",
+    "src/moe.rs": "05967f0440a9617f8801db6d0b8d901d99569d25156b2a69bd7efb5589f4bb6e",
+    "src/tokenizer.rs": "b9e978819c110583fbaeda9a89f0cabe07bf0731d601205b022bc3e66ab5661e",
+    "src/lib.rs": "4e99c5a3abada15a707f10914f775927ded0e605e047d4876b7b7a8514598d5d",
+    "src/gpu.rs": "be7cb41e316ee567c191a113b64695d428c0e29945c77f8751977a3c9a26459d",
+    "src/router.rs": "dad15d395349c7462bd9b3329b594a2fa3968c7dadc3aaba9134a05d756926b8",
+    "src/int8_expert.rs": "62c0f34ff81440d71feaf7fac80697644a95000207e873dceb309465ac459a7a",
+    "src/generation.rs": "f8f5e80cab8e0e560ff7568a58d31869c3333d249da49c9c83127ac99de5a56f",
+    "src/safetensors.rs": "f07d2e262f2b6e67116d3c0bc69304b9418b27cd1784f4d18cc569f314bbd352",
+    "src/engine.rs": "381c3d9c9e74a41273d44bdd1bd3fcddfc79d2a661b6b977dd5063e3a7b48f29",
+    "src/model/config.rs": "761bb01e2ec3b8b3ef6402596d0e012b392b3fe78c930f48c566e205c4cfa88d",
+    "src/model/mod.rs": "9335368baf71b578b4d6630d484942538989e5c3b5f4eb84416b780c85cdd9d5",
+    "src/model/loader.rs": "ed4f1b619a9cb96456503474000e0e6e78b0541661a3dad6e24997e3becd0df7",
+    "tools/benchmark_http_session.py": "3680daa28ea9c6781300979b8d2d302f3665875205e934313052b288a3e8230c",
+    "tools/prepare_olmoe.py": "35b40242ac14acdb917606d44da637a75e8fd7221611bef365e0f727bb6b2206",
+    "tools/run_scenarios.py": "029b240d11944209416f6ad2ba77941ede47e9bc85991d3bed83ecd0472dfe3e",
+    "tools/test_benchmark_evidence.py": "f35afe566b84f37de72bb312a0465200132d07a864ff2c96731acd2d241011a7",
+    "tools/test_streaming_smoke.py": "f85324e19f52e999b8c91ffe03ff6842205459c01c9d828971ab7a90de3ef599",
+    "tools/test_prepare_olmoe.py": "4c705c7e2dc033bcb471c00cf0d396ea7c8d9fc280d561d038b31a3939165414",
+    "tools/run_benchmark.py": "f8011fee8bba73c18aa242693ac139e0f5f23ecfe9b71990d2b5f00f01164e2a",
+    "tools/export_benchmark_evidence.py": "8adec4b8861db9af0273a4b83377af84381570b9d3a4d71a2ca88737505338a5",
+    "tools/stress_http.py": "c1cb887a5d31b22869cc6b28c881ec5bdf74190a721b6939f89654c2935c9ec9",
+    "tools/test_run_benchmark.py": "8896562f164ada2afbc7eb1ba6320b59741d89e00467955401ff2b3bd4adb63b",
+    "tools/test_chat_stream.cjs": "137fe3b0b275031170a407d5c9b3267ec9846edf4e0464a0e4076bcf96bd46d9",
+    "tools/make_olmoe_reference.py": "35aab198f1b49c98568776345b58aa08f51f73d56d1be69c11ab3385170a38cf",
+    "tools/check.py": "90fdbfa730ab6a12269bc32d38b77cae20de192a03d558ec0758e8c6b13bec13",
+    "tools/check_ram_stability.py": "351e61e0b8261fa83bfa1916e3c3e5dc5347ff1423c1b4f22cdf9009e2ee8104",
+    "web/chat_stream.js": "9ec1cc8ebce92ad359a7ec6590b178ab3aadb39461ca75eb17435e7a169dc22b",
+    "web/index.html": "14a15f93ede34256f4cfab5a946aa17fa896130e8171082e660c8305b0056766",
+    "Cargo.toml": "bc684537d929add22986e49cae2b6f88e148148577e716900673a48b4c93626c",
+    "Cargo.lock": "7dc5677da4a7c4a20dd2510a8832551c4cea2c78fd882c48af27893f472e3f93"
+  },
+  "error": "RuntimeError: server exited during load; see server.log",
+  "watchdog_violations": []
+}

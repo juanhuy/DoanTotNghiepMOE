@@ -1,0 +1,61 @@
+{
+  "cycle": 0,
+  "policy": "inclusive",
+  "turn": 0,
+  "prompt": "Where is Mars",
+  "response": {
+    "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+    "usage": {
+      "completion_tokens": 128,
+      "prompt_tokens": 19,
+      "total_tokens": 147
+    },
+    "metrics": {
+      "attention_ms": 2060.477809,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 37897.573041,
+      "decode_ms": 56341.900051000004,
+      "decode_tokens_per_second": 2.254095085274745,
+      "expert_bytes_read": 46703247360,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 7068,
+      "expert_cache_hits": 13560,
+      "expert_cache_misses": 5128,
+      "expert_compute_ms": 8078.166932,
+      "expert_file_bytes_read": 35204055040,
+      "expert_file_loads": 5581,
+      "expert_file_read_ms": 40117.643462,
+      "expert_io_ms": 42694.888922,
+      "expert_vram_download_bytes": 14356643840,
+      "expert_vram_download_ms": 2577.24546,
+      "expert_vram_loads": 2276,
+      "expert_vram_upload_bytes": 56127160320,
+      "expert_vram_upload_ms": 14300.386821,
+      "kv_cache_bytes": 38273024,
+      "lm_head_ms": 373.057423,
+      "prefill_expert_io_ms": 4797.315881,
+      "prefill_ms": 6891.570258,
+      "time_to_first_token_ms": 6910.926782,
+      "tokenizer_ms": 4.178376,
+      "total_ms": 63253.040646
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 6892.021797997586,
+    "client_wall_ms": 63268.96371700059
+  },
+  "process_before": {
+    "VmHWM": 2264524,
+    "VmRSS": 2264524,
+    "VmSwap": 0,
+    "read_bytes": 682946560,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 5837128,
+    "VmRSS": 5641436,
+    "VmSwap": 237188,
+    "read_bytes": 31802925056,
+    "write_bytes": 4096
+  },
+  "process_read_bytes_delta": 31119978496
+}

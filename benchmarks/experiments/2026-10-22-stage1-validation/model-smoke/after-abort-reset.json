@@ -1,0 +1,65 @@
+{
+  "id": "after-abort-reset",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Where is Mars"
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "stage1-after-abort",
+  "response": {
+    "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+    "usage": {
+      "completion_tokens": 16,
+      "prompt_tokens": 19,
+      "total_tokens": 35
+    },
+    "metrics": {
+      "attention_ms": 248.76077899999999,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 3760.375753,
+      "decode_ms": 6702.3039149999995,
+      "decode_tokens_per_second": 2.2380363812553252,
+      "expert_bytes_read": 10212392960,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 1283,
+      "expert_cache_hits": 3368,
+      "expert_cache_misses": 984,
+      "expert_compute_ms": 2397.218884,
+      "expert_file_bytes_read": 6345687040,
+      "expert_file_loads": 1006,
+      "expert_file_read_ms": 6626.846011,
+      "expert_io_ms": 7818.827849,
+      "expert_vram_download_bytes": 4005478400,
+      "expert_vram_download_ms": 1191.981838,
+      "expert_vram_loads": 635,
+      "expert_vram_upload_bytes": 8092958720,
+      "expert_vram_upload_ms": 2471.878409,
+      "kv_cache_bytes": 8912896,
+      "lm_head_ms": 47.124531999999995,
+      "prefill_expert_io_ms": 4058.452096,
+      "prefill_ms": 5807.639488999999,
+      "time_to_first_token_ms": 5815.932497000001,
+      "tokenizer_ms": 0.098648,
+      "total_ms": 12518.263583
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 5807.64853699975,
+    "client_wall_ms": 12522.841032000088
+  },
+  "process_before": {
+    "VmHWM": 4556332,
+    "VmRSS": 4520684,
+    "VmSwap": 0,
+    "read_bytes": 15980490752,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4630988,
+    "VmRSS": 4630988,
+    "VmSwap": 0,
+    "read_bytes": 21138518016,
+    "write_bytes": 4096
+  }
+}

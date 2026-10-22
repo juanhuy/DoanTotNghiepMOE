@@ -1,0 +1,287 @@
++ /usr/bin/python3 tools/export_benchmark_evidence.py --check
+Validated 40 unique evidence artifacts
++ /usr/bin/python3 tools/test_benchmark_evidence.py
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.006s
+
+OK
++ /usr/bin/python3 tools/test_run_benchmark.py
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.045s
+
+OK
++ cargo fmt --all -- --check
++ cargo clippy --all-targets --locked -- -D warnings
+    Checking moe-tier-engine v0.1.0 (/home/son/son/DATN/DoanTotNghiepMOE)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.34s
++ cargo test --all-targets --locked
+   Compiling moe-tier-engine v0.1.0 (/home/son/son/DATN/DoanTotNghiepMOE)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.74s
+     Running unittests src/lib.rs (target/debug/deps/moe_tier_engine-085d61ec1739425c)
+
+running 58 tests
+test backend::tests::benchmark_attention_online_vs_materialized ... ignored, release-only A/B benchmark; writes JSON to MOE_ATTENTION_REPORT
+test backend::tests::benchmark_dense_kernel ... ignored, release-only microbenchmark; writes JSON to MOE_DENSE_REPORT
+test attention::tests::two_token_attention_matches_scalar_reference ... ok
+test expert::tests::swiglu_matches_scalar_calculation ... ok
+test backend::tests::loaded_matrix_path_checks_input_and_matches_checked_path ... ok
+test backend::tests::causal_attention_matches_scalar_for_mha_and_gqa ... ok
+test backend::tests::test_simd_rms_norm_parity ... ok
+test backend::tests::blocked_dot_matches_f64_reference_including_tails ... ok
+test int8_expert::kernel_tests::benchmark_int8_kernel ... ignored, release-only microbenchmark; writes JSON to MOE_KERNEL_REPORT
+test int8_expert::kernel_tests::blocked_kernel_matches_f64_reference_with_tails_and_signed_weights ... ok
+test int8_expert::kernel_tests::test_forward_single_threaded_matches_forward_reuse ... ok
+test memory::tests::byte_capacity_evicts_and_skips_oversized_experts ... ok
+test memory::tests::concurrent_reads_account_for_each_cached_expert_once ... ok
+test memory::tests::prefetch_deduplicates_ids ... ok
+test memory::tests::promotes_nvme_reads_into_lru_cache ... ok
+test engine::stream_queue_tests::full_stream_queue_times_out ... ok
+test model::tests::logits_match_manual_residual_only_model_and_eos_stops ... ok
+test model::tests::missing_experts_and_invalid_checkpoint_fail_at_load ... ok
+test moe::tests::learned_routing_selects_expert_by_hidden_state ... ok
+test moe::tests::malformed_matrix_is_rejected ... ok
+test moe::tests::weighted_experts_execute_and_cache ... ok
+test olmoe::cancellation_tests::benchmark_prefill_dispatch_paired ... ignored, release-only paired model prefill experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED
+test olmoe::cancellation_tests::benchmark_session_prefix_paired ... ignored, release-only paired session experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED
+test gpu::tests::test_gpu_probe ... ok
+test model::tests::cached_and_uncached_generation_match_and_requests_are_isolated ... ok
+test gpu::tests::test_gpu_expert_cache_lru_eviction ... ok
+test gpu::tests::test_gpu_pinned_buffer ... ok
+test gpu::tests::test_gpu_expert_weights_upload_download ... ok
+test gpu::tests::test_gpu_compute_gemv ... ok
+test gpu::tests::test_gpu_expert_pool_lifecycle ... ok
+test gpu::tests::test_gpu_compute_gemv_qkv ... ok
+test gpu::tests::test_gpu_compute_gemm ... ok
+test gpu::tests::test_gpu_compute_gemm_qkv ... ok
+test olmoe::routing_and_topk_tests::test_argmax_greedy_matches_legacy_closure ... ok
+test olmoe::routing_and_topk_tests::test_inter_layer_lookahead_prefetch_and_markov_transition ... ok
+test olmoe::routing_and_topk_tests::test_kv_cache_preallocation_capacity ... ok
+test olmoe::routing_and_topk_tests::test_coarse_grained_multi_expert_scratch_and_reduction ... ok
+test olmoe::routing_and_topk_tests::test_rope_fast_path_matches_legacy_rotate ... ok
+test olmoe::routing_and_topk_tests::test_prefill_direct_routing_matches_legacy_scan ... ok
+test olmoe::routing_and_topk_tests::test_sf_cache_partition_and_protection ... ok
+test olmoe::routing_and_topk_tests::test_topk_bounds_safety ... ok
+test olmoe::routing_and_topk_tests::test_zero_finite_overhead_still_catches_nan ... ok
+test olmoe::routing_and_topk_tests::test_zero_alloc_topk_matches_full_sort ... ok
+test quantization::tests::decodes_signed_int8 ... ok
+test quantization::tests::unpacks_signed_int4_nibbles ... ok
+test router::tests::learned_router_uses_hidden_state ... ok
+test router::tests::route_returns_normalized_top_k ... ok
+test tokenizer::tests::vietnamese_round_trip ... ok
+test gpu::tests::test_gpu_compute_gemm_qkv_across_threads_and_scratch_expansion ... ok
+test olmoe::cancellation_tests::truncated_session_kv_preserves_logits_and_buffer_ownership ... ok
+test olmoe::cancellation_tests::session_reuses_common_prefix_after_edit_and_repeated_prompt ... ok
+test olmoe::cancellation_tests::cancellation_during_prefill_leaves_model_reusable ... ok
+test olmoe::cancellation_tests::session_prefix_cache_matches_fresh_generation ... ok
+test olmoe::cancellation_tests::layer_major_prefill_matches_tokenwise_last_logits ... ok
+test olmoe::cancellation_tests::disconnect_after_content_stops_decode_and_preserves_model ... ok
+test olmoe::cancellation_tests::reset_cache_preserves_session_budget_and_allows_new_prefix_reuse ... ok
+test olmoe::cancellation_tests::prefix_prefill_matches_full_logits_for_every_split ... ok
+test olmoe::cancellation_tests::parallel_prefill_routes_match_tokenwise_logits_with_tails ... ok
+
+test result: ok. 53 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 1.39s
+
+     Running unittests src/main.rs (target/debug/deps/moe_tier_engine-c78338140601981d)
+
+running 2 tests
+test tests::http_stream_reports_payload_error_after_headers ... ok
+test tests::http_stream_and_validation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/int8_loader.rs (target/debug/deps/int8_loader-5b78ff81e79c09c3)
+
+running 6 tests
+test merged_expert_across_shards_matches_dense_reference ... ok
+test reads_float_formats_and_enforces_decoded_budget ... ok
+test test_load_reusing_buffers_produces_identical_expert ... ok
+test rejects_invalid_scales ... ok
+test rejects_bad_offsets_lengths_duplicates_and_truncation ... ok
+test concurrent_shard_reads_preserve_tensor_offsets ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/olmoe_reference.rs (target/debug/deps/olmoe_reference-c18287d8ad05492b)
+
+running 3 tests
+test engine_selects_olmoe_and_rejects_invalid_messages ... ok
+test stream_matches_complete_generation_and_validates_before_start ... ok
+test incremental_quantized_logits_match_transformers_full_causal_forward ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running unittests examples/benchmark_olmoe.rs (target/debug/examples/benchmark_olmoe-c8672bf7f541459c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/benchmark_suite.rs (target/debug/examples/benchmark_suite-1ac02b14008bb21f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/benchmark_workload.rs (target/debug/examples/benchmark_workload-b475cd41b2127e67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/chat_olmoe.rs (target/debug/examples/chat_olmoe-58d4031a40388753)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/evaluate_quality.rs (target/debug/examples/evaluate_quality-83f9e61b2677174c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/inspect_model.rs (target/debug/examples/inspect_model-9ca93e0715172d3e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
++ cargo test --release --all-targets --locked
+   Compiling moe-tier-engine v0.1.0 (/home/son/son/DATN/DoanTotNghiepMOE)
+    Finished `release` profile [optimized] target(s) in 17.37s
+     Running unittests src/lib.rs (target/release/deps/moe_tier_engine-1745916ffb9c337c)
+
+running 58 tests
+test backend::tests::benchmark_attention_online_vs_materialized ... ignored, release-only A/B benchmark; writes JSON to MOE_ATTENTION_REPORT
+test backend::tests::benchmark_dense_kernel ... ignored, release-only microbenchmark; writes JSON to MOE_DENSE_REPORT
+test attention::tests::two_token_attention_matches_scalar_reference ... ok
+test backend::tests::causal_attention_matches_scalar_for_mha_and_gqa ... ok
+test expert::tests::swiglu_matches_scalar_calculation ... ok
+test backend::tests::loaded_matrix_path_checks_input_and_matches_checked_path ... ok
+test backend::tests::test_simd_rms_norm_parity ... ok
+test backend::tests::blocked_dot_matches_f64_reference_including_tails ... ok
+test int8_expert::kernel_tests::benchmark_int8_kernel ... ignored, release-only microbenchmark; writes JSON to MOE_KERNEL_REPORT
+test int8_expert::kernel_tests::blocked_kernel_matches_f64_reference_with_tails_and_signed_weights ... ok
+test int8_expert::kernel_tests::test_forward_single_threaded_matches_forward_reuse ... ok
+test memory::tests::byte_capacity_evicts_and_skips_oversized_experts ... ok
+test memory::tests::concurrent_reads_account_for_each_cached_expert_once ... ok
+test memory::tests::prefetch_deduplicates_ids ... ok
+test memory::tests::promotes_nvme_reads_into_lru_cache ... ok
+test model::tests::cached_and_uncached_generation_match_and_requests_are_isolated ... ok
+test engine::stream_queue_tests::full_stream_queue_times_out ... ok
+test model::tests::missing_experts_and_invalid_checkpoint_fail_at_load ... ok
+test moe::tests::learned_routing_selects_expert_by_hidden_state ... ok
+test moe::tests::malformed_matrix_is_rejected ... ok
+test moe::tests::weighted_experts_execute_and_cache ... ok
+test olmoe::cancellation_tests::benchmark_prefill_dispatch_paired ... ignored, release-only paired model prefill experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED
+test olmoe::cancellation_tests::benchmark_session_prefix_paired ... ignored, release-only paired session experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED
+test model::tests::logits_match_manual_residual_only_model_and_eos_stops ... ok
+test gpu::tests::test_gpu_probe ... ok
+test gpu::tests::test_gpu_pinned_buffer ... ok
+test gpu::tests::test_gpu_compute_gemm ... ok
+test gpu::tests::test_gpu_compute_gemv ... ok
+test gpu::tests::test_gpu_compute_gemm_qkv ... ok
+test gpu::tests::test_gpu_expert_pool_lifecycle ... ok
+test gpu::tests::test_gpu_compute_gemv_qkv ... ok
+test gpu::tests::test_gpu_expert_weights_upload_download ... ok
+test gpu::tests::test_gpu_expert_cache_lru_eviction ... ok
+test olmoe::routing_and_topk_tests::test_coarse_grained_multi_expert_scratch_and_reduction ... ok
+test olmoe::routing_and_topk_tests::test_inter_layer_lookahead_prefetch_and_markov_transition ... ok
+test olmoe::routing_and_topk_tests::test_kv_cache_preallocation_capacity ... ok
+test olmoe::routing_and_topk_tests::test_prefill_direct_routing_matches_legacy_scan ... ok
+test olmoe::routing_and_topk_tests::test_rope_fast_path_matches_legacy_rotate ... ok
+test olmoe::routing_and_topk_tests::test_argmax_greedy_matches_legacy_closure ... ok
+test olmoe::routing_and_topk_tests::test_sf_cache_partition_and_protection ... ok
+test olmoe::routing_and_topk_tests::test_topk_bounds_safety ... ok
+test olmoe::routing_and_topk_tests::test_zero_alloc_topk_matches_full_sort ... ok
+test olmoe::routing_and_topk_tests::test_zero_finite_overhead_still_catches_nan ... ok
+test quantization::tests::decodes_signed_int8 ... ok
+test quantization::tests::unpacks_signed_int4_nibbles ... ok
+test router::tests::learned_router_uses_hidden_state ... ok
+test router::tests::route_returns_normalized_top_k ... ok
+test tokenizer::tests::vietnamese_round_trip ... ok
+test gpu::tests::test_gpu_compute_gemm_qkv_across_threads_and_scratch_expansion ... ok
+test olmoe::cancellation_tests::truncated_session_kv_preserves_logits_and_buffer_ownership ... ok
+test olmoe::cancellation_tests::session_reuses_common_prefix_after_edit_and_repeated_prompt ... ok
+test olmoe::cancellation_tests::parallel_prefill_routes_match_tokenwise_logits_with_tails ... ok
+test olmoe::cancellation_tests::cancellation_during_prefill_leaves_model_reusable ... ok
+test olmoe::cancellation_tests::session_prefix_cache_matches_fresh_generation ... ok
+test olmoe::cancellation_tests::layer_major_prefill_matches_tokenwise_last_logits ... ok
+test olmoe::cancellation_tests::disconnect_after_content_stops_decode_and_preserves_model ... ok
+test olmoe::cancellation_tests::reset_cache_preserves_session_budget_and_allows_new_prefix_reuse ... ok
+test olmoe::cancellation_tests::prefix_prefill_matches_full_logits_for_every_split ... ok
+
+test result: ok. 53 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 1.44s
+
+     Running unittests src/main.rs (target/release/deps/moe_tier_engine-a4e98425fc5bbfe3)
+
+running 2 tests
+test tests::http_stream_reports_payload_error_after_headers ... ok
+test tests::http_stream_and_validation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/int8_loader.rs (target/release/deps/int8_loader-6870c8323d807422)
+
+running 6 tests
+test reads_float_formats_and_enforces_decoded_budget ... ok
+test merged_expert_across_shards_matches_dense_reference ... ok
+test test_load_reusing_buffers_produces_identical_expert ... ok
+test rejects_invalid_scales ... ok
+test rejects_bad_offsets_lengths_duplicates_and_truncation ... ok
+test concurrent_shard_reads_preserve_tensor_offsets ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/olmoe_reference.rs (target/release/deps/olmoe_reference-4bde317a91844882)
+
+running 3 tests
+test engine_selects_olmoe_and_rejects_invalid_messages ... ok
+test stream_matches_complete_generation_and_validates_before_start ... ok
+test incremental_quantized_logits_match_transformers_full_causal_forward ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+     Running unittests examples/benchmark_olmoe.rs (target/release/examples/benchmark_olmoe-09f53f9e773c14b3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/benchmark_suite.rs (target/release/examples/benchmark_suite-21901c28f7e5ee5c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/benchmark_workload.rs (target/release/examples/benchmark_workload-2be0565840ed65ec)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/chat_olmoe.rs (target/release/examples/chat_olmoe-34c6eddc5c76bd94)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/evaluate_quality.rs (target/release/examples/evaluate_quality-10932cdad7f53a7b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/inspect_model.rs (target/release/examples/inspect_model-ab424d596740dc08)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
++ cargo build --release --locked --bin moe-tier-engine
+    Finished `release` profile [optimized] target(s) in 0.04s
++ /usr/bin/python3 tools/stress_http.py tests/fixtures/olmoe/unnormalized-mha /tmp/moe-http-check-t85ybh7n/stress.json 30
+HTTP fixture: 20 completed, 10 cancelled; steady RSS spread 172 KiB
+Selected checks passed. Unselected CUDA/converter/model benchmarks are not validated.

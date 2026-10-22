@@ -1,0 +1,73 @@
+{
+  "id": "love",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Where is Mars"
+    },
+    {
+      "role": "assistant",
+      "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest"
+    },
+    {
+      "role": "user",
+      "content": "What is love ?"
+    }
+  ],
+  "max_tokens": 32,
+  "session_id": "stage1-conversation",
+  "response": {
+    "text": "\nLove is a complex emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment",
+    "usage": {
+      "completion_tokens": 32,
+      "prompt_tokens": 71,
+      "total_tokens": 103
+    },
+    "metrics": {
+      "attention_ms": 841.856875,
+      "cached_prompt_tokens": 11,
+      "decode_expert_io_ms": 9247.954023,
+      "decode_ms": 15722.811185999999,
+      "decode_tokens_per_second": 1.9716575892995019,
+      "expert_bytes_read": 19333529600,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 3065,
+      "expert_cache_hits": 10482,
+      "expert_cache_misses": 1166,
+      "expert_compute_ms": 6708.775028999999,
+      "expert_file_bytes_read": 8591278080,
+      "expert_file_loads": 1362,
+      "expert_file_read_ms": 9182.303222,
+      "expert_io_ms": 12563.949595,
+      "expert_vram_download_bytes": 11978588160,
+      "expert_vram_download_ms": 3381.646373,
+      "expert_vram_loads": 1899,
+      "expert_vram_upload_bytes": 19333529600,
+      "expert_vram_upload_ms": 5817.341174,
+      "kv_cache_bytes": 26738688,
+      "lm_head_ms": 91.87885299999999,
+      "prefill_expert_io_ms": 3315.995572,
+      "prefill_ms": 9014.916484000001,
+      "time_to_first_token_ms": 9025.498835,
+      "tokenizer_ms": 0.230409,
+      "total_ms": 24748.333007
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 9014.808312000241,
+    "client_wall_ms": 24752.448863000154
+  },
+  "process_before": {
+    "VmHWM": 4466236,
+    "VmRSS": 4466236,
+    "VmSwap": 0,
+    "read_bytes": 7285182464,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4496860,
+    "VmRSS": 4496860,
+    "VmSwap": 0,
+    "read_bytes": 14693838848,
+    "write_bytes": 4096
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "sha256": "398a717f493548986cea83e2c939d25c245e43069264b8b5638cba508f7ec8fc",
+  "git_head": "1d98587258157a656104f255703da0aeb05f31c5",
+  "git_dirty": true,
+  "note": "paired dispatch benchmark uses cfg(test) serial reference in same release binary; model hashes/hardware in runner records"
+}

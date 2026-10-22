@@ -1018,8 +1018,8 @@
           <!-- Card 1: Last Inference Metrics -->
           <div class="tech-card">
             <div class="tech-card-header">
-              <span>LATENCY DECOMPOSITION & THROUGHPUT</span>
-              <span id="telemetry-source-badge" style="color:var(--accent-cyan);">BASELINE TESTBED B</span>
+              <span>EXPERT TIMERS & THROUGHPUT</span>
+              <span id="telemetry-source-badge" style="color:var(--accent-cyan);">HISTORICAL SAMPLE — UNVERIFIED</span>
             </div>
 
             <div class="kpi-row">
@@ -1040,8 +1040,9 @@
               </div>
             </div>
 
+            <p style="font-size:0.75rem;color:var(--text-muted);">Timers có thể chồng lấn; tỷ lệ chuẩn hóa theo tổng timer, không phải phần trăm wall time.</p>
             <div class="latency-stack-bar" id="latency-bar">
-              <div class="latency-seg seg-io" id="seg-io" style="width: 55%;" title="SSD NVMe I/O Wait">I/O Wait</div>
+              <div class="latency-seg seg-io" id="seg-io" style="width: 55%;" title="Expert load wait: file + VRAM; không phải thời gian SSD riêng">I/O Wait</div>
               <div class="latency-seg seg-compute" id="seg-expert" style="width: 25%;" title="Expert MLP Compute">Expert Compute</div>
               <div class="latency-seg seg-attn" id="seg-attn" style="width: 14%;" title="Causal Self-Attention">Attn</div>
               <div class="latency-seg seg-head" id="seg-head" style="width: 6%;" title="LM Head & Norm">Head</div>
@@ -1050,7 +1051,7 @@
             <table class="latency-breakdown-table">
               <tbody>
                 <tr>
-                  <td><span style="color:#60a5fa;">■</span> NVMe SSD I/O Wait (Paged/Cold)</td>
+                  <td><span style="color:#60a5fa;">■</span> Expert load wait (file + VRAM, có overlap)</td>
                   <td id="val-io">-- s</td>
                 </tr>
                 <tr>
@@ -1078,7 +1079,7 @@
 
             <div class="kpi-row">
               <div class="kpi-box">
-                <div class="kpi-box-label">L1: GPU VRAM Used</div>
+                <div class="kpi-box-label">VRAM logical (chưa gồm pool/scratch)</div>
                 <div class="kpi-box-val" id="vram-val-primary">-- MB</div>
                 <div class="kpi-box-sub" id="vram-sub-primary">Dense + L1 Cache</div>
               </div>
@@ -1088,7 +1089,7 @@
                 <div class="kpi-box-sub" id="ram-sub-primary">Zero-OOM Cap</div>
               </div>
               <div class="kpi-box">
-                <div class="kpi-box-label">L3: NVMe Read Total</div>
+                <div class="kpi-box-label">Process read_bytes (OS counter)</div>
                 <div class="kpi-box-val" id="ssd-val-primary">-- GB</div>
                 <div class="kpi-box-sub" id="ssd-sub-primary">Kernel I/O Bytes</div>
               </div>
@@ -1171,11 +1172,11 @@
         <div class="matrix-workspace">
           <div class="matrix-toolbar">
             <div class="matrix-title-group">
-              <span>PHYSICAL EXPERT RESIDENCY MATRIX (16 LAYERS × 64 EXPERTS = 1,024 TOTAL)</span>
-              <span class="tech-pill" id="matrix-active-mode">Top-8 Sparse Routing (12.5% active)</span>
+              <span>EXPERT CACHE: RAM STATUS / ROUTING & VRAM PLACEMENT MINH HỌA</span>
+              <span class="tech-pill" id="matrix-active-mode">Routing minh họa — không phải trace token</span>
             </div>
             <div style="display:flex; gap:6px;">
-              <button class="nav-tab-btn active" id="btn-topo-sparse">Active Sparsity</button>
+              <button class="nav-tab-btn active" id="btn-topo-sparse">Routing minh họa</button>
               <button class="nav-tab-btn" id="btn-topo-physical">Physical Tier (VRAM/RAM/SSD)</button>
               <button class="nav-tab-btn" id="btn-topo-cumulative">Cumulative Heatmap</button>
             </div>
@@ -1233,6 +1234,7 @@
   </main>
 
   <!-- Client-side Logic (Vanilla JavaScript - Zero external CDN dependencies) -->
+  <script src="/chat_stream.js"></script>
   <script>
     // Tab Navigation Logic
     const tabButtons = document.querySelectorAll('.nav-tab-btn[data-tab]');
@@ -1395,10 +1397,10 @@
       btnTopoCumulative.className = 'nav-tab-btn' + (mode === 'cumulative' ? ' active' : '');
 
       if (mode === 'sparse') {
-        matrixActiveMode.textContent = 'Top-8 Sparse Routing (12.5% active)';
+        matrixActiveMode.textContent = 'Routing minh họa — không phải trace token';
         matrixActiveMode.style.color = '#34d399';
       } else if (mode === 'physical') {
-        matrixActiveMode.textContent = 'Physical Tier (L1 VRAM Cyan / L2 RAM Blue / L3 SSD Dark)';
+        matrixActiveMode.textContent = 'RAM residency thật; VRAM placement minh họa';
         matrixActiveMode.style.color = '#06b6d4';
       } else {
         matrixActiveMode.textContent = 'Cumulative Heatmap Across Session';
@@ -1585,9 +1587,9 @@
         const totalGb = (gpu.total_vram_bytes / 1073741824).toFixed(2);
         const pct = Math.round((gpu.allocated_vram_bytes / Math.max(1, gpu.total_vram_bytes)) * 100);
 
-        headerVramVal.textContent = `${allocGb} / ${totalGb} GB`;
+        headerVramVal.textContent = `${allocGb} / ${totalGb} GB logical`;
         vramValPrimary.textContent = `${allocMb} MB`;
-        topoVramText.textContent = `${allocGb} / ${totalGb} GB`;
+        topoVramText.textContent = `${allocGb} / ${totalGb} GB logical`;
         vramPctBadge.textContent = `${pct}% of ${totalGb}GB`;
         topoVramBar.style.width = `${Math.min(100, Math.max(4, pct))}%`;
         topoVramBar.style.background = 'var(--accent-cyan)';
@@ -1618,11 +1620,11 @@
           if (flowPcieDir) flowPcieDir.textContent = '▲ H2D / ▼ D2H';
         }
         if (flowExplanation) {
-          flowExplanation.innerHTML = '<span style="color:#67e8f9; font-weight:700;">Chế độ Phân tầng Lai (Hybrid GPU + CPU):</span> Trọng số Dense & Hot Experts lưu trên VRAM. cuBLAS tăng tốc Attention & LM Head (nhanh hơn 3.6x–4.8x). Cold Experts nạp qua PCIe DMA vào RAM cho Rayon tính SwiGLU.';
+          flowExplanation.innerHTML = '<span style="color:#67e8f9; font-weight:700;">Chế độ Phân tầng Lai (Hybrid GPU + CPU):</span> Trọng số Dense & Hot Experts lưu trên VRAM. cuBLAS chạy các phép chiếu dense và LM Head khi GPU khả dụng. Cold Experts đọc từ file vào RAM; cache VRAM trao đổi qua PCIe cho Rayon tính SwiGLU.';
         }
         if (flowGpuStat) {
           const allocMb = Math.round((gpu.allocated_vram_bytes || 0) / 1048576);
-          flowGpuStat.textContent = `VRAM: ${allocMb} MB (${gpu.vram_experts_resident || 0} L1 exp)`;
+          flowGpuStat.textContent = `VRAM logical: ${allocMb} MB (${gpu.vram_experts_resident || 0} L1 exp)`;
         }
       } else {
         if (workbenchGpuLabel) workbenchGpuLabel.textContent = 'GPU: OFF (CPU)';
@@ -1680,7 +1682,7 @@
       try {
         const res = await fetch('/api/cache/reset', { method: 'POST' });
         if (res.ok) {
-          showToast('✓ Đã reset 100% Cache (L1 VRAM, L2 RAM & KV)! Sẵn sàng kiểm thử Cold Start 0 cache.');
+          showToast('✓ Đã xóa expert/KV cache ứng dụng. OS cache và VRAM pool vẫn được giữ.');
           metricTtft.textContent = '-- s';
           metricToks.textContent = '-- tok/s';
           metricTotal.textContent = '-- s';
@@ -1777,6 +1779,7 @@
       btnSend.hidden = busy;
       btnStop.hidden = !busy;
       chatInput.disabled = busy;
+      btnClearSession.disabled = busy;
       headerStatusDot.style.background = busy ? 'var(--accent-amber)' : 'var(--accent-emerald)';
       headerStatusBadge.className = 'badge-status ' + (busy ? 'busy' : 'ready');
       headerStatusBadge.textContent = busy ? 'Inferring...' : 'Engine Ready';
@@ -1824,7 +1827,7 @@
       cacheEvictionsCount.textContent = `${evicts} evictions`;
     }
 
-    updateMetrics(BASELINE_METRICS, 'BASELINE TESTBED B');
+    updateMetrics(BASELINE_METRICS, 'HISTORICAL SAMPLE — UNVERIFIED');
 
     // Chat Submission Handler
     chatForm.addEventListener('submit', async (e) => {
@@ -1832,7 +1835,7 @@
       const prompt = chatInput.value.trim();
       if (!prompt || controller) return;
 
-      history.push({ role: 'user', content: prompt });
+      const requestHistory = [...history, { role: 'user', content: prompt }];
       appendMessageCard('user', prompt);
       chatInput.value = '';
 
@@ -1856,8 +1859,8 @@
         if (tokenCount > 0 && firstTokenTime) {
           const genDuration = (performance.now() - (startTime + firstTokenTime)) / 1000;
           const liveTokS = genDuration > 0.05 ? (tokenCount / genDuration).toFixed(1) : '...';
-          metricToks.textContent = `${liveTokS} tok/s`;
-          metricTokenCount.textContent = `${tokenCount} tokens generated`;
+          metricToks.textContent = `${liveTokS} chunks/s (live)`;
+          metricTokenCount.textContent = `${tokenCount} stream chunks`;
         }
       }, 100);
 
@@ -1869,72 +1872,44 @@
           body: JSON.stringify({
             model: 'olmoe',
             session_id: sessionId,
-            messages: history,
+            messages: requestHistory,
             max_tokens: Number(selectMaxTokens.value),
             stream: true,
           }),
         });
 
         if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '', done = false;
-
-        while (!done) {
-          const chunk = await reader.read();
-          done = chunk.done;
-          buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !done });
-          const blocks = buffer.split(/\r?\n\r?\n/);
-          buffer = blocks.pop() || '';
-
-          for (const block of blocks) {
-            const lines = block.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n');
-            if (!lines || lines === '[DONE]') continue;
-            const event = JSON.parse(lines);
-            const delta = event.choices?.[0]?.delta?.content;
-
-            if (delta) {
-              if (firstTokenTime === null) {
-                firstTokenTime = performance.now() - startTime;
-                metricTtft.textContent = `${(firstTokenTime / 1000).toFixed(2)} s`;
-              }
-              tokenCount++;
-              assistantMsg.content += delta;
-              bodyEl.textContent = assistantMsg.content;
-              cardEl.scrollIntoView({ block: 'end' });
-
-              // Illuminate active experts on token decode
-              for (let r = 0; r < ROWS; r += 2) {
-                const randC = Math.floor(Math.random() * COLS);
-                pulseGrid[r * COLS + randC] = 1.0;
-                activeResidue[r * COLS + randC] = 1.0;
-              }
-            }
-
-            if (event.metrics) {
-              clearInterval(liveTimerInterval);
-              updateMetrics(event.metrics, 'LIVE INFERENCE RESULT');
-              localStorage.setItem('moe-latest-metrics', JSON.stringify(event.metrics));
-              cardEl.remove();
-              appendMessageCard('assistant', assistantMsg.content, event.metrics);
-            }
+        if (!res.body) throw new Error('Missing response stream');
+        const result = await consumeChatStream(res.body.getReader(), delta => {
+          if (firstTokenTime === null) {
+            firstTokenTime = performance.now() - startTime;
+            metricTtft.textContent = `${(firstTokenTime / 1000).toFixed(2)} s`;
           }
-        }
-
-        history.push(assistantMsg);
+          tokenCount++;
+          assistantMsg.content += delta;
+          bodyEl.textContent = assistantMsg.content;
+          cardEl.scrollIntoView({ block: 'end' });
+        });
+        clearInterval(liveTimerInterval);
+        updateMetrics(result.metrics, 'LIVE INFERENCE RESULT');
+        localStorage.setItem('moe-latest-metrics', JSON.stringify(result.metrics));
+        cardEl.remove();
+        appendMessageCard('assistant', result.text, result.metrics);
+        history = [...requestHistory, { role: 'assistant', content: result.text }];
         localStorage.setItem('moe-history', JSON.stringify(history));
         updateContextMeter();
         fetchTelemetry();
       } catch (err) {
         if (err.name === 'AbortError') {
-          bodyEl.textContent = assistantMsg.content || '(Aborted by user)';
+          bodyEl.textContent = (assistantMsg.content || '') + '\n[Đã dừng — phản hồi chưa hoàn tất, không lưu vào lịch sử.]';
         } else {
           let errText = err.message || '';
           if (errText.includes('exceeds context limit') || errText.includes('context limit')) {
             errText = '⚠️ [Vượt quá Context Window] Lịch sử hội thoại + Max Tokens vượt quá trần 512 tokens của model! Hãy bấm nút "CLEAR CHAT" trên thanh công cụ hoặc giảm "Max New Tokens" xuống 32/64 để tiếp tục.';
             showToast('Lỗi: Vượt quá Context Window (512 tokens)!', 'warn');
           }
-          bodyEl.innerHTML = `<span style="color:#ef4444; font-weight:600;">${errText}</span>`;
+          bodyEl.textContent = (assistantMsg.content || '') + '\n[Lỗi — không lưu vào lịch sử] ' + errText;
+          bodyEl.style.color = '#ef4444';
           cardEl.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         }
       } finally {

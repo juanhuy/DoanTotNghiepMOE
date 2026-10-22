@@ -1,0 +1,9 @@
+
+running 1 test
+test olmoe::cancellation_tests::victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.32s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/moe_tier_engine-085d61ec1739425c)
+EXECUTED victim cache CUDA: logits, disjoint tiers, pool reset passed

@@ -135,6 +135,10 @@ impl Int8Expert {
         self.weights.len() + self.scales.len() * 4
     }
 
+    pub(crate) fn allocated_bytes(&self) -> usize {
+        self.weights.capacity() + self.scales.capacity() * std::mem::size_of::<f32>()
+    }
+
     pub fn from_raw(
         hidden: usize,
         intermediate: usize,

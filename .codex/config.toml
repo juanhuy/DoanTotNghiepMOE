@@ -1,0 +1,11 @@
+# Project settings only; inherit each contributor's model, account and permissions.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+
+# Optional read-only documentation MCP. Enable locally only for Codex/OpenAI setup tasks.
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+enabled = false
+required = false
+startup_timeout_sec = 15

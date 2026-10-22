@@ -1,0 +1,65 @@
+{
+  "id": "quality-follow-vietnamese",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hãy chỉ viết đúng hai từ: Việt Nam"
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "quality-follow-vietnamese",
+  "response": {
+    "text": "\nViệt Nam.",
+    "usage": {
+      "completion_tokens": 7,
+      "prompt_tokens": 38,
+      "total_tokens": 45
+    },
+    "metrics": {
+      "attention_ms": 191.345653,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 1045.782064,
+      "decode_ms": 1863.988021,
+      "decode_tokens_per_second": 3.21890480647032,
+      "expert_bytes_read": 4787650560,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 759,
+      "expert_cache_hits": 5192,
+      "expert_cache_misses": 440,
+      "expert_compute_ms": 3091.2599,
+      "expert_file_bytes_read": 3437772800,
+      "expert_file_loads": 545,
+      "expert_file_read_ms": 2774.803539,
+      "expert_io_ms": 3348.6887570000004,
+      "expert_vram_download_bytes": 2012200960,
+      "expert_vram_download_ms": 573.885218,
+      "expert_vram_loads": 319,
+      "expert_vram_upload_bytes": 4787650560,
+      "expert_vram_upload_ms": 1433.6969569999999,
+      "kv_cache_bytes": 11534336,
+      "lm_head_ms": 20.186002000000002,
+      "prefill_expert_io_ms": 2302.9066930000004,
+      "prefill_ms": 6136.590882,
+      "time_to_first_token_ms": 6143.871997,
+      "tokenizer_ms": 0.172862,
+      "total_ms": 8007.873570999999
+    },
+    "finish_reason": "stop",
+    "client_first_content_after_headers_ms": 6136.734144000002,
+    "client_wall_ms": 8012.380060000396
+  },
+  "process_before": {
+    "VmHWM": 4760928,
+    "VmRSS": 4760928,
+    "VmSwap": 0,
+    "read_bytes": 40064073728,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4785504,
+    "VmRSS": 4780204,
+    "VmSwap": 0,
+    "read_bytes": 41688211456,
+    "write_bytes": 4096
+  }
+}

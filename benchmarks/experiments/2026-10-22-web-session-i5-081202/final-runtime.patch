@@ -1,0 +1,765 @@
+--- before/src/olmoe.rs
++++ after/src/olmoe.rs
+@@ -117,6 +117,7 @@
+ 
+ #[derive(Serialize, Clone, Debug)]
+ pub struct ExpertStatusReport {
++    pub expert_cache_policy: &'static str,
+     pub num_layers: usize,
+     pub num_experts: usize,
+     pub cache_bytes_per_layer: usize,
+@@ -170,6 +171,14 @@
+     expert_compute: Duration,
+     lm_head: Duration,
+     expert_io: Duration,
++    file_io: Duration,
++    vram_io: Duration,
++    upload_io: Duration,
++    file_bytes: u64,
++    vram_bytes: u64,
++    upload_bytes: u64,
++    file_loads: u64,
++    vram_loads: u64,
+     cache_hits: u64,
+     cache_misses: u64,
+     cache_evictions: u64,
+@@ -246,6 +255,7 @@
+     sessions: HashMap<String, SessionState>,
+     session_clock: u64,
+     session_cache_bytes: usize,
++    victim_expert_cache: bool,
+     gpu_tier: crate::gpu::GpuTierManager,
+     gpu_dense: Option<crate::gpu::GpuDenseStorage>,
+     inter_layer_transitions: Vec<Vec<u16>>,
+@@ -289,6 +299,16 @@
+         dense_budget: usize,
+     ) -> io::Result<Self> {
+         configure_parallelism()?;
++        let victim_expert_cache = match std::env::var("MOE_EXPERT_CACHE_POLICY").as_deref() {
++            Ok("victim") | Err(std::env::VarError::NotPresent) => true,
++            Ok("inclusive") => false,
++            _ => {
++                return Err(invalid(
++                    "MOE_EXPERT_CACHE_POLICY must be inclusive or victim",
++                ))
++            }
++        };
++
+         let path = path.as_ref();
+         if path.join("INCOMPLETE").exists() {
+             return Err(invalid("checkpoint conversion is incomplete"));
+@@ -502,6 +522,7 @@
+             sessions: HashMap::new(),
+             session_clock: 0,
+             session_cache_bytes: 256 * 1024 * 1024,
++            victim_expert_cache,
+             gpu_tier,
+             gpu_dense,
+             inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
+@@ -538,6 +559,11 @@
+             system_telemetry.gpu_vram_used_mib = Some(gpu_status.allocated_vram_bytes / 1048576);
+         }
+         ExpertStatusReport {
++            expert_cache_policy: if self.victim_expert_cache {
++                "victim"
++            } else {
++                "inclusive"
++            },
+             num_layers: self.layers.len(),
+             num_experts: self.config.num_experts,
+             cache_bytes_per_layer: self.cache_bytes_per_layer,
+@@ -597,6 +623,18 @@
+         for trans in &mut self.inter_layer_transitions {
+             trans.fill(0);
+         }
++    }
++
++    pub(crate) fn reset_cache_with_policy(&mut self, policy: Option<&str>) -> io::Result<()> {
++        if let Some(policy) = policy {
++            self.victim_expert_cache = match policy {
++                "inclusive" => false,
++                "victim" => true,
++                _ => return Err(invalid("invalid expert cache policy")),
++            };
++        }
++        self.reset_cache();
++        Ok(())
+     }
+ 
+     fn get_system_telemetry() -> SystemTelemetry {
+@@ -832,10 +870,15 @@
+         expert_id: usize,
+         weights: &[u8],
+         scales: &[f32],
++        profile: &mut RequestProfile,
+     ) {
+         if let Some(storage) = gpu_dense.as_mut() {
+             if gpu_enabled && storage.expert_cache.max_bytes > 0 {
+-                storage.upload_and_cache(layer_id, expert_id, weights, scales);
++                let started = Instant::now();
++                if storage.upload_and_cache(layer_id, expert_id, weights, scales) {
++                    profile.upload_io += started.elapsed();
++                    profile.upload_bytes += (weights.len() + std::mem::size_of_val(scales)) as u64;
++                }
+             }
+         }
+     }
+@@ -982,6 +1025,7 @@
+         layer: &mut Layer,
+         gpu_dense: &mut Option<crate::gpu::GpuDenseStorage>,
+         gpu_enabled: bool,
++        victim_cache: bool,
+         profile: &mut RequestProfile,
+         uses_count: u64,
+         preloaded: &mut HashMap<usize, Int8Expert>,
+@@ -1021,7 +1065,11 @@
+                             {
+                                 let exp =
+                                     Int8Expert::from_raw(d, intermediate_size, weights, scales);
+-                                profile.expert_io += io_started.elapsed();
++                                let elapsed = io_started.elapsed();
++                                profile.expert_io += elapsed;
++                                profile.vram_io += elapsed;
++                                profile.vram_loads += 1;
++                                profile.vram_bytes += exp.resident_bytes() as u64;
+                                 profile.bytes_read += exp.resident_bytes() as u64;
+                                 profile.cache_hits += uses_count;
+                                 from_vram = Some(exp);
+@@ -1054,25 +1102,32 @@
+                             w,
+                             s,
+                         )?;
+-                        (loaded, io_started.elapsed())
++                        let elapsed = io_started.elapsed();
++                        profile.file_io += elapsed;
++                        profile.file_loads += 1;
++                        profile.file_bytes += loaded.resident_bytes() as u64;
++                        (loaded, elapsed)
+                     };
+                     profile.expert_io += io_elapsed;
+                     profile.bytes_read += exp.resident_bytes() as u64;
+ 
+-                    // Tự động thăng hạng (promote) expert vừa đọc lên L1 VRAM Cache
+-                    Self::promote_to_vram(
+-                        gpu_dense,
+-                        gpu_enabled,
+-                        layer_id,
+-                        expert_id,
+-                        exp.weights(),
+-                        exp.scales(),
+-                    );
++                    if !victim_cache {
++                        // Tự động thăng hạng (promote) expert vừa đọc lên L1 VRAM Cache
++                        Self::promote_to_vram(
++                            gpu_dense,
++                            gpu_enabled,
++                            layer_id,
++                            expert_id,
++                            exp.weights(),
++                            exp.scales(),
++                            profile,
++                        );
++                    }
+                     (exp, false, 1, false)
+                 }
+             };
+ 
+-        if l2_hit {
++        if l2_hit && !victim_cache {
+             Self::promote_to_vram(
+                 gpu_dense,
+                 gpu_enabled,
+@@ -1080,6 +1135,7 @@
+                 expert_id,
+                 expert.weights(),
+                 expert.scales(),
++                profile,
+             );
+         }
+ 
+@@ -1102,9 +1158,26 @@
+         mut is_protected: bool,
+         cache_bytes_per_layer: usize,
+         profile: &mut RequestProfile,
++        gpu_dense: &mut Option<crate::gpu::GpuDenseStorage>,
++        gpu_enabled: bool,
++        victim_cache: bool,
++        layer_id: usize,
+     ) {
+         let bytes = expert.resident_bytes();
+         if bytes == 0 || bytes > cache_bytes_per_layer {
++            if bytes > cache_bytes_per_layer && victim_cache {
++                // With no room in L2, retain the expert in L1 rather than losing
++                // both caches. Existing L1 entries make this upload a no-op.
++                Self::promote_to_vram(
++                    gpu_dense,
++                    gpu_enabled,
++                    layer_id,
++                    expert_id,
++                    expert.weights(),
++                    expert.scales(),
++                    profile,
++                );
++            }
+             return;
+         }
+ 
+@@ -1163,6 +1236,17 @@
+ 
+             if let Some(removed) = layer.cache.remove(idx) {
+                 layer.bytes = layer.bytes.saturating_sub(removed.expert.resident_bytes());
++                if victim_cache {
++                    Self::promote_to_vram(
++                        gpu_dense,
++                        gpu_enabled,
++                        layer_id,
++                        removed.id,
++                        removed.expert.weights(),
++                        removed.expert.scales(),
++                        profile,
++                    );
++                }
+                 if layer.recycled_buffers.len() < 16 {
+                     layer.recycled_buffers.push(removed.expert.into_raw());
+                 }
+@@ -1171,6 +1255,16 @@
+         }
+ 
+         if layer.bytes <= cache_bytes_per_layer - bytes {
++            if victim_cache && gpu_enabled {
++                if let Some(storage) = gpu_dense.as_mut() {
++                    // Synchronous download is complete; L2 now owns the host payload.
++                    storage.expert_cache.remove_with_pool(
++                        layer_id,
++                        expert_id,
++                        storage.expert_pool.as_mut(),
++                    );
++                }
++            }
+             layer.bytes += bytes;
+             layer.cache.push_back(CachedExpert {
+                 id: expert_id,
+@@ -1190,6 +1284,7 @@
+         scratch: &mut StepScratch,
+         check: &dyn Fn() -> io::Result<()>,
+     ) -> io::Result<()> {
++        let victim_cache = self.victim_expert_cache;
+         let c = &self.config;
+         if token >= c.vocab_size {
+             return Err(invalid("token ID exceeds model vocabulary"));
+@@ -1403,6 +1498,7 @@
+                     layer,
+                     gpu_dense,
+                     gpu_tier.is_enabled(),
++                    victim_cache,
+                     profile,
+                     1,
+                     if is_preloaded {
+@@ -1509,6 +1605,14 @@
+                 compute_res.0?;
+                 profile.expert_compute += compute_res.1;
+                 profile.expert_io += io_res.2;
++                profile.file_io += io_res.2;
++                profile.file_loads += (io_res.0.len() + io_res.1.len()) as u64;
++                profile.file_bytes += io_res
++                    .0
++                    .values()
++                    .chain(io_res.1.values())
++                    .map(|e| e.resident_bytes() as u64)
++                    .sum::<u64>();
+                 preloaded.extend(io_res.0);
+                 lookahead_prefetched = io_res.1;
+             } else if has_io_work {
+@@ -1538,7 +1642,15 @@
+                     HashMap::new()
+                 };
+ 
+-                profile.expert_io += started.elapsed();
++                let elapsed = started.elapsed();
++                profile.expert_io += elapsed;
++                profile.file_io += elapsed;
++                profile.file_loads += (curr_loaded.len() + next_loaded.len()) as u64;
++                profile.file_bytes += curr_loaded
++                    .values()
++                    .chain(next_loaded.values())
++                    .map(|e| e.resident_bytes() as u64)
++                    .sum::<u64>();
+                 preloaded.extend(curr_loaded);
+                 lookahead_prefetched = next_loaded;
+             } else {
+@@ -1577,6 +1689,7 @@
+                     layer,
+                     gpu_dense,
+                     gpu_tier.is_enabled(),
++                    victim_cache,
+                     profile,
+                     1,
+                     &mut preloaded,
+@@ -1640,6 +1753,10 @@
+                     item.is_protected,
+                     cache_bytes_per_layer,
+                     profile,
++                    gpu_dense,
++                    gpu_tier.is_enabled(),
++                    victim_cache,
++                    id,
+                 );
+             }
+ 
+@@ -1653,6 +1770,10 @@
+                     item.is_protected,
+                     cache_bytes_per_layer,
+                     profile,
++                    gpu_dense,
++                    gpu_tier.is_enabled(),
++                    victim_cache,
++                    id,
+                 );
+             }
+             finite(&scratch.x)?;
+@@ -1681,6 +1802,7 @@
+         scratch: &mut StepScratch,
+         check: &dyn Fn() -> io::Result<()>,
+     ) -> io::Result<()> {
++        let victim_cache = self.victim_expert_cache;
+         let c = &self.config;
+         let d = c.hidden_size;
+         let hd = d / c.num_attention_heads;
+@@ -1886,6 +2008,12 @@
+                 gpu_tier.is_enabled(),
+             );
+             profile.expert_io += prefetch_io;
++            profile.file_io += prefetch_io;
++            profile.file_loads += preloaded.len() as u64;
++            profile.file_bytes += preloaded
++                .values()
++                .map(|e| e.resident_bytes() as u64)
++                .sum::<u64>();
+ 
+             for (expert_id, uses) in expert_uses.iter().enumerate().take(c.num_experts) {
+                 if uses.is_empty() {
+@@ -1909,6 +2037,7 @@
+                     layer,
+                     gpu_dense,
+                     gpu_tier.is_enabled(),
++                    victim_cache,
+                     profile,
+                     uses.len() as u64,
+                     &mut preloaded,
+@@ -1970,6 +2099,10 @@
+                     is_protected,
+                     cache_bytes_per_layer,
+                     profile,
++                    gpu_dense,
++                    gpu_tier.is_enabled(),
++                    victim_cache,
++                    layer_id,
+                 );
+             }
+             for token in 0..tokens.len() {
+@@ -2125,6 +2258,7 @@
+             check,
+         )?;
+         let prefill_elapsed = prefill_started.elapsed();
++        let prefill_expert_io = profile.expert_io;
+         let mut output = Vec::new();
+         let mut finish_reason = "length";
+         let first_token_started = total_started.elapsed();
+@@ -2226,6 +2360,16 @@
+                 expert_compute_ms: ms(profile.expert_compute),
+                 lm_head_ms: ms(profile.lm_head),
+                 expert_io_ms: ms(profile.expert_io),
++                prefill_expert_io_ms: ms(prefill_expert_io),
++                decode_expert_io_ms: ms(profile.expert_io.saturating_sub(prefill_expert_io)),
++                expert_file_read_ms: ms(profile.file_io),
++                expert_vram_download_ms: ms(profile.vram_io),
++                expert_vram_upload_ms: ms(profile.upload_io),
++                expert_file_bytes_read: profile.file_bytes,
++                expert_vram_download_bytes: profile.vram_bytes,
++                expert_vram_upload_bytes: profile.upload_bytes,
++                expert_file_loads: profile.file_loads,
++                expert_vram_loads: profile.vram_loads,
+                 expert_cache_hits: profile.cache_hits,
+                 expert_cache_misses: profile.cache_misses,
+                 expert_cache_evictions: profile.cache_evictions,
+@@ -2335,6 +2479,98 @@
+             let kd = model.config.hidden_size / model.config.num_attention_heads
+                 * model.config.num_key_value_heads;
+             assert!(kv.iter().all(|cache| cache.keys.len() / kd == tokens.len()));
++        }
++    }
++
++    #[test]
++    fn victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits() {
++        let directory =
++            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
++        let mut model = OlmoeModel::load(&directory, 512, 64, 10_000_000).unwrap();
++        let Some(storage) = model.gpu_dense.as_mut() else {
++            eprintln!("SKIPPED victim cache CUDA execution: GPU unavailable");
++            return;
++        };
++        storage.expert_cache.max_bytes = 1024;
++        storage.expert_pool =
++            Some(crate::gpu::GpuExpertPool::new(&storage.engine, 2, 384, 128).unwrap());
++        model.victim_expert_cache = true;
++        model.set_gpu_enabled(false);
++        let tokens = [1, 3, 4, 5, 6, 7, 8];
++        let expected = model.logits(&tokens).unwrap();
++        model.reset_cache();
++        model.set_gpu_enabled(true);
++        let actual = model.logits(&tokens).unwrap();
++        for (actual, expected) in actual.iter().zip(&expected) {
++            let error = actual
++                .iter()
++                .zip(expected)
++                .map(|(a, b)| (a - b).abs())
++                .fold(0.0f32, f32::max);
++            assert!(error < 2e-5, "victim CUDA logit error={error}");
++        }
++        let storage = model.gpu_dense.as_ref().unwrap();
++        assert!(storage.engine.is_healthy());
++        assert!(
++            !storage.expert_cache.is_empty(),
++            "evictions should populate VRAM"
++        );
++        for &(layer, expert) in storage.expert_cache.entries.keys() {
++            assert!(!model.layers[layer]
++                .cache
++                .iter()
++                .any(|entry| entry.id == expert));
++        }
++        model.reset_cache();
++        let storage = model.gpu_dense.as_ref().unwrap();
++        assert!(storage.expert_cache.is_empty());
++        let pool = storage.expert_pool.as_ref().unwrap();
++        assert_eq!(pool.available_slots(), pool.max_slots);
++        // If RAM cannot admit even one expert, keep L1 useful as the only cache.
++        model.cache_bytes_per_layer = 0;
++        let storage = model.gpu_dense.as_mut().unwrap();
++        storage.expert_cache.max_bytes = 8 * 512;
++        storage.expert_pool =
++            Some(crate::gpu::GpuExpertPool::new(&storage.engine, 8, 384, 128).unwrap());
++        let result = model.generate("[BOS]token3 token4 ", 4).unwrap();
++        assert!(model.layers.iter().all(|layer| layer.cache.is_empty()));
++        let metrics = result.metrics.unwrap();
++        assert!(metrics.expert_vram_upload_bytes > 0);
++        assert!(metrics.expert_vram_loads > 0);
++        eprintln!("EXECUTED victim cache CUDA: logits, disjoint tiers, pool reset passed");
++    }
++
++    #[test]
++    fn expert_io_metrics_separate_phases_and_file_payload() {
++        let directory =
++            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
++        let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
++        model.set_gpu_enabled(false);
++        for limit in [1, 4] {
++            model.reset_cache();
++            let metrics = model
++                .generate("[BOS]token3 token4 ", limit)
++                .unwrap()
++                .metrics
++                .unwrap();
++            assert!(metrics.expert_file_loads > 0);
++            let payload = model.config.hidden_size * model.config.intermediate_size * 3
++                + (model.config.intermediate_size * 2 + model.config.hidden_size) * 4;
++            assert_eq!(
++                metrics.expert_file_bytes_read,
++                metrics.expert_file_loads * payload as u64
++            );
++            assert!((metrics.expert_io_ms - metrics.expert_file_read_ms).abs() < 1e-6);
++            assert!(
++                (metrics.expert_io_ms - metrics.prefill_expert_io_ms - metrics.decode_expert_io_ms)
++                    .abs()
++                    < 1e-6
++            );
++            assert_eq!(metrics.expert_vram_download_bytes, 0);
++            assert_eq!(metrics.expert_vram_upload_bytes, 0);
++            if limit == 1 {
++                assert_eq!(metrics.decode_expert_io_ms, 0.0);
++            }
+         }
+     }
+ 
+@@ -3191,6 +3427,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+         assert_eq!(layer.cache.len(), 1);
+         assert!(!layer.cache[0].is_protected);
+@@ -3209,6 +3449,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+         assert_eq!(layer.cache.len(), 1);
+         assert!(layer.cache[0].is_protected);
+@@ -3225,6 +3469,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+         let _ = layer.cache.pop_back().unwrap();
+         layer.bytes -= expert_bytes;
+@@ -3239,6 +3487,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+ 
+         // 4. Nạp expert 30 (probationary) và 40 (probationary) -> Bộ đệm đầy 4/4 slots
+@@ -3253,6 +3505,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+         layer.clock = 6;
+         layer.heat[40] = 1;
+@@ -3265,6 +3521,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+         assert_eq!(layer.cache.len(), 4);
+         assert_eq!(layer.bytes, cache_capacity);
+@@ -3281,6 +3541,10 @@
+             false,
+             cache_capacity,
+             &mut profile,
++            &mut None,
++            false,
++            false,
++            0,
+         );
+         assert_eq!(layer.cache.len(), 4);
+         assert_eq!(layer.bytes, cache_capacity);
+--- before/src/gpu.rs
++++ after/src/gpu.rs
+@@ -1608,6 +1608,31 @@
+         self.insert_with_pool(weights, None)
+     }
+ 
++    /// Remove a cached expert after its synchronous transfer has completed.
++    /// The caller exclusively borrows the cache/pool, so no slot can be reused
++    /// while another cache lookup still borrows this entry.
++    pub(crate) fn remove_with_pool(
++        &mut self,
++        layer: usize,
++        expert: usize,
++        pool: Option<&mut GpuExpertPool>,
++    ) -> bool {
++        let key = (layer, expert);
++        let Some(entry) = self.entries.remove(&key) else {
++            return false;
++        };
++        self.used_bytes = self
++            .used_bytes
++            .saturating_sub(entry.weight_bytes + entry.scale_bytes);
++        if let Some(position) = self.lru.iter().position(|item| *item == key) {
++            self.lru.remove(position);
++        }
++        if let (Some(pool), Some(slot)) = (pool, entry.pool_slot) {
++            pool.free_slot(slot);
++        }
++        true
++    }
++
+     /// Xóa toàn bộ chuyên gia trong L1 VRAM Expert Cache và hoàn trả slot về Pool
+     pub fn clear(&mut self, mut pool: Option<&mut GpuExpertPool>) {
+         for (_, entry) in self.entries.drain() {
+@@ -2260,6 +2285,23 @@
+ 
+             assert_eq!(weights, dl_weights);
+             assert_eq!(scales, dl_scales);
++        }
++    }
++
++    #[test]
++    fn test_gpu_expert_cache_remove_accounts_bytes_and_is_idempotent() {
++        if let Some(engine) = GpuComputeEngine::init() {
++            let weights = vec![13u8; 1024];
++            let scales = vec![0.25f32; 16];
++            let mut cache = GpuExpertCache::new(4096);
++            let expert = engine.upload_expert(0, 7, &weights, &scales).unwrap();
++            cache.insert(expert);
++            assert_eq!(cache.used_bytes, 1088);
++            assert!(cache.remove_with_pool(0, 7, None));
++            assert!(!cache.remove_with_pool(0, 7, None));
++            assert_eq!(cache.used_bytes, 0);
++            assert!(cache.lru.is_empty());
++            assert!(cache.is_empty());
+         }
+     }
+ 
+--- before/src/generation.rs
++++ after/src/generation.rs
+@@ -14,6 +14,16 @@
+     pub expert_compute_ms: f64,
+     pub lm_head_ms: f64,
+     pub expert_io_ms: f64,
++    pub prefill_expert_io_ms: f64,
++    pub decode_expert_io_ms: f64,
++    pub expert_file_read_ms: f64,
++    pub expert_vram_download_ms: f64,
++    pub expert_vram_upload_ms: f64,
++    pub expert_file_bytes_read: u64,
++    pub expert_vram_download_bytes: u64,
++    pub expert_vram_upload_bytes: u64,
++    pub expert_file_loads: u64,
++    pub expert_vram_loads: u64,
+     pub expert_cache_hits: u64,
+     pub expert_cache_misses: u64,
+     pub expert_cache_evictions: u64,
+--- before/src/main.rs
++++ after/src/main.rs
+@@ -1,5 +1,6 @@
+ use axum::{
+     extract::DefaultBodyLimit,
++    extract::Query,
+     extract::State,
+     http::StatusCode,
+     response::{
+@@ -78,8 +79,17 @@
+         .with_state(state)
+ }
+ 
+-async fn reset_cache(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+-    tokio::task::spawn_blocking(move || state.engine.reset_cache())
++#[derive(Default, Deserialize)]
++#[serde(deny_unknown_fields)]
++struct CacheResetOptions {
++    expert_cache_policy: Option<String>,
++}
++
++async fn reset_cache(
++    State(state): State<AppState>,
++    Query(options): Query<CacheResetOptions>,
++) -> Result<Json<serde_json::Value>, StatusCode> {
++    tokio::task::spawn_blocking(move || state.engine.reset_cache_with_policy(options.expert_cache_policy.as_deref()))
+         .await
+         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+         .map(|()| {
+@@ -89,7 +99,9 @@
+             }))
+         })
+         .map_err(|e| {
+-            if e.kind() == std::io::ErrorKind::WouldBlock {
++            if e.kind() == std::io::ErrorKind::InvalidInput {
++                StatusCode::BAD_REQUEST
++            } else if e.kind() == std::io::ErrorKind::WouldBlock {
+                 StatusCode::TOO_MANY_REQUESTS
+             } else {
+                 StatusCode::INTERNAL_SERVER_ERROR
+@@ -419,6 +431,47 @@
+         assert!(text.contains("generation_error"));
+         assert_eq!(text.matches("data: [DONE]").count(), 1);
+         assert!(!text.contains("\"usage\""));
++    }
++
++    #[tokio::test]
++    async fn http_cache_policy_switch_validates_and_preserves_reset_defaults() {
++        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
++            .join("tests/fixtures/olmoe/unnormalized-mha");
++        let engine = Arc::new(
++            InferenceEngine::load_with_limits(directory, 10_000, 64, 10_000_000)
++                .await
++                .unwrap(),
++        );
++        let app = app(AppState {
++            engine: Arc::clone(&engine),
++            stream_send_timeout: Duration::from_secs(1),
++        });
++        for (query, status, policy) in [
++            ("?expert_cache_policy=victim", StatusCode::OK, "victim"),
++            (
++                "?expert_cache_policy=invalid",
++                StatusCode::BAD_REQUEST,
++                "victim",
++            ),
++            ("", StatusCode::OK, "victim"),
++            (
++                "?expert_cache_policy=inclusive",
++                StatusCode::OK,
++                "inclusive",
++            ),
++        ] {
++            let response = app
++                .clone()
++                .oneshot(
++                    Request::post(format!("/api/cache/reset{query}"))
++                        .body(Body::empty())
++                        .unwrap(),
++                )
++                .await
++                .unwrap();
++            assert_eq!(response.status(), status);
++            assert_eq!(engine.expert_status().unwrap().expert_cache_policy, policy);
++        }
+     }
+ 
+     #[tokio::test]
+--- before/src/engine.rs
++++ after/src/engine.rs
+@@ -171,6 +171,18 @@
+     }
+     /// Xóa toàn bộ bộ đệm trong hệ thống (KV cache, RAM cache, VRAM cache) để đưa về Cold Start
+     pub fn reset_cache(&self) -> io::Result<()> {
++        self.reset_cache_with_policy(None)
++    }
++
++    /// Optionally switch expert storage policy while idle, clearing all cached
++    /// requests/experts under the same model lock before the next generation.
++    pub fn reset_cache_with_policy(&self, policy: Option<&str>) -> io::Result<()> {
++        if policy.is_some_and(|value| !matches!(value, "inclusive" | "victim")) {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidInput,
++                "invalid expert cache policy",
++            ));
++        }
+         match &self.model {
+             Model::Tiny(_) => Ok(()),
+             Model::Olmoe(model) => {
+@@ -181,7 +193,7 @@
+                     ),
+                     std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
+                 })?;
+-                model.reset_cache();
++                model.reset_cache_with_policy(policy)?;
+                 if let Ok(mut cache) = self.cached_status.write() {
+                     *cache = Some(model.expert_status());
+                 }
+@@ -276,6 +288,9 @@
+ }
+ 
+ /// Bounded output queue. Dropping the receiver cancels the blocking producer.
++// Keep the existing public event API; expanded telemetry is carried only by the
++// terminal event. Queue capacity remains bounded independently of token count.
++#[allow(clippy::large_enum_variant)]
+ pub enum ChatEvent {
+     Delta(String),
+     Finished(Generation),

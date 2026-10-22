@@ -19,6 +19,9 @@ struct Report {
     context_limit: usize,
     dense_budget_bytes: usize,
     logical_cpus: usize,
+    gpu_mode: String,
+    gpu_status_start: Option<moe_tier_engine::gpu::GpuTierStatus>,
+    gpu_status_end: Option<moe_tier_engine::gpu::GpuTierStatus>,
     load_ms: f64,
     runs: Vec<Run>,
     notes: Vec<&'static str>,
@@ -27,9 +30,9 @@ struct Report {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if !(2..=5).contains(&args.len()) {
+    if !(2..=7).contains(&args.len()) {
         return Err(
-            "usage: benchmark_olmoe MODEL_DIRECTORY PROMPT [MAX_TOKENS] [RUNS] [CACHE_MIB_PER_LAYER]"
+            "usage: benchmark_olmoe MODEL_DIRECTORY PROMPT [MAX_TOKENS] [RUNS] [CACHE_MIB_PER_LAYER] [CONTEXT] [GPU=auto|cpu]"
                 .into(),
         );
     }
@@ -54,7 +57,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cache_bytes_per_layer = cache_mib
         .checked_mul(1024 * 1024)
         .ok_or("cache byte size overflow")?;
-    let context_limit = 512;
+    let context_limit: usize = args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(512);
+    let gpu_mode = args.get(6).map(String::as_str).unwrap_or("auto");
+    if !matches!(gpu_mode, "auto" | "cpu") {
+        return Err("GPU must be auto or cpu".into());
+    }
     let dense_budget_bytes = 3 * 1024 * 1024 * 1024;
     let load_started = Instant::now();
     let engine = InferenceEngine::load_with_limits(
@@ -68,6 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if engine.model_name() != "olmoe" {
         return Err("benchmark_olmoe requires an OLMoE checkpoint".into());
     }
+    if gpu_mode == "cpu" {
+        engine.set_gpu_enabled(false)?;
+    }
+    let gpu_status_start = engine.expert_status().map(|s| s.gpu);
     let mut runs = Vec::with_capacity(run_count);
     for index in 0..run_count {
         let response = engine
@@ -98,9 +109,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         context_limit,
         dense_budget_bytes,
         logical_cpus: std::thread::available_parallelism()?.get(),
+        gpu_mode: gpu_mode.to_owned(),
+        gpu_status_start,
+        gpu_status_end: engine.expert_status().map(|s| s.gpu),
         load_ms,
         runs,
         notes: vec![
+            "cpu mode disables GPU computation after load; load may initialize GPU and VRAM allocations may remain",
+            "GPU status is engine logical telemetry, not independent physical VRAM measurement",
             "engine-cold means the in-process expert cache starts empty",
             "the operating-system page cache is not cleared or measured",
             "decode_tokens_per_second counts model steps after the first sampled token",

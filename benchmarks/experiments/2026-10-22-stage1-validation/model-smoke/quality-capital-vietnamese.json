@@ -1,0 +1,65 @@
+{
+  "id": "quality-capital-vietnamese",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Thủ đô của Việt Nam là gì? Trả lời bằng một câu ngắn."
+    }
+  ],
+  "max_tokens": 32,
+  "session_id": "quality-capital-vietnamese",
+  "response": {
+    "text": "\nThủ đô của Việt Nam là Hồ Chí Minh.",
+    "usage": {
+      "completion_tokens": 24,
+      "prompt_tokens": 54,
+      "total_tokens": 78
+    },
+    "metrics": {
+      "attention_ms": 564.971962,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 5390.190837,
+      "decode_ms": 10036.304603999999,
+      "decode_tokens_per_second": 2.2916801459805516,
+      "expert_bytes_read": 14407106560,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 2284,
+      "expert_cache_hits": 9093,
+      "expert_cache_misses": 763,
+      "expert_compute_ms": 5530.368213,
+      "expert_file_bytes_read": 7172014080,
+      "expert_file_loads": 1137,
+      "expert_file_read_ms": 5650.8702299999995,
+      "expert_io_ms": 8390.09307,
+      "expert_vram_download_bytes": 9594224640,
+      "expert_vram_download_ms": 2739.22284,
+      "expert_vram_loads": 1521,
+      "expert_vram_upload_bytes": 14407106560,
+      "expert_vram_upload_ms": 4393.833531,
+      "kv_cache_bytes": 20185088,
+      "lm_head_ms": 69.475851,
+      "prefill_expert_io_ms": 2999.9022330000003,
+      "prefill_ms": 7821.44366,
+      "time_to_first_token_ms": 7831.860756,
+      "tokenizer_ms": 0.19378599999999999,
+      "total_ms": 17868.189207
+    },
+    "finish_reason": "stop",
+    "client_first_content_after_headers_ms": 7821.696658000292,
+    "client_wall_ms": 17872.429422000096
+  },
+  "process_before": {
+    "VmHWM": 4752808,
+    "VmRSS": 4735136,
+    "VmSwap": 0,
+    "read_bytes": 36925902848,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4760928,
+    "VmRSS": 4760928,
+    "VmSwap": 0,
+    "read_bytes": 40064073728,
+    "write_bytes": 4096
+  }
+}

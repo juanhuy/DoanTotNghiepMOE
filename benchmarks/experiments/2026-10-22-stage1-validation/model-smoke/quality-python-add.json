@@ -1,0 +1,65 @@
+{
+  "id": "quality-python-add",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a short Python function named add that returns the sum of a and b. Return only code."
+    }
+  ],
+  "max_tokens": 64,
+  "session_id": "quality-python-add",
+  "response": {
+    "text": "    def add(a, b):\n        return a + b\n\nThis function takes two arguments, `a` and `b`, and returns their sum. The `return` statement simply adds the two numbers and returns the result.\n\nHere's an example of how you might use this function:\n\n",
+    "usage": {
+      "completion_tokens": 64,
+      "prompt_tokens": 36,
+      "total_tokens": 100
+    },
+    "metrics": {
+      "attention_ms": 1196.964,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 11285.088520000001,
+      "decode_ms": 19963.904547,
+      "decode_tokens_per_second": 3.155695312591899,
+      "expert_bytes_read": 20708638720,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 3283,
+      "expert_cache_hits": 11474,
+      "expert_cache_misses": 1198,
+      "expert_compute_ms": 7770.862491,
+      "expert_file_bytes_read": 13814169600,
+      "expert_file_loads": 2190,
+      "expert_file_read_ms": 10231.0449,
+      "expert_io_ms": 13912.375335,
+      "expert_vram_download_bytes": 13151846400,
+      "expert_vram_download_ms": 3681.330435,
+      "expert_vram_loads": 2085,
+      "expert_vram_upload_bytes": 20708638720,
+      "expert_vram_upload_ms": 6246.342059,
+      "kv_cache_bytes": 25952256,
+      "lm_head_ms": 185.40079500000002,
+      "prefill_expert_io_ms": 2627.2868150000004,
+      "prefill_ms": 6060.769145,
+      "time_to_first_token_ms": 6071.726796,
+      "tokenizer_ms": 0.190891,
+      "total_ms": 26035.666138
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 6060.7767479996255,
+    "client_wall_ms": 26039.585598000485
+  },
+  "process_before": {
+    "VmHWM": 4785504,
+    "VmRSS": 4780204,
+    "VmSwap": 0,
+    "read_bytes": 42581970944,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4789176,
+    "VmRSS": 4777576,
+    "VmSwap": 0,
+    "read_bytes": 47607721984,
+    "write_bytes": 4096
+  }
+}

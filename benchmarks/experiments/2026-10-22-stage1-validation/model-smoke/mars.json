@@ -1,0 +1,65 @@
+{
+  "id": "mars",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Where is Mars"
+    }
+  ],
+  "max_tokens": 32,
+  "session_id": "stage1-conversation",
+  "response": {
+    "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest",
+    "usage": {
+      "completion_tokens": 32,
+      "prompt_tokens": 19,
+      "total_tokens": 51
+    },
+    "metrics": {
+      "attention_ms": 506.72880799999996,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 7451.4200390000005,
+      "decode_ms": 12795.804033,
+      "decode_tokens_per_second": 2.4226691749929836,
+      "expert_bytes_read": 15567749120,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 2132,
+      "expert_cache_hits": 5079,
+      "expert_cache_misses": 1321,
+      "expert_compute_ms": 3766.434654,
+      "expert_file_bytes_read": 9316679680,
+      "expert_file_loads": 1477,
+      "expert_file_read_ms": 8825.952286,
+      "expert_io_ms": 10792.508475,
+      "expert_vram_download_bytes": 7235092480,
+      "expert_vram_download_ms": 1966.556189,
+      "expert_vram_loads": 1147,
+      "expert_vram_upload_bytes": 13448314880,
+      "expert_vram_upload_ms": 4033.515981,
+      "kv_cache_bytes": 13107200,
+      "lm_head_ms": 95.082197,
+      "prefill_expert_io_ms": 3341.088436,
+      "prefill_ms": 5145.050232,
+      "time_to_first_token_ms": 5162.0994820000005,
+      "tokenizer_ms": 2.186637,
+      "total_ms": 17957.922122
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 5145.195096000407,
+    "client_wall_ms": 17961.955725999815
+  },
+  "process_before": {
+    "VmHWM": 2276148,
+    "VmRSS": 2276148,
+    "VmSwap": 0,
+    "read_bytes": 603684864,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4466172,
+    "VmRSS": 4466172,
+    "VmSwap": 0,
+    "read_bytes": 7411023872,
+    "write_bytes": 4096
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "review_date": "2026-10-22",
+  "commit": "1d98587",
+  "kind": "review evidence; not a model performance benchmark",
+  "rust_checks": {
+    "debug": {
+      "passed": 59,
+      "failed": 0,
+      "ignored": 3
+    },
+    "release": {
+      "passed": 59,
+      "failed": 0,
+      "ignored": 3
+    },
+    "clippy": "pass",
+    "fmt": "fail"
+  },
+  "cuda_available": false,
+  "converter_test": "blocked: ModuleNotFoundError torch",
+  "session_capacity_probe": {
+    "budget_bytes": 1024,
+    "sessions": 2,
+    "accounted_bytes": 1024,
+    "kv_capacity_bytes": 32768
+  },
+  "reset_probe": {
+    "cached_prompt_tokens_before_reset": 2,
+    "cached_prompt_tokens_after_reset": 0,
+    "budget_after_reset": 0
+  },
+  "expert_memory_probe": {
+    "total_l2_budget_bytes": 1800,
+    "accounted_cache_bytes": 1024,
+    "recycled_capacity_bytes": 3072
+  },
+  "sse_parser_probe": {
+    "surfaced_error": false,
+    "saved_assistant": {
+      "role": "assistant",
+      "content": ""
+    }
+  },
+  "runner_overwrite_probe": {
+    "files_after_two_runs": 1,
+    "first_content": "{\"probe\":1}",
+    "final_content": "{\"probe\":2}"
+  },
+  "http_stress": {
+    "model_directory": "tests/fixtures/olmoe/unnormalized-mha",
+    "cycles": 30,
+    "completed": 20,
+    "cancelled": 10,
+    "elapsed_ms": 385.01331800034677,
+    "rss_kib": {
+      "first": 400520,
+      "last": 407100,
+      "steady_min": 406976,
+      "steady_max": 407100,
+      "steady_spread": 124
+    },
+    "checks": [
+      "stream completes with usage and DONE",
+      "disconnect releases the single-request permit",
+      "health remains available after every cycle",
+      "steady VmRSS spread is at most 64 MiB"
+    ],
+    "notes": [
+      "fixture stress test; not model-quality or production-load evaluation",
+      "VmRSS includes allocator/cache behavior and is sampled after each cycle"
+    ]
+  },
+  "limits": [
+    "capacity is not RSS",
+    "HTTP stress uses tiny fixture, no session_id",
+    "CUDA findings are static review only",
+    "no new 7B performance, quality, allocations or page-fault measurement"
+  ]
+}

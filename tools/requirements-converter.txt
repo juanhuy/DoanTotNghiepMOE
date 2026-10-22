@@ -1,0 +1,5 @@
+# Reproducible direct dependency set for converter fixture CI on Python 3.12.
+# CPU wheel selected separately by CI; transitive versions are emitted by pip freeze.
+torch==2.6.0
+numpy==2.2.6
+safetensors==0.5.3

@@ -171,6 +171,18 @@ impl InferenceEngine {
     }
     /// Xóa toàn bộ bộ đệm trong hệ thống (KV cache, RAM cache, VRAM cache) để đưa về Cold Start
     pub fn reset_cache(&self) -> io::Result<()> {
+        self.reset_cache_with_policy(None)
+    }
+
+    /// Optionally switch expert storage policy while idle, clearing all cached
+    /// requests/experts under the same model lock before the next generation.
+    pub fn reset_cache_with_policy(&self, policy: Option<&str>) -> io::Result<()> {
+        if policy.is_some_and(|value| !matches!(value, "inclusive" | "victim")) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid expert cache policy",
+            ));
+        }
         match &self.model {
             Model::Tiny(_) => Ok(()),
             Model::Olmoe(model) => {
@@ -181,7 +193,7 @@ impl InferenceEngine {
                     ),
                     std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
                 })?;
-                model.reset_cache();
+                model.reset_cache_with_policy(policy)?;
                 if let Ok(mut cache) = self.cached_status.write() {
                     *cache = Some(model.expert_status());
                 }
@@ -276,6 +288,9 @@ impl InferenceEngine {
 }
 
 /// Bounded output queue. Dropping the receiver cancels the blocking producer.
+// Keep the existing public event API; expanded telemetry is carried only by the
+// terminal event. Queue capacity remains bounded independently of token count.
+#[allow(clippy::large_enum_variant)]
 pub enum ChatEvent {
     Delta(String),
     Finished(Generation),

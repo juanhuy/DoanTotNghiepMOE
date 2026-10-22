@@ -1,0 +1,536 @@
+--- before/src/olmoe.rs
++++ after/src/olmoe.rs
+@@ -228,6 +228,11 @@
+ }
+ 
+ pub struct OlmoeModel {
++    // Retain the serial reference only in tests for paired in-process measurements.
++    #[cfg(test)]
++    serial_prefill_reference: bool,
++    #[cfg(test)]
++    strict_session_prefix_reference: bool,
+     config: Config,
+     index: TensorIndex,
+     embedding: Matrix,
+@@ -480,6 +485,10 @@
+ 
+         let num_layers = layers.len();
+         Ok(Self {
++            #[cfg(test)]
++            serial_prefill_reference: true,
++            #[cfg(test)]
++            strict_session_prefix_reference: false,
+             config,
+             index,
+             embedding,
+@@ -1700,6 +1709,16 @@
+             .checked_mul(d)
+             .ok_or_else(|| invalid("prefill contribution size overflow"))?;
+         let mut contributions = vec![0.0; contribution_count];
++        // The grouped candidate remains test-only: paired measurements on i5
++        // found it slower than the serial token dispatch used in production.
++        #[cfg(not(test))]
++        let dispatch_width = 1;
++        #[cfg(test)]
++        let dispatch_width = if self.serial_prefill_reference {
++            1
++        } else {
++            scratch.expert_scratches.len()
++        };
+         let mut expert_uses: Vec<Vec<(usize, usize, f32)>> = (0..c.num_experts)
+             .map(|_| Vec::with_capacity(tokens.len()))
+             .collect();
+@@ -1895,20 +1914,50 @@
+                     &mut preloaded,
+                 )?;
+ 
+-                for &(token, slot, weight) in uses {
++                // Dispatch tokens sharing this expert together. Each task owns a scratch
++                // slot and uses the serial kernel, avoiding nested row-level fork/joins.
++                // Copy results back in route order before the deterministic Top-K reduction.
++                for routes in uses.chunks(dispatch_width) {
+                     check()?;
+                     let expert_started = Instant::now();
+-                    let result = expert.forward_reuse(
+-                        &hidden_batch[token * d..(token + 1) * d],
+-                        &mut scratch.expert,
+-                    )?;
+-                    profile.expert_compute += expert_started.elapsed();
+-                    let contribution = (token * c.num_experts_per_tok + slot) * d;
+-                    for (target, value) in contributions[contribution..contribution + d]
+-                        .iter_mut()
+-                        .zip(result)
+-                    {
+-                        *target = weight * value;
++                    if routes.len() == 1 {
++                        let (token, slot, weight) = routes[0];
++                        let result = expert.forward_reuse(
++                            &hidden_batch[token * d..(token + 1) * d],
++                            &mut scratch.expert,
++                        )?;
++                        profile.expert_compute += expert_started.elapsed();
++                        let contribution = (token * c.num_experts_per_tok + slot) * d;
++                        for (target, value) in contributions[contribution..contribution + d]
++                            .iter_mut()
++                            .zip(result)
++                        {
++                            *target = weight * value;
++                        }
++                    } else {
++                        scratch.expert_scratches[..routes.len()]
++                            .par_iter_mut()
++                            .zip(routes.par_iter())
++                            .try_for_each(|(buffer, &(token, _, _))| {
++                                expert.forward_single_threaded(
++                                    &hidden_batch[token * d..(token + 1) * d],
++                                    buffer,
++                                )?;
++                                Ok::<(), io::Error>(())
++                            })?;
++                        profile.expert_compute += expert_started.elapsed();
++                        check()?;
++                        for (&(token, slot, weight), buffer) in
++                            routes.iter().zip(&scratch.expert_scratches)
++                        {
++                            let contribution = (token * c.num_experts_per_tok + slot) * d;
++                            for (target, value) in contributions[contribution..contribution + d]
++                                .iter_mut()
++                                .zip(&buffer.output)
++                            {
++                                *target = weight * value;
++                            }
++                        }
+                     }
+                 }
+ 
+@@ -1976,6 +2025,48 @@
+ 
+     pub fn generate(&mut self, prompt: &str, max_tokens: usize) -> io::Result<Generation> {
+         self.generate_controlled(prompt, max_tokens, None, &|| Ok(()), || Ok(()), None)
++    }
++
++    fn take_prefix_kv(
++        &mut self,
++        tokens: &[usize],
++        session_id: Option<&str>,
++        kd: usize,
++    ) -> (usize, Vec<Kv>) {
++        if let Some(mut state) = session_id.and_then(|id| self.sessions.remove(id)) {
++            // Causal KV remains valid up to the first changed token. Recompute at
++            // least the final prompt token because the cache does not retain logits.
++            let prefix = tokens
++                .iter()
++                .zip(&state.tokens)
++                .take_while(|(a, b)| a == b)
++                .count()
++                .min(tokens.len() - 1);
++            #[cfg(test)]
++            let prefix = if self.strict_session_prefix_reference {
++                if state.tokens.len() < tokens.len() && tokens.starts_with(&state.tokens) {
++                    state.tokens.len()
++                } else {
++                    0
++                }
++            } else {
++                prefix
++            };
++            if prefix > 0 {
++                for cache in &mut state.kv {
++                    cache.keys.truncate(prefix * kd);
++                    cache.values.truncate(prefix * kd);
++                }
++                return (prefix, state.kv);
++            }
++        }
++        // Allocate only after lookup; a reusable session already owns its buffers.
++        (
++            0,
++            (0..self.layers.len())
++                .map(|_| Kv::with_capacity(self.context_limit, kd))
++                .collect(),
++        )
+     }
+ 
+     pub(crate) fn generate_controlled(
+@@ -2020,21 +2111,9 @@
+         ready()?;
+         check()?;
+         self.session_clock = self.session_clock.wrapping_add(1);
+-        let mut cached_prompt_tokens = 0;
+         let d = self.config.hidden_size;
+         let kd = d / self.config.num_attention_heads * self.config.num_key_value_heads;
+-        let mut kv: Vec<_> = (0..self.layers.len())
+-            .map(|_| Kv::with_capacity(self.context_limit, kd))
+-            .collect();
+-        if let Some(id) = session_id {
+-            if let Some(state) = self.sessions.remove(id) {
+-                let prefix = state.tokens.len();
+-                if prefix < tokens.len() && tokens.starts_with(&state.tokens) {
+-                    cached_prompt_tokens = prefix;
+-                    kv = state.kv;
+-                }
+-            }
+-        }
++        let (cached_prompt_tokens, mut kv) = self.take_prefix_kv(&tokens, session_id, kd);
+         let mut profile = RequestProfile::default();
+         let mut scratch = StepScratch::new(&self.config);
+         let prefill_started = Instant::now();
+@@ -2291,6 +2370,116 @@
+             reused.metrics.unwrap().cached_prompt_tokens > 0,
+             "the exact token prefix should reuse KV"
+         );
++    }
++
++    #[test]
++    fn session_reuses_common_prefix_after_edit_and_repeated_prompt() {
++        for fixture in ["unnormalized-mha", "normalized-gqa"] {
++            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
++                .join("tests/fixtures/olmoe")
++                .join(fixture);
++            let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
++            model.set_gpu_enabled(false);
++            for prompt in [
++                "[BOS]token3 token4 token5 ",
++                "[BOS]token3 token4 token6 ",
++                "[BOS]token3 token4 token6 ",
++                "[BOS]token3 ",
++                "token7 token8 ",
++            ] {
++                let tokens: Vec<_> = model
++                    .tokenizer
++                    .as_ref()
++                    .unwrap()
++                    .encode(prompt, false)
++                    .unwrap()
++                    .get_ids()
++                    .iter()
++                    .map(|&id| id as usize)
++                    .collect();
++                let expected_cached = model.sessions.get("edited-session").map_or(0, |state| {
++                    tokens
++                        .iter()
++                        .zip(&state.tokens)
++                        .take_while(|(a, b)| a == b)
++                        .count()
++                        .min(tokens.len() - 1)
++                });
++                let reused = model
++                    .generate_controlled(
++                        prompt,
++                        3,
++                        Some("edited-session"),
++                        &|| Ok(()),
++                        || Ok(()),
++                        None,
++                    )
++                    .unwrap();
++                assert_eq!(
++                    reused.metrics.unwrap().cached_prompt_tokens,
++                    expected_cached,
++                    "{fixture}, prompt={prompt}"
++                );
++                let expected = model.generate(prompt, 3).unwrap();
++                assert_eq!(reused.token_ids, expected.token_ids, "{fixture}, {prompt}");
++            }
++        }
++    }
++
++    #[test]
++    fn truncated_session_kv_preserves_logits_and_buffer_ownership() {
++        for fixture in ["unnormalized-mha", "normalized-gqa"] {
++            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
++                .join("tests/fixtures/olmoe")
++                .join(fixture);
++            let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
++            model.set_gpu_enabled(false);
++            model
++                .generate_controlled(
++                    "[BOS]token3 token4 token5 ",
++                    1,
++                    Some("fork"),
++                    &|| Ok(()),
++                    || Ok(()),
++                    None,
++                )
++                .unwrap();
++            let addresses: Vec<_> = model.sessions["fork"]
++                .kv
++                .iter()
++                .map(|cache| (cache.keys.as_ptr(), cache.values.as_ptr()))
++                .collect();
++            let tokens = [1, 3, 4, 6];
++            let expected = model.logits(&tokens).unwrap().pop().unwrap();
++            let kd = model.config.hidden_size / model.config.num_attention_heads
++                * model.config.num_key_value_heads;
++            let (prefix, mut kv) = model.take_prefix_kv(&tokens, Some("fork"), kd);
++            assert_eq!(prefix, 3);
++            assert!(!model.sessions.contains_key("fork"));
++            for (cache, addresses) in kv.iter().zip(addresses) {
++                assert_eq!((cache.keys.as_ptr(), cache.values.as_ptr()), addresses);
++                assert_eq!(cache.keys.len(), prefix * kd);
++                assert_eq!(cache.values.len(), prefix * kd);
++            }
++            let mut profile = RequestProfile::default();
++            let mut scratch = StepScratch::new(&model.config);
++            model
++                .prefill(
++                    &tokens[prefix..],
++                    &mut kv,
++                    &mut profile,
++                    &mut scratch,
++                    &|| Ok(()),
++                )
++                .unwrap();
++            let error = scratch
++                .logits
++                .iter()
++                .zip(expected)
++                .map(|(actual, expected)| (actual - expected).abs())
++                .fold(0.0f32, f32::max);
++            assert!(error < 2e-5, "{fixture}: truncated KV logit error={error}");
++        }
+     }
+ 
+     #[test]
+@@ -2395,6 +2584,241 @@
+     }
+ 
+     #[test]
++    #[ignore = "release-only paired model prefill experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED"]
++    fn benchmark_prefill_dispatch_paired() {
++        #[allow(clippy::assertions_on_constants)]
++        {
++            assert!(!cfg!(debug_assertions), "run with --release");
++        }
++        let testbed = std::env::var("MOE_PREFILL_TESTBED").expect("explicit i5/i7 required");
++        assert!(matches!(testbed.as_str(), "i5" | "i7"));
++        let model_path = std::env::var("MOE_PREFILL_MODEL").expect("set model directory");
++        let output = std::env::var("MOE_PREFILL_REPORT").expect("set unique output path");
++        let mut model =
++            OlmoeModel::load(&model_path, 128 * 1024 * 1024, 512, 3 * 1024 * 1024 * 1024).unwrap();
++        let prompt = model
++            .render_chat(&[crate::engine::ChatMessage {
++                role: "user".into(),
++                content: "Where is Mars ?".into(),
++            }])
++            .unwrap();
++        let gpu_start = model.expert_status().gpu;
++        // Warm both paths before sampling; no cache reset between measurements.
++        for serial in [true, false, true, false] {
++            model.serial_prefill_reference = serial;
++            model.generate(&prompt, 1).unwrap();
++        }
++        let mut samples = Vec::new();
++        let mut expected = None;
++        for pair in 0..9 {
++            let order = if pair % 2 == 0 {
++                [true, false]
++            } else {
++                [false, true]
++            };
++            for serial in order {
++                model.serial_prefill_reference = serial;
++                let response = model.generate(&prompt, 1).unwrap();
++                if let Some(tokens) = &expected {
++                    assert_eq!(&response.token_ids, tokens);
++                } else {
++                    expected = Some(response.token_ids.clone());
++                }
++                eprintln!(
++                    "pair {pair}, serial={serial}, prefill_ms={:.3}",
++                    response.metrics.as_ref().unwrap().prefill_ms
++                );
++                samples.push(serde_json::json!({
++                    "pair": pair, "variant": if serial { "before" } else { "after" },
++                    "response": response
++                }));
++            }
++        }
++        let report = serde_json::json!({
++            "schema_version": 1, "scope": "exploratory paired prefill experiment",
++            "testbed": testbed, "model_directory": model_path,
++            "prompt": "Where is Mars ?", "max_tokens": 1, "cache_mib_per_layer": 128,
++            "context": 512, "threads": rayon::current_num_threads(),
++            "gpu_start": gpu_start, "gpu_end": model.expert_status().gpu,
++            "warmup": 4, "samples": samples,
++            "notes": ["one loaded model; alternating order within each pair; expert caches evolve",
++                "one output token isolates prefill; no session KV reuse",
++                "same checkpoint as runner A/B; OS cache and desktop load uncontrolled",
++                "serial reference is compiled only in tests; not a production runtime toggle"]
++        });
++        let mut file = std::fs::OpenOptions::new()
++            .write(true)
++            .create_new(true)
++            .open(output)
++            .unwrap();
++        serde_json::to_writer_pretty(&mut file, &report).unwrap();
++    }
++
++    #[test]
++    #[ignore = "release-only paired session experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED"]
++    fn benchmark_session_prefix_paired() {
++        #[allow(clippy::assertions_on_constants)]
++        {
++            assert!(!cfg!(debug_assertions), "run with --release");
++        }
++        let testbed = std::env::var("MOE_PREFILL_TESTBED").expect("explicit i5/i7 required");
++        assert!(matches!(testbed.as_str(), "i5" | "i7"));
++        let model_path = std::env::var("MOE_PREFILL_MODEL").expect("set model directory");
++        let output = std::env::var("MOE_PREFILL_REPORT").expect("set unique output path");
++        let mut model =
++            OlmoeModel::load(&model_path, 128 * 1024 * 1024, 512, 3 * 1024 * 1024 * 1024).unwrap();
++        let context = "Context note: Mars is a planet in our solar system. ".repeat(8);
++        let render = |model: &OlmoeModel, question: &str| {
++            model
++                .render_chat(&[crate::engine::ChatMessage {
++                    role: "user".into(),
++                    content: format!("{context}{question}"),
++                }])
++                .unwrap()
++        };
++        let seed_prompt = render(&model, "Where is Mars ?");
++        let target_prompt = render(&model, "What is love ?");
++        model
++            .generate_controlled(
++                &seed_prompt,
++                1,
++                Some("paired-session"),
++                &|| Ok(()),
++                || Ok(()),
++                None,
++            )
++            .unwrap();
++        let seed = model.sessions.remove("paired-session").unwrap();
++        let gpu_start = model.expert_status().gpu;
++        let mut samples = Vec::new();
++        let mut expected = None;
++        // Clone a fixed seed outside generation timing, preserving its reserved capacities.
++        // Warm both variants once, then collect alternating paired samples.
++        for pair in 0..6 {
++            let order = if pair % 2 == 0 {
++                [true, false]
++            } else {
++                [false, true]
++            };
++            for strict in order {
++                let kv = seed
++                    .kv
++                    .iter()
++                    .map(|cache| {
++                        let mut copy = Kv::with_capacity(
++                            model.context_limit,
++                            cache.keys.len() / seed.tokens.len(),
++                        );
++                        copy.keys.extend_from_slice(&cache.keys);
++                        copy.values.extend_from_slice(&cache.values);
++                        copy
++                    })
++                    .collect();
++                model.sessions.insert(
++                    "paired-session".into(),
++                    SessionState {
++                        tokens: seed.tokens.clone(),
++                        kv,
++                        last_used: model.session_clock,
++                    },
++                );
++                model.strict_session_prefix_reference = strict;
++                let response = model
++                    .generate_controlled(
++                        &target_prompt,
++                        1,
++                        Some("paired-session"),
++                        &|| Ok(()),
++                        || Ok(()),
++                        None,
++                    )
++                    .unwrap();
++                if let Some(tokens) = &expected {
++                    assert_eq!(&response.token_ids, tokens);
++                } else {
++                    expected = Some(response.token_ids.clone());
++                }
++                let metrics = response.metrics.as_ref().unwrap();
++                if strict {
++                    assert_eq!(metrics.cached_prompt_tokens, 0);
++                } else {
++                    assert!(metrics.cached_prompt_tokens > 0);
++                }
++                eprintln!(
++                    "pair {pair}, strict={strict}, prefill_ms={:.3}, cached={}",
++                    metrics.prefill_ms, metrics.cached_prompt_tokens
++                );
++                if pair > 0 {
++                    samples.push(serde_json::json!({
++                        "pair": pair, "variant": if strict { "before" } else { "after" },
++                        "response": response
++                    }));
++                }
++            }
++        }
++        let report = serde_json::json!({
++            "schema_version": 1, "scope": "exploratory edited-session prefix experiment",
++            "testbed": testbed, "model_directory": model_path,
++            "seed_prompt": seed_prompt, "target_prompt": target_prompt,
++            "max_tokens": 1, "cache_mib_per_layer": 128, "context": 512,
++            "threads": rayon::current_num_threads(), "gpu_start": gpu_start,
++            "gpu_end": model.expert_status().gpu, "warmup_pairs": 1, "samples": samples,
++            "notes": ["fixed seed KV restored outside generation timing; one model; alternating order",
++                "edited last question sharing a long prefix; not the user's ordinary two-turn chat",
++                "one output token isolates prefill; OS cache and desktop load uncontrolled",
++                "strict reference is compiled only in tests; same final serial expert dispatch"]
++        });
++        let mut file = std::fs::OpenOptions::new()
++            .write(true)
++            .create_new(true)
++            .open(output)
++            .unwrap();
++        serde_json::to_writer_pretty(&mut file, &report).unwrap();
++    }
++
++    #[test]
++    fn parallel_prefill_routes_match_tokenwise_logits_with_tails() {
++        for threads in [1, 4] {
++            rayon::ThreadPoolBuilder::new()
++                .num_threads(threads)
++                .build()
++                .unwrap()
++                .install(|| {
++                    for fixture in ["unnormalized-mha", "normalized-gqa"] {
++                        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
++                            .join("tests/fixtures/olmoe")
++                            .join(fixture);
++                        let mut model =
++                            OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
++                        model.set_gpu_enabled(false);
++                        model.serial_prefill_reference = false;
++                        for length in [1, 9, 17] {
++                            let tokens: Vec<_> = (0..length).map(|i| [1, 3, 4, 5][i % 4]).collect();
++                            let expected = model.logits(&tokens).unwrap().pop().unwrap();
++                            let mut kv: Vec<_> =
++                                (0..model.layers.len()).map(|_| Kv::default()).collect();
++                            let mut profile = RequestProfile::default();
++                            let mut scratch = StepScratch::new(&model.config);
++                            model
++                                .prefill(&tokens, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
++                                .unwrap();
++                            let error = scratch
++                                .logits
++                                .iter()
++                                .zip(&expected)
++                                .map(|(actual, expected)| (actual - expected).abs())
++                                .fold(0.0f32, f32::max);
++                            assert!(
++                                error < 2e-5,
++                                "{fixture}, threads={threads}, tokens={length}: error={error}"
++                            );
++                        }
++                    }
++                });
++        }
++    }
++
++    #[test]
+     fn disconnect_after_content_stops_decode_and_preserves_model() {
+         let directory =
+             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");

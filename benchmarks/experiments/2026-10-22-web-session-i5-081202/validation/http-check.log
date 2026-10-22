@@ -1,0 +1,19 @@
++ /usr/bin/python3 tools/export_benchmark_evidence.py --check
+Validated 40 unique evidence artifacts
++ /usr/bin/python3 tools/test_benchmark_evidence.py
++ /usr/bin/python3 tools/test_run_benchmark.py
++ cargo build --release --locked --bin moe-tier-engine
++ /usr/bin/python3 tools/stress_http.py tests/fixtures/olmoe/unnormalized-mha /tmp/moe-http-check-g4isaj4c/stress.json 30
+HTTP fixture: 20 completed, 10 cancelled; steady RSS spread 164 KiB
+Selected checks passed. Unselected CUDA/converter/model benchmarks are not validated.
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.006s
+
+OK
+.....................
+----------------------------------------------------------------------
+Ran 21 tests in 0.049s
+
+OK
+    Finished `release` profile [optimized] target(s) in 0.04s

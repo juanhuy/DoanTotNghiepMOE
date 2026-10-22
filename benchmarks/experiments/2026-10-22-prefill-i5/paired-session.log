@@ -1,0 +1,20 @@
+    Finished `release` profile [optimized] target(s) in 0.07s
+     Running unittests src/lib.rs (target/release/deps/moe_tier_engine-1745916ffb9c337c)
+
+running 1 test
+test olmoe::cancellation_tests::benchmark_session_prefix_paired ... pair 0, strict=true, prefill_ms=11506.908, cached=0
+pair 0, strict=false, prefill_ms=2833.754, cached=104
+pair 1, strict=false, prefill_ms=2922.145, cached=104
+pair 1, strict=true, prefill_ms=8827.777, cached=0
+pair 2, strict=true, prefill_ms=9352.213, cached=0
+pair 2, strict=false, prefill_ms=3006.887, cached=104
+pair 3, strict=false, prefill_ms=2870.175, cached=104
+pair 3, strict=true, prefill_ms=9349.372, cached=0
+pair 4, strict=true, prefill_ms=8846.971, cached=0
+pair 4, strict=false, prefill_ms=2703.790, cached=104
+pair 5, strict=false, prefill_ms=2629.063, cached=104
+pair 5, strict=true, prefill_ms=8434.258, cached=0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 56 filtered out; finished in 87.54s
+

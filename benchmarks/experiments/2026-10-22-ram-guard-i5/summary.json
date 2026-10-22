@@ -1,0 +1,38 @@
+[
+  {
+    "id": "reset-32",
+    "status": "completed",
+    "requests_completed": 12,
+    "duration_s": 212.11892633699972,
+    "samples": 848,
+    "max_sample_rss_gib": 3.468647003173828,
+    "max_observed_hwm_gib": 3.468647003173828,
+    "max_process_swap_kib": 0,
+    "min_available_gib": 6.471378326416016,
+    "watchdog_violations": 0
+  },
+  {
+    "id": "preflight-256",
+    "status": "failed",
+    "requests_completed": 0,
+    "duration_s": 0.00030504700043820776,
+    "samples": 1,
+    "max_sample_rss_gib": 0.001857757568359375,
+    "max_observed_hwm_gib": 0.001857757568359375,
+    "max_process_swap_kib": 0,
+    "min_available_gib": 10.361152648925781,
+    "watchdog_violations": 0
+  },
+  {
+    "id": "keep-128",
+    "status": "completed",
+    "requests_completed": 12,
+    "duration_s": 488.7113962500007,
+    "samples": 1952,
+    "max_sample_rss_gib": 3.525585174560547,
+    "max_observed_hwm_gib": 3.525585174560547,
+    "max_process_swap_kib": 0,
+    "min_available_gib": 6.520195007324219,
+    "watchdog_violations": 0
+  }
+]

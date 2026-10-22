@@ -1,0 +1,351 @@
+{
+  "cache_mib_per_layer": 128,
+  "context": 512,
+  "gpu_end": {
+    "allocated_vram_bytes": 3371876352,
+    "dense_offloaded": true,
+    "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+    "enabled": true,
+    "free_vram_bytes": 539705344,
+    "message": "Hoạt động (3.14 GB / 3.64 GB VRAM · 299 L1 Experts · cuBLAS SGEMV Active)",
+    "total_vram_bytes": 3911581696,
+    "vram_experts_resident": 299
+  },
+  "gpu_start": {
+    "allocated_vram_bytes": 3371876352,
+    "dense_offloaded": true,
+    "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+    "enabled": true,
+    "free_vram_bytes": 539705344,
+    "message": "Hoạt động (3.14 GB / 3.64 GB VRAM · 299 L1 Experts · cuBLAS SGEMV Active)",
+    "total_vram_bytes": 3911581696,
+    "vram_experts_resident": 299
+  },
+  "max_tokens": 1,
+  "model_directory": "/home/son/son/DATN/Models/olmoe_merged",
+  "notes": [
+    "fixed seed KV restored outside generation timing; one model; alternating order",
+    "edited last question sharing a long prefix; not the user's ordinary two-turn chat",
+    "one output token isolates prefill; OS cache and desktop load uncontrolled",
+    "strict reference is compiled only in tests; same final serial expert dispatch"
+  ],
+  "samples": [
+    {
+      "pair": 1,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 96.111889,
+          "cached_prompt_tokens": 104,
+          "decode_ms": 0.0496,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2138357760,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 339,
+          "expert_cache_hits": 1197,
+          "expert_cache_misses": 339,
+          "expert_compute_ms": 598.296832,
+          "expert_io_ms": 1295.2716010000001,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.816556,
+          "prefill_ms": 2922.14471,
+          "time_to_first_token_ms": 2922.464571,
+          "tokenizer_ms": 0.301289,
+          "total_ms": 2922.5191800000002
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 1,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 374.274385,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.059431,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 4037017600,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 640,
+          "expert_cache_hits": 14208,
+          "expert_cache_misses": 640,
+          "expert_compute_ms": 4151.26301,
+          "expert_io_ms": 2837.2954529999997,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.842883,
+          "prefill_ms": 8827.776929,
+          "time_to_first_token_ms": 8828.177157,
+          "tokenizer_ms": 0.264981,
+          "total_ms": 8828.245207
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 2,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 391.138465,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.050142,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 3961323520,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 628,
+          "expert_cache_hits": 14220,
+          "expert_cache_misses": 628,
+          "expert_compute_ms": 4674.128342,
+          "expert_io_ms": 2735.846639,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.851296,
+          "prefill_ms": 9352.213101,
+          "time_to_first_token_ms": 9352.99382,
+          "tokenizer_ms": 0.31438499999999997,
+          "total_ms": 9353.048477
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 2,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 97.746327,
+          "cached_prompt_tokens": 104,
+          "decode_ms": 0.049673999999999996,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2113126400,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 335,
+          "expert_cache_hits": 1201,
+          "expert_cache_misses": 335,
+          "expert_compute_ms": 606.881818,
+          "expert_io_ms": 1333.626825,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.809916,
+          "prefill_ms": 3006.887382,
+          "time_to_first_token_ms": 3007.1782240000002,
+          "tokenizer_ms": 0.26379,
+          "total_ms": 3007.235638
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 3,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 94.96186800000001,
+          "cached_prompt_tokens": 104,
+          "decode_ms": 0.049771,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2100510720,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 333,
+          "expert_cache_hits": 1203,
+          "expert_cache_misses": 333,
+          "expert_compute_ms": 558.833567,
+          "expert_io_ms": 1288.444897,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.820131,
+          "prefill_ms": 2870.1748719999996,
+          "time_to_first_token_ms": 2870.468375,
+          "tokenizer_ms": 0.274163,
+          "total_ms": 2870.523155
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 3,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 388.461524,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.051643,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 3860398080,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 612,
+          "expert_cache_hits": 14236,
+          "expert_cache_misses": 612,
+          "expert_compute_ms": 4784.538635,
+          "expert_io_ms": 2660.579,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.8350340000000003,
+          "prefill_ms": 9349.371997,
+          "time_to_first_token_ms": 9349.658001,
+          "tokenizer_ms": 0.253214,
+          "total_ms": 9349.715079
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 4,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 375.381441,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049728,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 3835166720,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 608,
+          "expert_cache_hits": 14240,
+          "expert_cache_misses": 608,
+          "expert_compute_ms": 4323.011227,
+          "expert_io_ms": 2667.460297,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.8175589999999997,
+          "prefill_ms": 8846.970829,
+          "time_to_first_token_ms": 8847.386805,
+          "tokenizer_ms": 0.286988,
+          "total_ms": 8847.441298
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "before"
+    },
+    {
+      "pair": 4,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 90.62124100000001,
+          "cached_prompt_tokens": 104,
+          "decode_ms": 0.049835,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2094202880,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 332,
+          "expert_cache_hits": 1204,
+          "expert_cache_misses": 332,
+          "expert_compute_ms": 527.694152,
+          "expert_io_ms": 1194.863229,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.804535,
+          "prefill_ms": 2703.7902950000002,
+          "time_to_first_token_ms": 2704.051464,
+          "tokenizer_ms": 0.24361200000000002,
+          "total_ms": 2704.105639
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 5,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 90.740516,
+          "cached_prompt_tokens": 104,
+          "decode_ms": 0.04945,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 2075279360,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 329,
+          "expert_cache_hits": 1207,
+          "expert_cache_misses": 329,
+          "expert_compute_ms": 517.4980820000001,
+          "expert_io_ms": 1129.971648,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.8144839999999998,
+          "prefill_ms": 2629.063456,
+          "time_to_first_token_ms": 2629.3295150000004,
+          "tokenizer_ms": 0.247465,
+          "total_ms": 2629.383773
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "after"
+    },
+    {
+      "pair": 5,
+      "response": {
+        "finish_reason": "length",
+        "metrics": {
+          "attention_ms": 372.41996500000005,
+          "cached_prompt_tokens": 0,
+          "decode_ms": 0.049335000000000004,
+          "decode_tokens_per_second": 0.0,
+          "expert_bytes_read": 3784704000,
+          "expert_cache_bytes": 2119434240,
+          "expert_cache_evictions": 600,
+          "expert_cache_hits": 14248,
+          "expert_cache_misses": 600,
+          "expert_compute_ms": 4131.474699,
+          "expert_io_ms": 2482.1449740000003,
+          "kv_cache_bytes": 30408704,
+          "lm_head_ms": 2.819598,
+          "prefill_ms": 8434.258188,
+          "time_to_first_token_ms": 8434.540363,
+          "tokenizer_ms": 0.251709,
+          "total_ms": 8434.594543
+        },
+        "prompt_tokens": 116,
+        "text": "\n",
+        "token_ids": [
+          187
+        ]
+      },
+      "variant": "before"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "exploratory edited-session prefix experiment",
+  "seed_prompt": "<|endoftext|>\n\n<|user|>\nContext note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Where is Mars ?\n\n\n<|assistant|>\n\n",
+  "target_prompt": "<|endoftext|>\n\n<|user|>\nContext note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. Context note: Mars is a planet in our solar system. What is love ?\n\n\n<|assistant|>\n\n",
+  "testbed": "i5",
+  "threads": 4,
+  "warmup_pairs": 1
+}

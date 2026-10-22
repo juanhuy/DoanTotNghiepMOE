@@ -1,0 +1,374 @@
+{
+  "schema_version": 2,
+  "run_id": "20261022T072445.372227Z-prefill-before-3-cda9087ed27945b3bcef1ad94d2db912",
+  "recorded_at_utc": "2026-10-22T07:24:45.372227+00:00",
+  "testbed": "i5",
+  "status": "success",
+  "tag": "prefill-before-3",
+  "hardware_observed": {
+    "logical_cpus": 12,
+    "cpu_model": "Intel(R) Core(TM) i5-10500H CPU @ 2.50GHz",
+    "physical_memory_bytes": 16571330560,
+    "gpu_inventory": {
+      "status": "observed",
+      "format": "name,memory_MiB,driver",
+      "devices": [
+        "NVIDIA GeForce GTX 1650 with Max-Q Design, 4096, 615.78.08"
+      ]
+    }
+  },
+  "execution": {
+    "argv": [
+      "/home/son/son/DATN/DoanTotNghiepMOE/target/release/examples/benchmark_olmoe",
+      "/home/son/son/DATN/Models/olmoe_merged",
+      "Where is Mars ?",
+      "16",
+      "4",
+      "128",
+      "512",
+      "auto"
+    ],
+    "build_argv": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--example",
+      "benchmark_olmoe",
+      "--message-format=json"
+    ],
+    "git_commit": "b8d53b96a6337f981192319b20b2ea06ac3a7b8d",
+    "git_dirty": false,
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+    "rayon_num_threads": 4,
+    "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+    "checkpoint": {
+      "config_sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b",
+      "files": [
+        {
+          "path": ".coli_analysis.json",
+          "size": 1655,
+          "sha256": "d8f8d6d46befe273cc71b355ae614de050d24fca17d58b95ce8606b3a312bec5"
+        },
+        {
+          "path": "_meta/config.json",
+          "size": 759,
+          "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c"
+        },
+        {
+          "path": "_meta/generation_config.json",
+          "size": 120,
+          "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+        },
+        {
+          "path": "_meta/special_tokens_map.json",
+          "size": 433,
+          "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+        },
+        {
+          "path": "_meta/tokenizer.json",
+          "size": 2115598,
+          "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+        },
+        {
+          "path": "_meta/tokenizer_config.json",
+          "size": 5986,
+          "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+        },
+        {
+          "path": "config.json",
+          "size": 784,
+          "sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b"
+        },
+        {
+          "path": "generation_config.json",
+          "size": 120,
+          "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+        },
+        {
+          "path": "model-00000.safetensors",
+          "size": 1834100784,
+          "sha256": "215a2a74ede3b54c81418cab274c835cde1fdf4dc3eee40471a1864f13aae635"
+        },
+        {
+          "path": "model-00001.safetensors",
+          "size": 1657854168,
+          "sha256": "c83c75dbc51b7868e2199cc904e3f1337cd78362bef50b64a86d50e23d4c43e0"
+        },
+        {
+          "path": "model-00002.safetensors",
+          "size": 1628059584,
+          "sha256": "45f9996dcf938fbd9321e729764bb9c6746ae8258c3d50a45403421c0172a4c8"
+        },
+        {
+          "path": "model-00003.safetensors",
+          "size": 1821755792,
+          "sha256": "83984c933d29af5d18c328a68d8a84577c342f8af3d7503920a9dbc14916ee97"
+        },
+        {
+          "path": "model-00004.safetensors",
+          "size": 471116928,
+          "sha256": "56934a3b93691be6857b6d02a5f597f3db7eab49fc3554f8cc76abb6ea465ba6"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 433,
+          "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 2115598,
+          "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 5986,
+          "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+        }
+      ]
+    },
+    "requested_gpu": "auto",
+    "model_dir": "/home/son/son/DATN/Models/olmoe_merged",
+    "cpu_mode_scope": "CPU request computation; model load may initialize GPU and retain VRAM",
+    "os_page_cache": "uncontrolled; checkpoint hashing reads files before measurement",
+    "config": {
+      "cache_mib_per_layer": 128,
+      "context": 512,
+      "runs": 4,
+      "max_tokens": 16,
+      "prompt": "Where is Mars ?",
+      "suite_case": null
+    },
+    "build_environment": {
+      "RUSTFLAGS": null,
+      "CARGO_ENCODED_RUSTFLAGS": null,
+      "CARGO_BUILD_TARGET": null
+    },
+    "returncode": 0
+  },
+  "result": {
+    "schema_version": 1,
+    "model_directory": "/home/son/son/DATN/Models/olmoe_merged",
+    "prompt": "Where is Mars ?",
+    "max_tokens": 16,
+    "cache_bytes_per_layer": 134217728,
+    "context_limit": 512,
+    "dense_budget_bytes": 3221225472,
+    "logical_cpus": 12,
+    "gpu_mode": "auto",
+    "gpu_status_start": {
+      "enabled": true,
+      "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+      "total_vram_bytes": 3911581696,
+      "allocated_vram_bytes": 1485832192,
+      "free_vram_bytes": 2425749504,
+      "dense_offloaded": true,
+      "vram_experts_resident": 0,
+      "message": "Hoạt động (1.38 GB / 3.64 GB VRAM · 0 L1 Experts · cuBLAS SGEMV Active)"
+    },
+    "gpu_status_end": {
+      "enabled": true,
+      "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+      "total_vram_bytes": 3911581696,
+      "allocated_vram_bytes": 3371876352,
+      "free_vram_bytes": 539705344,
+      "dense_offloaded": true,
+      "vram_experts_resident": 299,
+      "message": "Hoạt động (3.14 GB / 3.64 GB VRAM · 299 L1 Experts · cuBLAS SGEMV Active)"
+    },
+    "load_ms": 1545.433757,
+    "runs": [
+      {
+        "index": 0,
+        "cache_state": "engine-cold",
+        "response": {
+          "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+          "token_ids": [
+            13648,
+            310,
+            253,
+            7002,
+            8859,
+            432,
+            253,
+            5101,
+            275,
+            776,
+            9666,
+            985,
+            15,
+            733,
+            310,
+            4441
+          ],
+          "prompt_tokens": 20,
+          "finish_reason": "length",
+          "metrics": {
+            "tokenizer_ms": 1.620799,
+            "prefill_ms": 4888.8024430000005,
+            "time_to_first_token_ms": 4890.582094,
+            "decode_ms": 5025.292936999999,
+            "total_ms": 9915.931132000002,
+            "decode_tokens_per_second": 2.984900619336771,
+            "attention_ms": 229.356338,
+            "expert_compute_ms": 2694.773556,
+            "lm_head_ms": 47.063369,
+            "expert_io_ms": 5589.470352,
+            "expert_cache_hits": 3263,
+            "expert_cache_misses": 1217,
+            "expert_cache_evictions": 1305,
+            "expert_bytes_read": 10351165440,
+            "expert_cache_bytes": 2119434240,
+            "kv_cache_bytes": 9175040,
+            "cached_prompt_tokens": 0
+          }
+        }
+      },
+      {
+        "index": 1,
+        "cache_state": "engine-warm",
+        "response": {
+          "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+          "token_ids": [
+            13648,
+            310,
+            253,
+            7002,
+            8859,
+            432,
+            253,
+            5101,
+            275,
+            776,
+            9666,
+            985,
+            15,
+            733,
+            310,
+            4441
+          ],
+          "prompt_tokens": 20,
+          "finish_reason": "length",
+          "metrics": {
+            "tokenizer_ms": 0.113311,
+            "prefill_ms": 3261.5607130000003,
+            "time_to_first_token_ms": 3261.704841,
+            "decode_ms": 4204.586926,
+            "total_ms": 7466.312617,
+            "decode_tokens_per_second": 3.5675323792794384,
+            "attention_ms": 205.422391,
+            "expert_compute_ms": 2579.1901839999996,
+            "lm_head_ms": 45.152730000000005,
+            "expert_io_ms": 3275.490071,
+            "expert_cache_hits": 3587,
+            "expert_cache_misses": 893,
+            "expert_cache_evictions": 1253,
+            "expert_bytes_read": 7903723520,
+            "expert_cache_bytes": 2119434240,
+            "kv_cache_bytes": 9175040,
+            "cached_prompt_tokens": 0
+          }
+        }
+      },
+      {
+        "index": 2,
+        "cache_state": "engine-warm",
+        "response": {
+          "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+          "token_ids": [
+            13648,
+            310,
+            253,
+            7002,
+            8859,
+            432,
+            253,
+            5101,
+            275,
+            776,
+            9666,
+            985,
+            15,
+            733,
+            310,
+            4441
+          ],
+          "prompt_tokens": 20,
+          "finish_reason": "length",
+          "metrics": {
+            "tokenizer_ms": 0.116787,
+            "prefill_ms": 3061.83207,
+            "time_to_first_token_ms": 3061.978427,
+            "decode_ms": 3988.03107,
+            "total_ms": 7050.027295999999,
+            "decode_tokens_per_second": 3.7612545480995965,
+            "attention_ms": 201.30578,
+            "expert_compute_ms": 2389.468057,
+            "lm_head_ms": 45.083549,
+            "expert_io_ms": 2959.99049,
+            "expert_cache_hits": 3621,
+            "expert_cache_misses": 859,
+            "expert_cache_evictions": 1208,
+            "expert_bytes_read": 7619870720,
+            "expert_cache_bytes": 2119434240,
+            "kv_cache_bytes": 9175040,
+            "cached_prompt_tokens": 0
+          }
+        }
+      },
+      {
+        "index": 3,
+        "cache_state": "engine-warm",
+        "response": {
+          "text": " Mars is the fourth planet from the sun in our solar system. It is located",
+          "token_ids": [
+            13648,
+            310,
+            253,
+            7002,
+            8859,
+            432,
+            253,
+            5101,
+            275,
+            776,
+            9666,
+            985,
+            15,
+            733,
+            310,
+            4441
+          ],
+          "prompt_tokens": 20,
+          "finish_reason": "length",
+          "metrics": {
+            "tokenizer_ms": 0.104407,
+            "prefill_ms": 2931.198902,
+            "time_to_first_token_ms": 2931.32586,
+            "decode_ms": 3935.0442160000002,
+            "total_ms": 6866.38913,
+            "decode_tokens_per_second": 3.8119012586973176,
+            "attention_ms": 201.522094,
+            "expert_compute_ms": 2391.658338,
+            "lm_head_ms": 45.126156,
+            "expert_io_ms": 2748.329836,
+            "expert_cache_hits": 3633,
+            "expert_cache_misses": 847,
+            "expert_cache_evictions": 1191,
+            "expert_bytes_read": 7512637440,
+            "expert_cache_bytes": 2119434240,
+            "kv_cache_bytes": 9175040,
+            "cached_prompt_tokens": 0
+          }
+        }
+      }
+    ],
+    "notes": [
+      "cpu mode disables GPU computation after load; load may initialize GPU and VRAM allocations may remain",
+      "GPU status is engine logical telemetry, not independent physical VRAM measurement",
+      "engine-cold means the in-process expert cache starts empty",
+      "the operating-system page cache is not cleared or measured",
+      "decode_tokens_per_second counts model steps after the first sampled token"
+    ]
+  }
+}

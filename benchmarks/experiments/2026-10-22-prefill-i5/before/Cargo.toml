@@ -1,0 +1,23 @@
+[package]
+name = "moe-tier-engine"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Tiered-memory inference engine foundation for sparse MoE models"
+license = "MIT"
+
+[dependencies]
+futures-core = "0.3"
+axum = "0.7"
+minijinja = { version = "2", features = ["json"] }
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tempfile = "3"

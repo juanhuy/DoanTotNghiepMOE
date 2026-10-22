@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "machines": {
+    "i5": {
+      "label": "Máy người dùng",
+      "cpu_family_user_reported": "Intel Core i5",
+      "cpu_model_verified": null,
+      "gpu_verified": null,
+      "ram_bytes_verified": null,
+      "default_rayon_threads": 4
+    },
+    "i7": {
+      "label": "Máy đồng nghiệp",
+      "cpu_family_user_reported": "Intel Core i7",
+      "cpu_model_verified": null,
+      "gpu_verified": null,
+      "ram_bytes_verified": null,
+      "default_rayon_threads": 8
+    }
+  },
+  "notes": [
+    "Family labels confirmed by user; exact hardware captured by runner, not inferred from thread count.",
+    "Thread defaults are starting configurations, not measured optima.",
+    "Legacy folder names/specifications are historical attributions, not verified machine inventory."
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "cycle": 3,
+  "policy": "inclusive",
+  "turn": 1,
+  "prompt": "What is love ?",
+  "response": {
+    "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+    "usage": {
+      "completion_tokens": 128,
+      "prompt_tokens": 166,
+      "total_tokens": 294
+    },
+    "metrics": {
+      "attention_ms": 4415.691125,
+      "cached_prompt_tokens": 11,
+      "decode_expert_io_ms": 32785.700949000005,
+      "decode_ms": 51234.808039999996,
+      "decode_tokens_per_second": 2.4787835625508476,
+      "expert_bytes_read": 54417735680,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 8627,
+      "expert_cache_hits": 31212,
+      "expert_cache_misses": 4884,
+      "expert_compute_ms": 13927.631991,
+      "expert_file_bytes_read": 34358804480,
+      "expert_file_loads": 5447,
+      "expert_file_read_ms": 33575.546754999996,
+      "expert_io_ms": 37642.692526,
+      "expert_vram_download_bytes": 23610245120,
+      "expert_vram_download_ms": 4067.145771,
+      "expert_vram_loads": 3743,
+      "expert_vram_upload_bytes": 56057774080,
+      "expert_vram_upload_ms": 13526.887679,
+      "kv_cache_bytes": 76808192,
+      "lm_head_ms": 362.61218099999996,
+      "prefill_expert_io_ms": 4856.991577,
+      "prefill_ms": 14417.550347,
+      "time_to_first_token_ms": 14429.393077,
+      "tokenizer_ms": 1.4826730000000001,
+      "total_ms": 65664.27517699999
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 14416.475026999251,
+    "client_wall_ms": 65669.3975119997
+  },
+  "process_before": {
+    "VmHWM": 5911128,
+    "VmRSS": 5751564,
+    "VmSwap": 375684,
+    "read_bytes": 169024348160,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 5911128,
+    "VmRSS": 5804772,
+    "VmSwap": 377932,
+    "read_bytes": 194647224320,
+    "write_bytes": 4096
+  },
+  "process_read_bytes_delta": 25622876160
+}

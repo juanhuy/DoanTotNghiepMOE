@@ -1225,10 +1225,12 @@ pub struct LayerDenseGpu {
 /// buffer trung gian, nhân đôi băng thông PCIe hiệu quả (từ ~6 GB/s lên ~12 GB/s).
 pub struct PinnedBuffer {
     ptr: *mut c_void,
-    pub len: usize,
+    len: usize,
     driver: Arc<CudaDriverApi>,
 }
 
+// Portable CUDA host allocations may move across threads. Safe access never
+// dereferences ptr; mutable slices require &mut self plus the unsafe DMA contract.
 unsafe impl Send for PinnedBuffer {}
 unsafe impl Sync for PinnedBuffer {}
 
@@ -1236,13 +1238,23 @@ impl PinnedBuffer {
     /// Cấp phát `len` byte trong vùng nhớ pinned. Trả về `None` nếu GPU không sẵn sàng
     /// hoặc vượt quá bộ nhớ hệ thống.
     pub fn alloc(engine: &GpuComputeEngine, len: usize) -> Option<Self> {
+        if len == 0 || len > isize::MAX as usize {
+            return None;
+        }
         unsafe {
-            let _ = (engine.driver.cu_ctx_set_current)(engine.ctx);
-            let mut ptr: *mut c_void = std::ptr::null_mut();
-            // CU_MEMHOSTALLOC_PORTABLE (0x01) | CU_MEMHOSTALLOC_DEVICEMAP (0x02)
-            if (engine.driver.cu_mem_host_alloc)(&mut ptr, len, 0x01) != CUDA_SUCCESS {
+            if (engine.driver.cu_ctx_set_current)(engine.ctx) != CUDA_SUCCESS {
                 return None;
             }
+            let mut ptr: *mut c_void = std::ptr::null_mut();
+            // CU_MEMHOSTALLOC_PORTABLE (0x01) | CU_MEMHOSTALLOC_DEVICEMAP (0x02)
+            if (engine.driver.cu_mem_host_alloc)(&mut ptr, len, 0x01) != CUDA_SUCCESS
+                || ptr.is_null()
+            {
+                return None;
+            }
+            // Initialize before any safe upload path constructs a byte slice.
+            // ptr owns len writable bytes; no DMA operation has received it yet.
+            (ptr as *mut u8).write_bytes(0, len);
             Some(Self {
                 ptr,
                 len,
@@ -1251,10 +1263,29 @@ impl PinnedBuffer {
         }
     }
 
+    /// Allocation size in bytes; callers cannot change the allocation metadata.
+    /// ```compile_fail,E0616
+    /// use moe_tier_engine::gpu::PinnedBuffer;
+    /// fn forge_allocation(buffer: &mut PinnedBuffer) {
+    ///     buffer.len = usize::MAX;
+    /// }
+    /// ```
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Truy cập slice có thể ghi được vào vùng nhớ pinned.
     /// # Safety
     /// Caller phải đảm bảo không có GPU kernel nào đang đọc/ghi vùng nhớ này đồng thời.
+    /// T must be non-zero-sized and every element must already be initialized and
+    /// valid for T. Allocation starts zeroed, which is valid for bytes/numeric
+    /// types but does not make arbitrary T (references/enums) valid.
     pub unsafe fn as_mut_slice<T>(&mut self) -> &mut [T] {
+        assert_ne!(std::mem::size_of::<T>(), 0);
         assert_eq!(self.len % std::mem::size_of::<T>(), 0);
         assert_eq!(
             (self.ptr as usize) % std::mem::align_of::<T>(),
@@ -1267,7 +1298,9 @@ impl PinnedBuffer {
     /// Truy cập slice chỉ đọc vào vùng nhớ pinned.
     /// # Safety
     /// Caller phải đảm bảo không có GPU kernel nào đang ghi vào vùng nhớ này đồng thời.
+    /// T must be non-zero-sized and all elements must be initialized and valid T.
     pub unsafe fn as_slice<T>(&self) -> &[T] {
+        assert_ne!(std::mem::size_of::<T>(), 0);
         assert_eq!(self.len % std::mem::size_of::<T>(), 0);
         assert_eq!(
             (self.ptr as usize) % std::mem::align_of::<T>(),
@@ -1608,6 +1641,31 @@ impl GpuExpertCache {
         self.insert_with_pool(weights, None)
     }
 
+    /// Remove a cached expert after its synchronous transfer has completed.
+    /// The caller exclusively borrows the cache/pool, so no slot can be reused
+    /// while another cache lookup still borrows this entry.
+    pub(crate) fn remove_with_pool(
+        &mut self,
+        layer: usize,
+        expert: usize,
+        pool: Option<&mut GpuExpertPool>,
+    ) -> bool {
+        let key = (layer, expert);
+        let Some(entry) = self.entries.remove(&key) else {
+            return false;
+        };
+        self.used_bytes = self
+            .used_bytes
+            .saturating_sub(entry.weight_bytes + entry.scale_bytes);
+        if let Some(position) = self.lru.iter().position(|item| *item == key) {
+            self.lru.remove(position);
+        }
+        if let (Some(pool), Some(slot)) = (pool, entry.pool_slot) {
+            pool.free_slot(slot);
+        }
+        true
+    }
+
     /// Xóa toàn bộ chuyên gia trong L1 VRAM Expert Cache và hoàn trả slot về Pool
     pub fn clear(&mut self, mut pool: Option<&mut GpuExpertPool>) {
         for (_, entry) in self.entries.drain() {
@@ -1670,9 +1728,17 @@ impl GpuDenseStorage {
 
             // Dùng PinnedBuffer nếu có để DMA transfer đạt tốc độ tối đa (16-C)
             let (weights_ptr, scales_ptr) = if let Some(pinned) = self.pinned_upload_buf.as_mut() {
-                let aligned_weight_bytes = (weight_bytes + 255) & !255;
-                let total_needed = aligned_weight_bytes + scale_bytes;
-                if pinned.len >= total_needed {
+                let layout = weight_bytes
+                    .checked_add(255)
+                    .map(|bytes| bytes & !255)
+                    .and_then(|aligned| {
+                        aligned
+                            .checked_add(scale_bytes)
+                            .map(|total| (aligned, total))
+                    });
+                if let Some((aligned_weight_bytes, _)) =
+                    layout.filter(|(_, total)| *total <= pinned.len())
+                {
                     unsafe {
                         let slice = pinned.as_mut_slice::<u8>();
                         slice[..weight_bytes].copy_from_slice(weights);
@@ -2264,6 +2330,23 @@ mod tests {
     }
 
     #[test]
+    fn test_gpu_expert_cache_remove_accounts_bytes_and_is_idempotent() {
+        if let Some(engine) = GpuComputeEngine::init() {
+            let weights = vec![13u8; 1024];
+            let scales = vec![0.25f32; 16];
+            let mut cache = GpuExpertCache::new(4096);
+            let expert = engine.upload_expert(0, 7, &weights, &scales).unwrap();
+            cache.insert(expert);
+            assert_eq!(cache.used_bytes, 1088);
+            assert!(cache.remove_with_pool(0, 7, None));
+            assert!(!cache.remove_with_pool(0, 7, None));
+            assert_eq!(cache.used_bytes, 0);
+            assert!(cache.lru.is_empty());
+            assert!(cache.is_empty());
+        }
+    }
+
+    #[test]
     fn test_gpu_expert_cache_lru_eviction() {
         if let Some(engine) = GpuComputeEngine::init() {
             let weight_count = 1024;
@@ -2297,10 +2380,14 @@ mod tests {
     #[test]
     fn test_gpu_pinned_buffer() {
         if let Some(engine) = GpuComputeEngine::init() {
+            assert!(PinnedBuffer::alloc(&engine, 0).is_none());
+            assert!(PinnedBuffer::alloc(&engine, usize::MAX).is_none());
             let len = 4096;
             let mut pinned = PinnedBuffer::alloc(&engine, len).expect("alloc pinned buffer");
-            assert_eq!(pinned.len, len);
+            assert_eq!(pinned.len(), len);
+            assert!(!pinned.is_empty());
             unsafe {
+                assert!(pinned.as_slice::<u8>().iter().all(|&byte| byte == 0));
                 let slice = pinned.as_mut_slice::<u32>();
                 for (i, val) in slice.iter_mut().enumerate() {
                     *val = (i * 7) as u32;
@@ -2310,6 +2397,9 @@ mod tests {
                     assert_eq!(*val, (i * 7) as u32);
                 }
             }
+            eprintln!("EXECUTED pinned allocation bounds/zero-init/typed roundtrip on CUDA");
+        } else {
+            eprintln!("SKIPPED pinned allocation CUDA execution: GPU unavailable");
         }
     }
 

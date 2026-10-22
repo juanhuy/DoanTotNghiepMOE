@@ -1,0 +1,65 @@
+{
+  "id": "quality-retrieve-day",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Monday Minh prepared data. Tuesday Lan tested the interface. Wednesday Huy wrote the report. Who tested the interface and on which day?"
+    }
+  ],
+  "max_tokens": 32,
+  "session_id": "quality-retrieve-day",
+  "response": {
+    "text": "\nBased on the information provided, it seems that Huy tested the interface on Wednesday. The sequence of events mentioned in the question is:\n\nMonday Min",
+    "usage": {
+      "completion_tokens": 32,
+      "prompt_tokens": 44,
+      "total_tokens": 76
+    },
+    "metrics": {
+      "attention_ms": 679.6042620000001,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 4193.097388,
+      "decode_ms": 11224.876804000001,
+      "decode_tokens_per_second": 2.7617229606433726,
+      "expert_bytes_read": 17384407040,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 2756,
+      "expert_cache_hits": 8279,
+      "expert_cache_misses": 1321,
+      "expert_compute_ms": 7086.599567,
+      "expert_file_bytes_read": 9644687360,
+      "expert_file_loads": 1529,
+      "expert_file_read_ms": 2830.536854,
+      "expert_io_ms": 5511.370487,
+      "expert_vram_download_bytes": 9051750400,
+      "expert_vram_download_ms": 2680.8336329999997,
+      "expert_vram_loads": 1435,
+      "expert_vram_upload_bytes": 17384407040,
+      "expert_vram_upload_ms": 5405.121081,
+      "kv_cache_bytes": 19660800,
+      "lm_head_ms": 92.290698,
+      "prefill_expert_io_ms": 1318.273099,
+      "prefill_ms": 6475.937446,
+      "time_to_first_token_ms": 6485.7355099999995,
+      "tokenizer_ms": 0.56295,
+      "total_ms": 17710.651866
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 6474.143259999437,
+    "client_wall_ms": 17715.402112999982
+  },
+  "process_before": {
+    "VmHWM": 4802020,
+    "VmRSS": 4037780,
+    "VmSwap": 764992,
+    "read_bytes": 52156690432,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4802020,
+    "VmRSS": 3967748,
+    "VmSwap": 841244,
+    "read_bytes": 52443774976,
+    "write_bytes": 4096
+  }
+}

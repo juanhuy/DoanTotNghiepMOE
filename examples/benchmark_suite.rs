@@ -31,9 +31,9 @@ fn peak_rss_kib() -> Option<u64> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if !(1..=4).contains(&args.len()) {
+    if !(1..=7).contains(&args.len()) {
         return Err(
-            "usage: benchmark_suite MODEL_DIRECTORY [ROUNDS=3] [SUITE=benchmarks/suite-v1.json] [CASE_ID]"
+            "usage: benchmark_suite MODEL_DIRECTORY [ROUNDS=3] [SUITE=benchmarks/suites/suite-v1.json] [CASE_ID_OR_*] [CACHE_MIB=128] [CONTEXT=512] [GPU=auto|cpu]"
                 .into(),
         );
     }
@@ -48,9 +48,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let suite_file = args
         .get(2)
         .map(String::as_str)
-        .unwrap_or("benchmarks/suite-v1.json");
+        .unwrap_or("benchmarks/suites/suite-v1.json");
     let suite: Suite = serde_json::from_slice(&std::fs::read(suite_file)?)?;
-    let selected_case = args.get(3).map(String::as_str);
+    let selected_case = args.get(3).map(String::as_str).filter(|s| *s != "*");
+    let cache_mib: usize = args.get(4).map(|s| s.parse()).transpose()?.unwrap_or(128);
+    let cache_bytes = cache_mib
+        .checked_mul(1024 * 1024)
+        .ok_or("cache byte size overflow")?;
+    let context_limit: usize = args.get(5).map(|s| s.parse()).transpose()?.unwrap_or(512);
+    let gpu_mode = args.get(6).map(String::as_str).unwrap_or("auto");
+    if !matches!(gpu_mode, "auto" | "cpu") {
+        return Err("GPU must be auto or cpu".into());
+    }
     if suite.version != 1 || suite.cases.is_empty() {
         return Err("expected nonempty version 1 suite".into());
     }
@@ -67,13 +76,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("CASE_ID is not present in the suite".into());
     }
     let started = Instant::now();
-    let engine =
-        InferenceEngine::load_with_limits(&args[0], 128 * 1024 * 1024, 512, 3 * 1024 * 1024 * 1024)
-            .await?;
+    let engine = InferenceEngine::load_with_limits(
+        &args[0],
+        cache_bytes,
+        context_limit,
+        3 * 1024 * 1024 * 1024,
+    )
+    .await?;
     if engine.model_name() != "olmoe" {
         return Err("suite requires OLMoE".into());
     }
     let load_ms = started.elapsed().as_secs_f64() * 1000.0;
+    if gpu_mode == "cpu" {
+        engine.set_gpu_enabled(false)?;
+    }
+    let gpu_status_start = engine.expert_status().map(|s| s.gpu);
     let mut runs = Vec::new();
     for round in 0..rounds {
         for case in suite
@@ -95,9 +112,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_slice(&std::fs::read(Path::new(&args[0]).join("config.json"))?)?;
     let report = json!({"schema_version":1,"suite":suite,"selected_case":selected_case,"rounds":rounds,"runs":runs,
         "model_directory":args[0],"model_config":config,"load_ms":load_ms,
-        "settings":{"context_limit":512,"cache_bytes_per_layer":134217728,"dense_budget_bytes":3221225472u64},
+        "gpu_mode":gpu_mode,"gpu_status_start":gpu_status_start,"gpu_status_end":engine.expert_status().map(|s|s.gpu),
+        "settings":{"context_limit":context_limit,"cache_bytes_per_layer":cache_bytes,"dense_budget_bytes":3221225472u64},
         "environment":{"rustc":rustc,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"logical_cpus":std::thread::available_parallelism()?.get(),"debug_assertions":cfg!(debug_assertions)},
-        "notes":["fixed case order; only first request has empty expert cache; fresh KV per request", "OS page cache and CPU frequency uncontrolled", "VmHWM is cumulative process peak RSS on Linux, not per-request allocation or system page cache", "evaluate answers manually; length finish may truncate; no quality score is inferred"]});
+        "notes":["cpu mode disables GPU computation after load; load may initialize GPU and VRAM allocations may remain", "GPU status is logical engine telemetry, not physical VRAM measurement", "fixed case order; only first request has empty expert cache; fresh KV per request", "OS page cache and CPU frequency uncontrolled", "VmHWM is cumulative process peak RSS on Linux, not per-request allocation or system page cache", "evaluate answers manually; length finish may truncate; no quality score is inferred"]});
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }

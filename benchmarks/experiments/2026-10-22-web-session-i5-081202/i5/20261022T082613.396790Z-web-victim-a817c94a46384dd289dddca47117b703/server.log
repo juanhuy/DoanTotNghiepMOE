@@ -1,0 +1,6 @@
+2026-10-22T08:26:45.126326Z  INFO moe_tier_engine::gpu: Đã phát hiện phần cứng GPU NVIDIA name=NVIDIA GeForce GTX 1650 with Max-Q Design total_mb=3730 free_mb=3730 driver_version=13040
+2026-10-22T08:26:45.298157Z  INFO moe_tier_engine::gpu: Đã khởi tạo GPU cuBLAS Compute Engine thành công!
+2026-10-22T08:26:45.595620Z  INFO moe_tier_engine::olmoe: Đã nạp toàn bộ Dense weights lên NVIDIA GPU VRAM (cuBLAS SGEMV kích hoạt) allocated_mb=1417
+2026-10-22T08:26:45.597427Z  INFO moe_tier_engine::olmoe: Khởi tạo L1 VRAM Expert Cache (Pre-allocated VRAM Pool & Pinned Host Memory) expert_cache_mb=1801 pool_slots=299 has_pinned=true
+2026-10-22T08:26:45.597687Z  INFO moe_tier_engine: Heterogeneous Hybrid GPU Tier kích hoạt device=NVIDIA GeForce GTX 1650 with Max-Q Design vram_total_gb="3.64" dense_offloaded=true
+2026-10-22T08:26:45.597700Z  INFO moe_tier_engine: MoE server ready address="127.0.0.1:54685" directory="/home/son/son/DATN/Models/olmoe_merged" model_name="olmoe"

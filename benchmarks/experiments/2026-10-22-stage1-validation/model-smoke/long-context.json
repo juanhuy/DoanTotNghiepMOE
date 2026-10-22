@@ -1,0 +1,65 @@
+{
+  "id": "long-context",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Read this research note. A small laboratory runs a mixture of experts model on a laptop. Model weights are stored as INT8 files. Dense layers remain on the GPU when memory permits. Expert weights can reside in RAM, in VRAM, or in files. Each token selects a small group of experts. A cache hit avoids a file load but may still require a transfer between host and device. The team compares inclusive and victim cache policies using the same prompts and token budgets. They reset application caches before each independent trial, without clearing the operating system page cache. For warm trials they first run an unmeasured request, then start a new chat with the same prompt. They record time to first token, decode throughput, total wall time, payload bytes and process memory. Background activity and temperature can affect results, so policy order is alternated. A faster isolated operation does not guarantee a faster complete request. Summarize the experimental controls and explain two limitations of this measurement."
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "stage1-long",
+  "response": {
+    "text": "\nIn this research note, the authors conducted experiments to compare different cache policies for",
+    "usage": {
+      "completion_tokens": 16,
+      "prompt_tokens": 212,
+      "total_tokens": 228
+    },
+    "metrics": {
+      "attention_ms": 2686.522081,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 3137.572969,
+      "decode_ms": 5950.12604,
+      "decode_tokens_per_second": 2.520955001484305,
+      "expert_bytes_read": 11045027840,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 1415,
+      "expert_cache_hits": 27767,
+      "expert_cache_misses": 1289,
+      "expert_compute_ms": 15183.524308,
+      "expert_file_bytes_read": 8856207360,
+      "expert_file_loads": 1404,
+      "expert_file_read_ms": 9367.036654,
+      "expert_io_ms": 10211.540413,
+      "expert_vram_download_bytes": 2914222080,
+      "expert_vram_download_ms": 844.503759,
+      "expert_vram_loads": 462,
+      "expert_vram_upload_bytes": 8925593600,
+      "expert_vram_upload_ms": 2816.129555,
+      "kv_cache_bytes": 59506688,
+      "lm_head_ms": 46.246721,
+      "prefill_expert_io_ms": 7073.967444,
+      "prefill_ms": 24587.371166,
+      "time_to_first_token_ms": 24597.190721,
+      "tokenizer_ms": 0.9250830000000001,
+      "total_ms": 30547.342345
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 24587.41119000024,
+    "client_wall_ms": 30552.163879999625
+  },
+  "process_before": {
+    "VmHWM": 4630988,
+    "VmRSS": 4630988,
+    "VmSwap": 0,
+    "read_bytes": 21138518016,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4640844,
+    "VmRSS": 4640844,
+    "VmSwap": 0,
+    "read_bytes": 27799949312,
+    "write_bytes": 4096
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "quality-opposite-hot",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the opposite of hot? Answer with one word."
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "quality-opposite-hot",
+  "response": {
+    "text": "\nThe opposite of \"hot\" is \"cold\".",
+    "usage": {
+      "completion_tokens": 12,
+      "prompt_tokens": 28,
+      "total_tokens": 40
+    },
+    "metrics": {
+      "attention_ms": 210.17681199999998,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 1345.101339,
+      "decode_ms": 3446.980657,
+      "decode_tokens_per_second": 3.1911986444314997,
+      "expert_bytes_read": 7487406080,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 1187,
+      "expert_cache_hits": 4371,
+      "expert_cache_misses": 621,
+      "expert_compute_ms": 2611.875065,
+      "expert_file_bytes_read": 4604723200,
+      "expert_file_loads": 730,
+      "expert_file_read_ms": 1100.16299,
+      "expert_io_ms": 2111.440294,
+      "expert_vram_download_bytes": 3570237440,
+      "expert_vram_download_ms": 1011.2773040000001,
+      "expert_vram_loads": 566,
+      "expert_vram_upload_bytes": 7487406080,
+      "expert_vram_upload_ms": 2151.6653,
+      "kv_cache_bytes": 10223616,
+      "lm_head_ms": 34.468894999999996,
+      "prefill_expert_io_ms": 766.338955,
+      "prefill_ms": 3366.986444,
+      "time_to_first_token_ms": 3375.89608,
+      "tokenizer_ms": 0.212859,
+      "total_ms": 6822.889272
+    },
+    "finish_reason": "stop",
+    "client_first_content_after_headers_ms": 3367.0140490003178,
+    "client_wall_ms": 6826.92421199954
+  },
+  "process_before": {
+    "VmHWM": 4802020,
+    "VmRSS": 3967824,
+    "VmSwap": 841172,
+    "read_bytes": 52501942272,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4802020,
+    "VmRSS": 3969692,
+    "VmSwap": 841152,
+    "read_bytes": 52581171200,
+    "write_bytes": 4096
+  }
+}

@@ -42,6 +42,8 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 23 | Opportunistic Inter-Layer Lookahead Prefetching & Markov Routing Transitions | Hoàn thành | Ma trận chuyển tiếp Markov liên tầng online, Rayon dual-horizon pipelined prefetch khi SSD rảnh; triệt tiêu Prefetch Contention, bảo toàn 100% bit-exact parity; 56/56 tests PASS, 0 clippy warnings |
 | 24 | Coarse-Grained Parallel Multi-Expert Dispatching & Disjoint Scratch Pool | Hoàn thành | Phân phối 8 active experts song song trên các worker threads độc lập của Rayon, giảm 93.7% fork-join barriers (từ 256 xuống 16/token); Pre-allocated 8-slot Scratch Pool (96KB L2 resident); bảo toàn 100% bit-exact parity; TTFT warm giảm xuống 2.48s (256MB) / 2.92s (128MB); 58/58 tests PASS, 0 clippy warnings |
 | 25 | Zero-Allocation Expert I/O via Buffer Recycling Pool & POSIX Zero-Copy DMA Pread | Hoàn thành | Đọc trực tiếp SSD vào vùng nhớ tái sử dụng qua POSIX pread64 DMA; triệt tiêu 100% malloc/free 6.3MB và 1.37 triệu Minor Page Faults; Total time warm lần đầu tiên phá vỡ mốc 6s (5.89s), Decode đạt 4.40 tok/s (256MB); 59/59 tests PASS, 0 clippy warnings |
+| R-2026-10-22 | Review hệ thống hiện tại | Hoàn thành review; chưa vá | 2 phát hiện P1, 7 P2; 59 tests pass ở debug/release, Clippy đạt, fmt chưa đạt; chi tiết trong `docs/reviews/2026-10-22-system-review.md` |
+| AI-2026-10-22 | Chuẩn hóa project AI-first và bằng chứng hai máy | Hoàn thành nền tảng | 2 skills/2 reviewer roles, workflow/CI dùng chung; giữ 40 raw nguyên byte, bỏ 33 JSON trùng; 24 tooling tests + 59 Rust tests/profile đạt; chưa đo baseline 7B mới |
 
 ## 2026-09-22 — Mốc ban đầu (hồi cứu)
 
@@ -105,7 +107,7 @@ Cấu hình phần cứng do người dùng cung cấp: Intel i7-14650HX, RAM 16
   - `src/main.rs`: trả trường `metrics` qua HTTP.
   - `examples/benchmark_olmoe.rs`: chạy nhiều lượt trên cùng model và xuất JSON.
   - `tests/olmoe_reference.rs`: kiểm tra tính nhất quán cơ bản của metrics.
-  - Kết quả thô: [`../benchmarks/results/2026-09-22-baseline.json`](../benchmarks/results/2026-09-22-baseline.json).
+  - Kết quả thô: [`../benchmarks/results/2026-09-22-baseline.json`](../benchmarks/results/testbed_a_i7_14650hx/2026-09-22-baseline.json).
 
 Lệnh kiểm thử:
 
@@ -158,7 +160,7 @@ Kết luận: bước 1 bản đầu hoàn thành. Bước tiếp theo là tối
   - `backend.rs`: giữ `Matrix::multiply` có kiểm tra đầy đủ cho API/test chung; thêm đường nội bộ `multiply_loaded`, chỉ kiểm tra input và output.
   - `olmoe.rs`: dùng đường đã xác thực cho Q/K/V/O, router và LM head.
   - Thêm unit test xác nhận kết quả hai đường giống nhau và đường nhanh vẫn từ chối input sai chiều/NaN.
-- Kết quả thô: [`../benchmarks/results/2026-09-22-skip-dense-revalidation.json`](../benchmarks/results/2026-09-22-skip-dense-revalidation.json).
+- Kết quả thô: [`../benchmarks/results/2026-09-22-skip-dense-revalidation.json`](../benchmarks/results/testbed_a_i7_14650hx/2026-09-22-skip-dense-revalidation.json).
 
 Lệnh kiểm thử và benchmark giống bước 1. Kết quả: **đạt**, 24 test Rust đạt, Clippy sạch, output/token IDs không đổi.
 
@@ -188,7 +190,7 @@ Giới hạn: mỗi phiên bản mới chỉ được đo một cặp cold/warm;
   - Loader tính kích thước active set và phát cảnh báo nếu cấu hình cache nhỏ hơn mức này.
   - Benchmark nhận tham số `CACHE_MIB_PER_LAYER` để so sánh chính sách cache.
   - Cập nhật CLI example và README theo mặc định mới.
-- Kết quả thô: [`../benchmarks/results/2026-09-22-cache-128mib.json`](../benchmarks/results/2026-09-22-cache-128mib.json).
+- Kết quả thô: [`../benchmarks/results/2026-09-22-cache-128mib.json`](../benchmarks/results/testbed_a_i7_14650hx/2026-09-22-cache-128mib.json).
 
 Lệnh:
 
@@ -232,7 +234,7 @@ Giới hạn: `expert_bytes_read` vẫn là byte payload qua reader, có thể �
   - `Int8Expert::forward_reuse` ghi trực tiếp vào buffer thay vì tạo bốn `Vec` cho mỗi expert.
   - API `forward` cũ vẫn giữ để tương thích và dùng cùng kernel.
 - Test bổ sung kiểm tra warm request không có nhiều miss hơn cold request trên fixture. Logits và token output không đổi.
-- Kết quả thô: [`../benchmarks/results/2026-09-22-hot-cache-reused-buffers.json`](../benchmarks/results/2026-09-22-hot-cache-reused-buffers.json).
+- Kết quả thô: [`../benchmarks/results/2026-09-22-hot-cache-reused-buffers.json`](../benchmarks/results/testbed_a_i7_14650hx/2026-09-22-hot-cache-reused-buffers.json).
 
 Lệnh kiểm thử: `cargo test --all-targets`, `cargo clippy --all-targets -- -D warnings`; kết quả **đạt**, 24 test đạt, Clippy sạch.
 
@@ -282,7 +284,7 @@ Kết quả: **25 test đạt** (18 unit + 5 loader + 2 reference/integration), 
 
 Điều kiện: checkpoint `models/olmoe-1b-7b-int8`, release CPU, context 512, dense budget 3 GiB, cache 128 MiB/layer; ba prompt cố định theo thứ tự toán → Python → tiếng Việt, lặp hai vòng trong cùng tiến trình, tối đa 8 output token/request. Prompt lần lượt có 19/23/48 token; output có 7/8/8 token. Load model 1,337 giây. Cache expert cuối mỗi request là 2.119.434.240 byte. Chỉ request đầu có engine cache rỗng; các request còn lại kế thừa cache và heat history.
 
-Kết quả thô: [`../benchmarks/results/2026-09-22-mixed-workload-open-shards.json`](../benchmarks/results/2026-09-22-mixed-workload-open-shards.json).
+Kết quả thô: [`../benchmarks/results/2026-09-22-mixed-workload-open-shards.json`](../benchmarks/results/testbed_a_i7_14650hx/2026-09-22-mixed-workload-open-shards.json).
 
 | Prompt | Tổng generate vòng 1 | Tổng generate vòng 2 | Cache miss vòng 1 → 2 |
 | --- | ---: | ---: | ---: |
@@ -352,7 +354,7 @@ Benchmark checkpoint thật mới: OLMoE INT8 trong workspace, CPU release, prom
 
 - Generate giảm 37,9% cold và 41,0% warm trong cặp đo này; expert compute giảm khoảng 71%.
 - Đã so sánh JSON: token IDs trước/sau giống nhau ở cả hai lượt; output `2 + 2 equals 4.`. Cache hit/miss giữ nguyên: cold 2.130/1.070, warm 2.518/682; payload cold 6.749.388.800 byte, warm 4.301.946.880 byte.
-- Dữ liệu mới: [kernel](../benchmarks/results/2026-09-23-int8-kernel.json), [trước](../benchmarks/results/2026-09-23-int8-before.json), [sau](../benchmarks/results/2026-09-23-int8-after.json). Các mốc trước đó được giữ nguyên.
+- Dữ liệu mới: [kernel](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-int8-kernel.json), [trước](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-int8-before.json), [sau](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-int8-after.json). Các mốc trước đó được giữ nguyên.
 
 Giới hạn: kernel benchmark dùng dữ liệu tổng hợp resident; chưa đo đa luồng, SIMD intrinsics hoặc nhiều kiến trúc. Model benchmark chỉ một prompt/cặp cold-warm mỗi phiên bản; CPU frequency, page cache và tải nền không kiểm soát nên phần I/O thay đổi không quy cho kernel. Chưa đo chất lượng dài hoặc kiểm tra logits toàn checkpoint thật; token giống nhau ở prompt này không đảm bảo mọi prompt đều giống. Không tuyên bố tốc độ toàn model tăng 3,6–3,8 lần.
 
@@ -393,7 +395,7 @@ Smoke checkpoint thật, CPU release, context 512, cache 128 MiB/layer, max outp
 - Health phản hồi trong prefill và đang nhận token; request chồng nhau trả 429.
 - Sau ngắt stream trong prefill, quan sát semaphore giải phóng sau **11,071 ms** qua request probe. Một lần đo, gồm HTTP round trip/poll; không phải giới hạn hủy đảm bảo. Worker không ngắt ngay matvec/I/O đang chạy.
 - **Giới hạn chất lượng xác nhận:** câu tiếng Việt trả `Đức`, sai yêu cầu. Đây không phải đạt chất lượng trả lời; stream chỉ được xác nhận khớp đường generate thường. Cần đánh giá checkpoint riêng.
-- Dữ liệu mới: [streaming smoke](../benchmarks/results/2026-09-23-streaming-smoke.json). Không so tốc độ với benchmark trước vì prompt/cache/trình tự request khác.
+- Dữ liệu mới: [streaming smoke](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-streaming-smoke.json). Không so tốc độ với benchmark trước vì prompt/cache/trình tự request khác.
 
 Lỗi phát hiện và xử lý: sandbox tiếp tục lỗi bubblewrap, đã thực thi bằng quyền ngoài sandbox được duyệt. Clippy báo type_complexity cho callback, sửa bằng type alias. Benchmark JSON dùng literal 3 GiB mặc định i32 gây compile error, đổi sang u64; các lệnh cuối đạt.
 
@@ -414,7 +416,7 @@ target/release/examples/benchmark_suite models/olmoe-1b-7b-int8 3 \
 
 - Kết quả: **15/15 request thành công**, 5 case × 3 vòng; token IDs giống nhau giữa 3 lượt cho từng case; tất cả `finish_reason=stop`, không bị cắt bởi max_tokens. Đã parse JSON, kiểm tra số lượt và so sánh token IDs.
 - Điều kiện: CPU i7-14650HX, Linux x86_64, 24 logical CPU được runtime báo, Rust 1.98.1, release; checkpoint merged INT8 trong workspace; context 512, cache 128 MiB/layer, dense budget 3 GiB. Load 1,227 s, không cộng vào generate. Không có phép đo/test/build khác của phiên làm việc chạy đồng thời với suite; tải nền hệ thống, page cache và tần số CPU vẫn không kiểm soát.
-- Raw data mới: [suite v1](../benchmarks/results/2026-09-23-suite-v1.json). Suite/metrics cũ được giữ nguyên, không so phần trăm tốc độ giữa hai suite khác nhau.
+- Raw data mới: [suite v1](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-suite-v1.json). Suite/metrics cũ được giữ nguyên, không so phần trăm tốc độ giữa hai suite khác nhau.
 
 Median của 3 lượt theo từng case (không gọi cả vòng đầu là cold vì cache kế thừa giữa các case):
 
@@ -521,12 +523,12 @@ So sánh toàn model dùng đúng case `context-retrieval`: checkpoint/config gi
 - Token IDs và output giống nhau trước/sau ở từng lượt: `Lan tested the chat interface and fixed a display problem on Wednesday.`
 - Cache hit/miss median giữ nguyên 11.850/7.350; eviction 502; payload expert 46.362.624.000 byte. Vì byte/counter không đổi và page cache không kiểm soát, không quy phần I/O giảm cho dense kernel.
 - Peak RSS gần như không đổi: 4.016.444 → 4.016.504 KiB. Tải nền/tần số CPU/page cache không cố định; phần trăm là kết quả của hai bộ 3 lượt, không phải cam kết mọi workload.
-- Raw data: [microbenchmark](../benchmarks/results/2026-09-23-dense-kernel.json), [trước](../benchmarks/results/2026-09-23-dense-before-context.json), [sau](../benchmarks/results/2026-09-23-dense-after-context.json).
+- Raw data: [microbenchmark](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-dense-kernel.json), [trước](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-dense-before-context.json), [sau](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-dense-after-context.json).
 
 Đánh giá context dài sau tối ưu:
 
-- Thử nghiệm trung gian 397 prompt token + 24 ngân sách output (421/512) trả đúng `The access code is ORCHID.`, TTFT 84,557 s; lưu tại [JSON 397 token](../benchmarks/results/2026-09-23-suite-v2-long-context.json). Không gọi đây là gần giới hạn.
-- Suite cuối tăng lên 469 prompt token + 24 output = **493/512**; sinh 9 token, dừng EOS và trả đúng cùng câu. Một lượt: TTFT 94,368 s, tổng 96,705 s; attention 28,580 s, expert compute 42,919 s, expert I/O 16,111 s; đọc logic 96.106.250.240 byte, KV 106.168.320 byte, peak RSS 3.972.156 KiB (~3,79 GiB). Raw data: [near-context](../benchmarks/results/2026-09-23-suite-v2-near-context.json).
+- Thử nghiệm trung gian 397 prompt token + 24 ngân sách output (421/512) trả đúng `The access code is ORCHID.`, TTFT 84,557 s; lưu tại [JSON 397 token](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-suite-v2-long-context.json). Không gọi đây là gần giới hạn.
+- Suite cuối tăng lên 469 prompt token + 24 output = **493/512**; sinh 9 token, dừng EOS và trả đúng cùng câu. Một lượt: TTFT 94,368 s, tổng 96,705 s; attention 28,580 s, expert compute 42,919 s, expert I/O 16,111 s; đọc logic 96.106.250.240 byte, KV 106.168.320 byte, peak RSS 3.972.156 KiB (~3,79 GiB). Raw data: [near-context](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-suite-v2-near-context.json).
 - Phép đo 493/512 chỉ một lượt, prompt có filler lặp và retrieval đơn giản; xác nhận chức năng/giới hạn, không đại diện chất lượng ngữ cảnh dài hoặc phân bố prompt thật.
 
 Lỗi/giới hạn thực hiện: hai lệnh Cargo release được khởi động cùng lúc; microbenchmark chờ file lock và chỉ chạy sau test, nên không tranh CPU trong vùng đo. Sandbox bubblewrap tiếp tục lỗi; các lệnh dùng quyền ngoài sandbox đã được duyệt và patch bỏ biến profile lỗi như bước trước.
@@ -574,7 +576,7 @@ So sánh với kernel dense đã tối ưu, cùng case 136 prompt token, output 
 | Payload expert | 46,363 GB | 9,903 GB | -78,6% |
 
 - Token IDs/output giống nhau ở cả ba cặp lượt. KV giữ 39.321.600 byte. Eviction median 502→353. Peak RSS 4.016.504→3.748.356 KiB; thay đổi admission/cache order có thể ảnh hưởng resident cache, không diễn giải là batch luôn giảm RAM.
-- Raw data: [token-major dense](../benchmarks/results/2026-09-23-dense-after-context.json), [layer-major](../benchmarks/results/2026-09-23-batched-prefill-context.json).
+- Raw data: [token-major dense](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-dense-after-context.json), [layer-major](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-batched-prefill-context.json).
 
 Hồi quy 469 prompt token + 24 output budget = 493/512, một lượt trước/sau:
 
@@ -589,7 +591,7 @@ Hồi quy 469 prompt token + 24 output budget = 493/512, một lượt trước/
 | Payload expert | 96,106 GB | 9,115 GB | -90,5% |
 
 - Output/token IDs giống nhau: `The access code is ORCHID.`, 9 token, EOS. KV giữ 125.042.688 byte. Peak RSS 3.972.156→4.126.784 KiB (~+151 MiB), phù hợp có batch/hidden/contribution tạm nhưng là một lượt không kiểm soát tải nền.
-- Raw data: [token-major gần context](../benchmarks/results/2026-09-23-suite-v2-near-context.json), [layer-major gần context](../benchmarks/results/2026-09-23-batched-prefill-near-context.json).
+- Raw data: [token-major gần context](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-suite-v2-near-context.json), [layer-major gần context](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-batched-prefill-near-context.json).
 
 Giới hạn:
 
@@ -603,9 +605,9 @@ Kết luận: hoàn thành prefill gom expert bản đầu. Trên case 136 token
 ## 2026-09-23 — Bước 6: hoàn thiện UI, stress HTTP, quality smoke và demo
 
 - `web/index.html`: thêm lựa chọn 32/64/128/256 output token, lưu lịch sử và cấu hình trong `localStorage`, giới hạn 100 message/48 KiB, nút xóa, trạng thái điều khiển và hiển thị usage/TTFT/decode tok/s/tổng thời gian/finish reason. Inline JavaScript đã qua `node --check`; binary test xác nhận các marker UI/metrics được nhúng.
-- `tools/stress_http.py`: tự quản lý release server và chạy 50 vòng fixture, cứ ba vòng có một lần hủy SSE. Kết quả: 33 hoàn tất, 17 hủy, 50/50 health/permit đạt; RSS steady 10.436–10.552 KiB, spread 116 KiB. Raw data: [HTTP stress](../benchmarks/results/2026-09-23-http-stress-fixture.json). Fixture không đại diện tải checkpoint thật.
+- `tools/stress_http.py`: tự quản lý release server và chạy 50 vòng fixture, cứ ba vòng có một lần hủy SSE. Kết quả: 33 hoàn tất, 17 hủy, 50/50 health/permit đạt; RSS steady 10.436–10.552 KiB, spread 116 KiB. Raw data: [HTTP stress](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-http-stress-fixture.json). Fixture không đại diện tải checkpoint thật.
 - `benchmarks/quality-v1.json` và `examples/evaluate_quality.rs`: 12 ca greedy deterministic thuộc toán, kiến thức, tiếng Việt, instruction, code, multi-turn, retrieval, dịch và ngôn ngữ. Chấm exact hoặc contains-all không phân biệt hoa thường; từ chối ID trùng và xuất response/metrics đầy đủ.
-- Hai lượt quality độc lập đều đạt **12/12**. Artifact lượt lưu có median TTFT 6,505 s, tổng 10,162 s và decode 3,350 token/s; load model 1,452 s. Raw data: [quality-v1](../benchmarks/results/2026-09-23-quality-v1.json). Đây là smoke heuristic nhỏ, không đủ để kết luận chất lượng tổng quát; một ca tiếng Việt kết thúc do giới hạn token nhưng vẫn qua điều kiện substring.
+- Hai lượt quality độc lập đều đạt **12/12**. Artifact lượt lưu có median TTFT 6,505 s, tổng 10,162 s và decode 3,350 token/s; load model 1,452 s. Raw data: [quality-v1](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-quality-v1.json). Đây là smoke heuristic nhỏ, không đủ để kết luận chất lượng tổng quát; một ca tiếng Việt kết thúc do giới hạn token nhưng vẫn qua điều kiện substring.
 - `docs/DEMO.md`: thêm preflight, cách mở UI, luồng trình bày, lệnh tạo lại quality/stress artifact và giới hạn diễn giải.
 
 Kiểm chứng cuối:
@@ -658,7 +660,7 @@ Cùng case 136 prompt token, một lượt/process, release CPU, cache expert 12
 
 Trên máy 24 CPU logic này, 8 worker giảm TTFT **64,4%** và tổng thời gian **61,2%** so với 1 worker. 24 worker chậm hơn 8, phù hợp giới hạn băng thông RAM/overhead; vì vậy chọn trần mặc định 8. RSS peak gần như bằng nhau: 4.010.588 KiB ở 1 worker và 4.010.992 KiB ở 8 worker.
 
-Raw data: [1 worker](../benchmarks/results/2026-09-23-rayon-1-context.json), [8 worker](../benchmarks/results/2026-09-23-rayon-8-context.json), [24 worker](../benchmarks/results/2026-09-23-rayon-24-context.json).
+Raw data: [1 worker](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-rayon-1-context.json), [8 worker](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-rayon-8-context.json), [24 worker](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-rayon-24-context.json).
 
 Giới hạn: mỗi cấu hình mới chỉ đo một lượt, page cache/tần số CPU/tải nền không kiểm soát; không diễn giải tỷ lệ thành cam kết trên CPU khác. Parallelism theo row tăng mức sử dụng CPU tức thời. Attention softmax/context vẫn tuần tự và causal prefill vẫn O(N²). Backend GPU chưa được thêm.
 
@@ -679,7 +681,7 @@ Benchmark HTTP checkpoint thật, 8 Rayon worker, cache expert 128 MiB/layer, co
 | Session tiếp nối | 37 | 4,098 s | 6,182 s | `Your name is Linh.` |
 | Session mới | 0 | 9,679 s | 12,517 s | `Your name is Linh.` |
 
-TTFT giảm 57,7% và tổng giảm 50,6% trong phép đo này. Raw data: [session HTTP](../benchmarks/results/2026-09-23-session-cache-http.json). Đây là một hội thoại ngắn, một lượt đo, page cache/tần số CPU không kiểm soát; lợi ích phụ thuộc phần prefix có thể tái sử dụng.
+TTFT giảm 57,7% và tổng giảm 50,6% trong phép đo này. Raw data: [session HTTP](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-session-cache-http.json). Đây là một hội thoại ngắn, một lượt đo, page cache/tần số CPU không kiểm soát; lợi ích phụ thuộc phần prefix có thể tái sử dụng.
 
 Kiểm chứng cuối: `cargo test --all-targets --quiet` đạt **35 test** (25 lib, 2 HTTP binary, 5 loader, 3 integration), 2 microbenchmark ignored; `cargo clippy --all-targets -- -D warnings` sạch; release server build thành công; JavaScript inline qua `node --check`.
 
@@ -695,7 +697,7 @@ Kết luận: hội thoại nhiều lượt giờ tránh prefill lại phần l�
 
 Kiểm chứng: **35 test đạt**, 2 microbenchmark ignored; Clippy sạch; release binary build thành công. Case 136 token/8 worker sinh cùng 15 token và cùng output ở cả ba lượt.
 
-Benchmark mới 3 lượt/process có median TTFT 15,959 s, tổng 20,391 s, attention 5,677 s, expert compute 8,276 s và decode 3,159 token/s. Raw data: [flat KV 3 lượt](../benchmarks/results/2026-09-23-flat-kv-context-3x.json). Một lượt riêng lưu tại [flat KV](../benchmarks/results/2026-09-23-flat-kv-context.json).
+Benchmark mới 3 lượt/process có median TTFT 15,959 s, tổng 20,391 s, attention 5,677 s, expert compute 8,276 s và decode 3,159 token/s. Raw data: [flat KV 3 lượt](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-flat-kv-context-3x.json). Một lượt riêng lưu tại [flat KV](../benchmarks/results/testbed_a_i7_14650hx/2026-09-23-flat-kv-context.json).
 
 Không tuyên bố tăng tốc end-to-end ở bước này: mốc Rayon-8 trước đó chỉ có một lượt (TTFT 12,955 s), còn các lượt mới cho thấy expert compute cũng dao động mạnh dù code expert không đổi. Điều kiện tải nền/tần số CPU/page cache không đủ ổn định cho so sánh phần trăm. Lợi ích chắc chắn là giảm số allocation KV và layout tuần tự; cần microbenchmark attention cô lập hoặc nhiều cặp chạy xen kẽ để định lượng tốc độ.
 
@@ -737,7 +739,7 @@ So với artifact layer-major 469 prompt token + 24 output budget ngày 2026-09-
 | Cache miss / payload expert / KV | 1.445 / 9,115 GB / 125,0 MB | không đổi | — |
 | Peak RSS | 4.126.784 KiB | 4.161.848 KiB | +34 MiB |
 
-Raw data mới: [parallel attention near context](../benchmarks/results/2026-09-24-parallel-attention-near-context.json).
+Raw data mới: [parallel attention near context](../benchmarks/results/testbed_a_i7_14650hx/2026-09-24-parallel-attention-near-context.json).
 
 Lỗi thực hiện: hai benchmark ban đầu chạy chồng lên nhau và cùng ghi một JSON, nên artifact bị hỏng (hai object nối tiếp); không dùng số đó. Đã chạy lại một tiến trình duy nhất và xác thực bằng `python3 -m json.tool` trước khi ghi số liệu trên.
 
@@ -759,7 +761,7 @@ python3 -m json.tool \
   benchmarks/results/2026-09-24-parallel-attention-near-context-3x.json > /dev/null
 ```
 
-Kết quả: JSON hợp lệ, **3/3** request `finish_reason=stop`; token IDs giống nhau ở cả ba lượt và output đều là `The access code is ORCHID.`. Raw data: [3 lượt attention gần context](../benchmarks/results/2026-09-24-parallel-attention-near-context-3x.json).
+Kết quả: JSON hợp lệ, **3/3** request `finish_reason=stop`; token IDs giống nhau ở cả ba lượt và output đều là `The access code is ORCHID.`. Raw data: [3 lượt attention gần context](../benchmarks/results/testbed_a_i7_14650hx/2026-09-24-parallel-attention-near-context-3x.json).
 
 | Chỉ số | Lượt 1 | Lượt 2 | Lượt 3 | Median |
 | --- | ---: | ---: | ---: | ---: |
@@ -793,7 +795,7 @@ RAYON_NUM_THREADS=8 target/release/examples/benchmark_suite \
   > benchmarks/results/2026-09-24-blocked-attention-near-context.json
 ```
 
-Kết quả: **36 test đạt** (26 lib, 2 HTTP binary, 5 loader, 3 integration), 2 microbenchmark ignored; Clippy sạch. Checkpoint 469 prompt token/24 output budget trả `The access code is ORCHID.`, 9 token IDs giống mốc cũ, `finish_reason=stop`. Raw data: [blocked attention near context](../benchmarks/results/2026-09-24-blocked-attention-near-context.json).
+Kết quả: **36 test đạt** (26 lib, 2 HTTP binary, 5 loader, 3 integration), 2 microbenchmark ignored; Clippy sạch. Checkpoint 469 prompt token/24 output budget trả `The access code is ORCHID.`, 9 token IDs giống mốc cũ, `finish_reason=stop`. Raw data: [blocked attention near context](../benchmarks/results/testbed_a_i7_14650hx/2026-09-24-blocked-attention-near-context.json).
 
 Một lượt release với cache 128 MiB/layer, context 512, 8 worker: TTFT 48,166 s; tổng 50,802 s; attention 19,295 s; expert compute 23,650 s; expert I/O 7,092 s; peak RSS 4.162.380 KiB. **Không** so phần trăm với lượt trước hoặc median 3 vòng: chỉ một lượt, expert I/O/compute dao động và page cache, CPU frequency, tải nền không kiểm soát.
 
@@ -840,7 +842,7 @@ python3 -m json.tool \
   benchmarks/results/2026-09-24-online-softmax-near-context-3x.json > /dev/null
 ```
 
-Kết quả: artifact JSON hợp lệ; **3/3** request dừng EOS, token IDs giống nhau giữa ba lượt và đúng output `The access code is ORCHID.`. Raw data: [online softmax 3 lượt](../benchmarks/results/2026-09-24-online-softmax-near-context-3x.json).
+Kết quả: artifact JSON hợp lệ; **3/3** request dừng EOS, token IDs giống nhau giữa ba lượt và đúng output `The access code is ORCHID.`. Raw data: [online softmax 3 lượt](../benchmarks/results/testbed_a_i7_14650hx/2026-09-24-online-softmax-near-context-3x.json).
 
 | Chỉ số | Lượt 1 | Lượt 2 | Lượt 3 | Median |
 | --- | ---: | ---: | ---: | ---: |
@@ -873,7 +875,7 @@ MOE_ATTENTION_REPORT=benchmarks/results/2026-09-24-attention-online-vs-materiali
   backend::tests::benchmark_attention_online_vs_materialized -- --ignored --exact
 ```
 
-Kết quả: **36 test thường đạt**, 3 microbenchmark ignored; Clippy sạch. Microbenchmark chạy riêng đạt. Raw data: [online vs materialized](../benchmarks/results/2026-09-24-attention-online-vs-materialized.json).
+Kết quả: **36 test thường đạt**, 3 microbenchmark ignored; Clippy sạch. Microbenchmark chạy riêng đạt. Raw data: [online vs materialized](../benchmarks/results/testbed_a_i7_14650hx/2026-09-24-attention-online-vs-materialized.json).
 
 | Kernel attention cô lập | Median 7 mẫu |
 | --- | ---: |
@@ -906,7 +908,7 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
 - Điều kiện benchmark và liên kết dữ liệu thô:
   - Báo cáo tổng hợp: [`docs/BENCHMARKS.md`](BENCHMARKS.md)
   - Ma trận bằng chứng: [`docs/thesis/EVIDENCE_MATRIX.md`](thesis/EVIDENCE_MATRIX.md)
-  - Tệp CSV: [`benchmarks/reports/all_benchmarks.csv`](../benchmarks/reports/all_benchmarks.csv)
+  - Tệp CSV: [`benchmarks/reports/all_benchmarks.csv`](BENCHMARKS.md)
 
 ## 2026-10-10 — Bước 15: Đo thực nghiệm đối chứng trên Testbed B (Intel Core i5)
 
@@ -915,8 +917,8 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
   - `src/olmoe.rs`: Thêm `#[serde(default = "default_rms_norm_eps")]` (mặc định $10^{-5}$) để hỗ trợ các checkpoint HF chuẩn bị thiếu trường `rms_norm_eps` trong `config.json`.
   - `models/olmoe-1b-7b-int8/config.json`: Thêm trường `rms_norm_eps: 1e-05`.
   - Tạo junction `models/olmoe-1b-7b-int8` trỏ tới checkpoint `..\Models\olmoe_merged` trên ổ đĩa.
-  - Kết quả thô: [`benchmarks/results/2026-10-10-testbed-i5-10400h.json`](../benchmarks/results/2026-10-10-testbed-i5-10400h.json).
-  - Tự động cập nhật vào [`docs/BENCHMARKS.md`](BENCHMARKS.md) và [`benchmarks/reports/all_benchmarks.csv`](../benchmarks/reports/all_benchmarks.csv).
+  - Kết quả thô: [`benchmarks/results/2026-10-10-testbed-i5-10400h.json`](../benchmarks/results/testbed_b_i5_10400h/2026-10-10-testbed-i5-10400h.json).
+  - Tự động cập nhật vào [`docs/BENCHMARKS.md`](BENCHMARKS.md) và [`benchmarks/reports/all_benchmarks.csv`](BENCHMARKS.md).
 - Lệnh kiểm thử:
   ```powershell
   $env:RAYON_NUM_THREADS="4"
@@ -1915,6 +1917,125 @@ Kết luận: đã có A/B tái lập và phát hiện online-softmax hiện kh�
   - Hoàn thành Bước 25 xuất sắc: triệt tiêu hoàn toàn memory churn và page faults của kernel Linux khi nạp SSD, nén thời gian sinh warm xuống 5.89s, tốc độ giải mã đạt 4.40 tok/s, 59/59 tests PASS, 0 clippy warnings.
   - Sẵn sàng commit và push lên repository.
 
+## 2026-10-22 — Review toàn bộ hệ thống hiện tại
+
+- **Phạm vi:** đọc nhật ký trước khi làm việc; review tại commit `1d98587`, cây làm việc sạch ban đầu. Rà soát engine OLMoE/tiny, loader Safetensors/INT8, ownership/FFI CUDA, cache RAM/VRAM/KV, HTTP/SSE, web, converter, benchmark runner/exporter và test hiện có. Không sửa runtime hoặc benchmark lịch sử.
+- **Tài liệu/bằng chứng mới:** [báo cáo review](reviews/2026-10-22-system-review.md), [kết quả thô](reviews/2026-10-22-evidence.json), [ba probe Rust](reviews/2026-10-22-review-probes.rs). Áp dụng skill `rust-patterns` cho phần Rust/ownership/concurrency/unsafe.
+- **Bước kiểm tra nền:** `cargo test --all-targets --locked` và `cargo test --release --all-targets --locked`: mỗi profile **59 pass, 0 fail, 3 ignored**. `cargo clippy --all-targets --locked -- -D warnings`: đạt. `cargo fmt --all -- --check`: **không đạt**, có diff trong `src/olmoe.rs` và `tests/int8_loader.rs`; chưa tự format trong lượt review.
+- **Bước tái hiện lỗi:** sao chép source và fixture vào `/tmp/moe-review-n9s2ykj7`, chỉ thêm probe trên bản sao rồi chạy `cargo test --manifest-path /tmp/moe-review-n9s2ykj7/Cargo.toml --target-dir /home/son/son/DATN/DoanTotNghiepMOE/target --locked --lib review_probes -- --nocapture`. Ba probe xác nhận: (1) ngân sách session 1.024 byte nhưng giữ capacity KV 32.768 byte, chỉ tính 1.024 byte; (2) reset làm ngân sách session về 0, cached prefix từ 2 về 0; (3) ngân sách L2 tổng 1.800 byte, cache báo 1.024 byte nhưng recycled buffers giữ thêm 3.072 byte. Đây là **số đo capacity trên fixture**, không phải RSS model 7B; các probe pass vì xác nhận lỗi đang tồn tại.
+- **Bước frontend/công cụ:** trích JavaScript ra `/tmp/moe-review-web.js`, `node --check` đạt. Vòng parser SSE trích nguyên từ web bỏ qua `generation_error` (`surfaced_error=false`). Mock runner hai lượt cùng ngày/tag trong thư mục tạm chỉ còn một file JSON, nội dung cũ bị ghi đè. Không ghi đè dữ liệu benchmark thật.
+- **Bước HTTP thực tế:** `cargo build --release --locked --bin moe-tier-engine` đạt; `python3 tools/stress_http.py tests/fixtures/olmoe/unnormalized-mha /tmp/moe-review-stress.json 30`: **30 vòng đạt**, 20 hoàn tất, 10 hủy; health và giải phóng permit đạt; RSS steady min/max **406.976/407.100 KiB**, spread **124 KiB**. Lần đầu sandbox chặn socket (`PermissionError`); đã chạy lại với quyền được cấp. Đây là stress fixture không có session_id, không xác nhận tải checkpoint 7B/nhiều session.
+- **Thất bại/giới hạn môi trường:** `python3 tools/test_prepare_olmoe.py` dừng ở import vì thiếu `torch`, không được tính là test converter đã pass. `cargo test --locked gpu::tests::test_gpu_probe -- --nocapture` báo **Available=false**; GPU tests có nhánh bỏ qua thực thi khi init thất bại nên không coi kết quả pass là kiểm chứng CUDA. Chưa chạy browser E2E, MSRV 1.85, Windows, audit CVE online hoặc benchmark/chất lượng 7B mới.
+- **Kết quả review:** 2 P1 (session accounting theo len thay vì capacity; metadata pinned buffer công khai có thể phá invariant safe API), 7 P2 (reset vô hiệu KV cache; recycled buffers ngoài ngân sách; web nuốt lỗi SSE; byte I/O trộn VRAM/file; VRAM telemetry bỏ pool/scratch; runner ghi đè mốc cũ; animation routing ngẫu nhiên). P1 pinned buffer và các phát hiện CUDA là phân tích tĩnh, chưa thực thi trên GPU.
+- **Đính chính cách diễn giải các mốc cũ, giữ nguyên lịch sử:** các `format!` và Vec/HashMap còn tồn tại nên chưa có bằng chứng toàn đường chạy zero heap allocations. Đọc buffered file qua `read_exact_at` không đủ chứng minh SSD→host zero-copy DMA hoặc loại bỏ hoàn toàn page faults. Không có phép đo allocation/page-fault mới. Các số hiệu năng Bước 25 là lịch sử, chưa chạy lại; không dùng thay đổi đồng thời cache 128→256 MiB làm bằng chứng riêng cho tăng tốc thuật toán.
+- **Trạng thái lộ trình:** hoàn thành review theo yêu cầu; **chưa vá các phát hiện**. Các mốc triển khai cũ được giữ nguyên, không suy ra hệ thống đã hết lỗi từ trạng thái hoàn thành trước đó. Ưu tiên tiếp theo là R1/R2, sau đó R3/R4/R5 và chuẩn hóa telemetry/bằng chứng R6–R9.
+
+## 2026-10-22 — Chuẩn hóa AI-first: kiểm kê và quyết định phạm vi (đang triển khai)
+
+- Đã đọc nhật ký và review R1–R9. Yêu cầu hiện tại là chuẩn hóa repo/công cụ/bằng chứng trước khi sửa engine; chưa vá R1–R7/R9 trong runtime.
+- Kiểm kê với hai nhánh agent độc lập: 30 JSON benchmark và 3 suite dưới `archive/` trùng SHA-256 với bản canonical; sẽ loại bản sao sau khi lập manifest ánh xạ/checksum. Giữ mọi payload đo duy nhất và lịch sử PROGRESS.
+- Phát hiện persona/plugin tự chế chưa có cấu hình native, quy tắc chưa được root AGENTS dẫn chiếu, nhận diện máy bằng số luồng, thông số hardware suy đoán và exporter so sánh dữ liệu khác phiên bản. Hai testbed từ nay dùng nhãn tường minh `i5`/`i7`; thông số quan sát được ghi riêng với thông tin người dùng cung cấp.
+- Đã tra OpenAI Docs về AGENTS/skills/subagents/MCP, nguồn skill GitHub và khả năng plugin GitHub. Chọn chỉ dẫn root + hai skill đặc thù repo + role review tùy nhu cầu; không cài bộ skill lớn hoặc MCP filesystem/git lặp chức năng shell.
+- `.agents/` và `.codex/` được sandbox bảo vệ ghi; sẽ chuẩn bị/kiểm tra cấu hình cụ thể trong `/tmp` rồi cài với quyền phù hợp. Chưa thay cấu hình cá nhân hoặc kết nối tài khoản bên ngoài.
+- Kiểm tra ở bước này: đọc file, CLI help/version, SHA-256 inventory và nghiên cứu tài liệu; chưa đo hiệu năng mới. Trạng thái: đang triển khai công cụ, CI, tài liệu và dọn bản sao.
+
+## 2026-10-22 — Chuẩn hóa AI-first: nền tảng và corpus bằng chứng
+
+- Đã thay root AGENTS, viết ARCHITECTURE/WORKFLOWS/CONTRIBUTING/AGENT_SETUP, cập nhật README/PLAN/DEMO/ma trận luận điểm/đề cương. Bản thảo báo cáo cũ được gắn nhãn chưa rà soát; không sửa số đo trong bản thảo để làm khớp kết luận.
+- Đã tạo manifest khóa **40 JSON thô duy nhất** bằng SHA-256, loại **33 bản JSON trùng byte** (30 raw + 3 suite), **4 snapshot tài liệu lỗi thời** và **3 CSV sinh tự động**. Kiểm tra archived progress không có dòng bị mất so với nhật ký hiện tại. Raw canonical không đổi; alias và link lịch sử được sửa đích đến, không sửa giá trị đo.
+- Hai testbed dùng nhãn tường minh i5/i7 trong machines.json; các thông số model CPU/GPU/RAM chưa được xác minh đặt null. Bỏ thông số bandwidth/kiến trúc GPU/phần trăm đối đầu không đủ provenance khỏi tài liệu hiện hành.
+- Đã cài 2 skill tự viết (moe-engine/moe-benchmark), 2 role TOML reviewer/evidence_reviewer và config project qua installer kiểm checksum. Bỏ 11 file persona/rules/skill cũ và skills-lock bên thứ ba. Model/account/quyền global không đổi; Docs MCP disabled/optional; GitHub plugin đã tìm nhưng chưa cài/kết nối.
+- Installer lần đầu không thấy `.codex` trên host (thư mục sandbox là synthetic) và dừng trước mutation; đã tạo đúng thư mục project và chạy lại với quyền được cấp. Skill quick_validate.py chính thức không chạy do thiếu PyYAML; kiểm subset frontmatter hiện dùng và TOML bằng stdlib đạt, không coi là validator đầy đủ. `codex --strict-config ... mcp list` không hỗ trợ strict ở command này; chưa tuyên bố handshake MCP hoặc role đã thực thi.
+- Kiểm tra tooling tại mốc này: catalog 40 artifact đạt, **9 tests evidence + 12 tests runner đạt**; check liên kết docs/skill/TOML đạt. Rust examples đã nhận cache/context/GPU thực, suite default path đúng; cpu mode tắt compute sau load và ghi rõ GPU có thể đã cấp VRAM. Chưa đo model 7B mới; đang tích hợp validation output runner và kiểm thử đầy đủ.
+
+## 2026-10-22 — Chuẩn hóa AI-first: tích hợp tooling và kiểm chứng
+
+- Runner v2 build binary thực từ Cargo JSON, yêu cầu testbed/backend tường minh, hash checkpoint/suite, lưu revision/dirty/config/hardware quan sát, unique UTC+UUID và logs; không overwrite. Review độc lập phát hiện exit0+JSON chưa đủ; đã thêm validation schema/runs/settings/metrics/suite thực, lỗi giữ stdout.failed.log và không có result thành công. Suite metadata max_tokens=null vì dùng budget từng case.
+- `python3 tools/check.py --rust --release`: **đạt**, 59 Rust tests/profile, 3 ignored/profile; fmt/Clippy đạt. `cargo fmt --all` chỉ chuẩn hóa format ở src/olmoe.rs/tests/int8_loader.rs, không vá thuật toán engine. Các example benchmark nhận cache/context/GPU, quality default suite path đã sửa.
+- Tooling cuối: **9 evidence tests + 15 runner tests đạt**. Một lần chạy check trong lúc agent đang thay validator/mock fixtures tạm có 4 failure; sau hoàn tất cả 15 test runner đạt. Các hồi quy gồm chống overwrite, dữ liệu lỗi, settings mismatch, provenance/hash và dirty run.
+- `python3 tools/check.py --http`: lần đầu socket bị sandbox chặn; chạy lại với quyền được cấp đạt 30 vòng (20 hoàn tất, 10 hủy). Đã chạy stress standalone và giữ raw trong [validation artifact](reviews/2026-10-22-ai-first-validation.json); không dùng RSS/latency fixture làm baseline 7B. Entry point HTTP cuối cùng cũng đạt, là lần chạy riêng.
+- Tích hợp runner thật: single-prompt và suite tổng hợp trên fixture MHA, 2 runs/cấu hình, context64/cache1MiB/threads2/GPUcpu, output-root=/tmp/moe-ai-first-runs, allow-dirty tường minh. Cả hai status success, schema/config/hash/log khớp. Đây là kiểm tra tích hợp, **không phải benchmark 7B mới**; summary/run ID nằm trong validation artifact.
+- Corpus: đối chiếu từng payload với `git show HEAD:<path>` xác nhận **40/40 raw byte-identical**. Thêm `.gitattributes` -text cho raw/suite/fixture để không bị core.autocrlf đổi byte khi clone máy khác. Bỏ ba suite archive với alias tương ứng: archive/benchmarks/{quality-v1,suite-v1,suite-v2-long-context}.json → benchmarks/suites/<cùng basename>; đã kiểm SHA-256 bằng nhau. Link CSV cũ chuyển đến catalog, giữ nguyên số đo/văn bản lịch sử.
+- Skill forward-test độc lập: đọc hai artifact i5/i7 và trả đúng giới hạn (khác số prompt/output token, thiếu revision/hash/backend; không tính causal speedup). Native Docs MCP được `codex mcp list --json` phát hiện enabled=false. Không tuyên bố đã handshake/chạy role native. GitHub plugin chưa kết nối.
+- CI mới dùng cùng entry point cho fixture Rust/HTTP, có job converter riêng Python3.12/direct dependencies pin và pip freeze. **Chưa chạy GitHub Actions từ xa**. `python3 tools/check.py --converter` vẫn dừng import vì host thiếu torch; dependency profile chưa được cài/kiểm trên host Python3.14. Full skill validator vẫn thiếu PyYAML; restricted frontmatter/TOML/link checks đạt.
+- Còn mở: R1–R7/R9 ở engine/UI, baseline mới hai máy, CUDA thực, MSRV1.85/native Windows và chất lượng/tải dài 7B. Không thêm khẳng định hiệu năng mới. Kế hoạch học tập duy nhất được giữ tại docs/research/LEARNING_PLAN.md thay vì root.
+
+## 2026-10-22 — Chuẩn hóa AI-first: nghiệm thu nền tảng
+
+- Review tích hợp cuối không có blocker sau khi bổ sung recipe chuẩn bị checkpoint `--source`/`--repo --revision`, inspect và giới hạn INCOMPLETE/disk/provenance trong CONTRIBUTING. Máy Windows được hướng dẫn mở đúng workspace Linux/WSL2; không tự coi native Windows/CUDA đã được kiểm chứng.
+- Mọi check chọn để nghiệm thu đã đạt: links/frontmatter/TOML, catalog/checksums 40 raw, 24 tooling tests, fmt/Clippy, 59 Rust tests mỗi profile debug/release, HTTP fixture 30 vòng và 2 đường runner fixture single/suite. `git diff --check` đạt. Chi tiết số đo/checks mới và giới hạn ở [validation artifact](reviews/2026-10-22-ai-first-validation.json).
+- Đã cập nhật PLAN/lộ trình: nền tảng AI-first hoàn thành, R8 tooling hoàn thành. R1–R7/R9 vẫn chưa vá; chưa có baseline i5/i7 mới hoặc kết luận chất lượng/hiệu năng 7B mới. CI đã cấu hình, chưa chạy từ xa; converter host thiếu torch; CUDA không khả dụng; MCP tắt và chỉ xác nhận registration, không handshake.
+- Không commit/push/merge hoặc kết nối tài khoản bên ngoài trong bước này. Đồng nghiệp bắt đầu bằng CONTRIBUTING/AGENTS và `python3 tools/check.py --rust`. Bước tiếp theo là sửa invariant bộ nhớ R1/R2 theo workflow, giữ phép đo hai máy thành tác vụ độc lập sau correctness.
+
+## 2026-10-22 — Diễn giải lượt web do người dùng cung cấp
+
+- Phạm vi: đánh giá hồi cứu một lượt `Where is Mars ?`, server bật bằng `cargo run --release --locked --bin moe-tier-engine`; không chạy benchmark mới, không sửa runtime. Testbed i5/i7 chưa được người dùng xác nhận cho lượt này; thiếu revision/checkpoint hash, threads, history, token count, finish_reason và trạng thái cache đầu lượt.
+- Số người dùng ghi: TTFT 6,64 s; decode 4,02 tok/s; total 38,27 s; hit 81,0%; expert I/O 18,52 s; expert compute 7,93 s; attention 1,97 s; LM head 0,37 s; GPU on; sơ đồ Read 11,49 GB, RSS 5,99 GB, VRAM 3216 MB/299 expert. Đây là bản chép báo cáo người dùng, chưa có JSON/log độc lập; không đưa vào manifest raw đã khóa.
+- Đối chiếu source bằng `rg`/`sed`: web WALL dùng `total_ms` của engine, không phải thời gian end-to-end trình duyệt; nhãn L2 128MB/L và Cold Weights là chữ cố định, server chọn cache thích ứng. Read trên sơ đồ lấy `/proc/self/io: read_bytes` tích lũy theo process (web chia 2^30), không phải `expert_bytes_read` gộp file/VRAM. Cần delta trước/sau request để quy dung lượng đọc cho riêng lượt. RSS chia theo GiB, VRAM theo MiB dù UI ghi GB/MB; VRAM logical còn giới hạn R7.
+- Diễn giải: khoảng 249 ms/decode step; `(38,27 - 6,64) * 4,02 ≈ 127,15` phù hợp khoảng 127 decode steps sau token đầu, có thể gần 128 output tokens nhưng chưa xác nhận. I/O là timer thành phần lớn nhất, định hướng kiểm tra cache/truyền expert; timer chồng lấn không chứng minh SSD-bound hoặc tỷ lệ wall time có thể loại bỏ. Chưa đánh giá chất lượng vì thiếu nội dung output. Không so wall trực tiếp với raw lịch sử max_tokens=16 hoặc suy ra GPU speedup từ nhãn on.
+- Kiểm chứng: chỉ đọc source/tài liệu và tính toán trên số đã cung cấp; không chạy Rust/tests/GPU/benchmark vì không đổi code. Cập nhật nhật ký kiểm bằng `git diff --check -- docs/PROGRESS.md`. Lộ trình engine không đổi; cần mẫu cùng cấu hình và raw trước khi kết luận hiệu năng có kiểm soát.
+
+## 2026-10-22 — Diễn giải lượt thứ hai cùng session web
+
+- Người dùng xác nhận cùng chat/session với lượt Mars, prompt tiếp theo `What is love ?`: TTFT 10,05 s; decode 3,42 tok/s; wall 47,14 s; hit 90,6%; I/O 21,41 s; expert compute 11,99 s; attention 4,14 s; LM head 0,36 s. Đây là số người dùng cung cấp, chưa có raw JSON/log; không chạy benchmark mới hoặc sửa runtime. Testbed/hardware/revision/config chưa được xác nhận thêm.
+- So mô tả hai workload khác nhau: TTFT tăng 51,4%, decode giảm 14,9%, wall tăng 23,2%, hit tăng 9,6 điểm phần trăm; I/O tăng 15,6%, expert compute tăng 51,2%, attention khoảng 2,10 lần. `(47,14-10,05)*3,42 ≈ 126,85` phù hợp khoảng 127 decode steps, tương tự lượt trước nhưng token count thực vẫn chưa xác nhận. Không dùng các tỷ lệ này làm causal regression/speedup.
+- Web gửi toàn bộ history và session_id; cùng session vẫn tăng context và không bảo đảm KV reuse. Source chỉ tái sử dụng khi token prefix khớp và session còn được giữ. Ưu tiên kiểm tra prompt_tokens/cached_prompt_tokens/prefill_ms và lỗi reset R3 đã review (chỉ là giả thuyết cho hai lượt này, chưa biết người dùng có reset). Hit expert không đồng nghĩa hit KV hoặc hết truyền expert; timer I/O vẫn bao gồm đường tải VRAM.
+- Hướng cải thiện có điều kiện: sửa correctness/session reset nếu trigger hiện diện, xác minh prefix reuse; đo tách file/VRAM và prefill/decode; sau đó thử cache RAM có ngân sách tổng, giảm D2H lặp hoặc nghiên cứu compute expert trên GPU, profile CPU kernels/threads. Không cam kết phần trăm tăng tốc; chưa có benchmark chứng minh hướng tối ưu nào cho workload này. Attention tăng phù hợp với context dài hơn nhưng chưa tách nguyên nhân; LM head nhỏ nên chưa ưu tiên.
+- Kiểm chứng: đọc source/review và tính toán từ số đã báo; `git diff --check -- docs/PROGRESS.md` đạt. Không chạy Rust/CUDA/tests vì chỉ cập nhật diễn giải tài liệu. Lộ trình không đổi; chưa triển khai các tối ưu đề xuất.
+
+## 2026-10-22 — Kiểm chứng giả thuyết KV và sửa reset R3
+
+- Mục tiêu: theo yêu cầu suy luận khả năng tăng tốc và có test kiểm chứng, kiểm tra tính đúng của prefix reuse bằng fixture, tái hiện/sửa nguyên nhân vô hiệu KV sau reset. Chỉ sửa R3 tại `src/olmoe.rs`, thêm hai test; cập nhật PLAN/ARCHITECTURE. Các diff chuẩn hóa đã tồn tại trong working tree được giữ nguyên.
+- Trước sửa: `cargo test --locked --lib reset_cache_preserves_session_budget_and_allows_new_prefix_reuse -- --nocapture` **FAIL** đúng trigger: sau reset ngân sách là 0, expected 268435456 byte. Đã bỏ phép gán ngân sách về 0; reset vẫn xóa entries/clock/cache expert/recycled buffers, giữ ngân sách admission để session mới được lưu.
+- Hồi quy mới: hai vòng reset → session mới cold → nối tiếp reuse prefix, kiểm tra cache cũ bị xóa và output token IDs bằng fresh generation. Test thứ hai chia prefix tại mọi vị trí của chuỗi reference, prefill prefix rồi suffix với KV chung trên cả fixture MHA/GQA, so logits với full tokenwise forward ở tolerance hiện có `2e-5` và kiểm chiều dài KV. Đây là kiểm tính đúng/đường reuse, không phải benchmark thời gian.
+- Sau sửa: `cargo test --locked --lib olmoe::cancellation_tests -- --nocapture`: **6 pass**. `python3 tools/check.py --rust`: **PASS**, catalog 40 raw, 9 evidence + 15 runner tests, fmt/Clippy, **61 Rust tests pass / 3 ignored** (50 lib + 2 HTTP + 6 loader + 3 reference). `cargo fmt --all` và `git diff --check`: đạt. Không đổi tolerance/expected fixture.
+- GPU probe trong lượt này: `cargo test --locked --lib gpu::tests::test_gpu_probe -- --nocapture` **PASS**, báo Available=true, NVIDIA GeForce GTX 1650 with Max-Q Design, 3,64 GiB VRAM. Đây là quan sát hiện tại, khác môi trường review trước đã báo Available=false; không gán testbed i5/i7 từ model GPU. Probe không chứng minh tốc độ hay hành vi toàn model 7B. Không chạy benchmark/release/stress HTTP/converter mới; HTTP unit tests có chạy trong all-targets.
+- Diễn giải hiệu năng: R3 tạo cơ hội cải thiện TTFT sau reset bằng cách tránh prefill lại prefix; chưa biết hai lượt người dùng có trigger reset hay không, không khẳng định đã giải thích toàn bộ số chậm. KV reuse không loại bỏ attention trên context cũ và không bảo đảm decode tăng. Cần A/B full-history cùng token IDs/config, reuse bật/tắt, ghi prompt/cached tokens/prefill/decode và samples trước khi định lượng. Cache RAM/VRAM và CPU kernels là thí nghiệm kế tiếp sau telemetry/budget; chưa có % speedup mới.
+- Trạng thái: R3 đã vá và kiểm chứng fixture; R1/R2/R4–R7/R9 còn mở. Chưa đo baseline 7B hoặc hai máy, không thêm raw benchmark vào corpus. Server đang chạy phải được khởi động lại từ code mới để nhận bản sửa.
+
+## 2026-10-22 — Tối ưu prefill: dispatch token theo nhóm (đang kiểm chứng hiệu năng)
+
+- Theo workflow moe-engine/moe-benchmark, chọn nút thắt expert prefill: trước đây cùng một expert xử lý lần lượt từng token, mỗi token gọi các vòng Rayon theo hàng. Bản thử nghiệm gom routes theo số scratch slots đã có, dispatch các token độc lập với kernel single-threaded; nhóm một token giữ đường cũ. Không đổi số threads/cache, không thêm dependency/unsafe, không đổi decode hoặc thứ tự cộng Top-K. Ownership scratch tách bằng slice mutable riêng cho từng task; cancellation kiểm trước/sau nhóm, tối đa một nhóm token đang compute trước khi dừng.
+- Phạm vi code `src/olmoe.rs`; đã giữ source/binary trước sửa và hai snapshot source riêng ngoài repo cùng patch A/B, không reset/commit working tree chính. Không dùng raw lịch sử để thay baseline mới.
+- Kiểm chứng hiện tại: các test prefix/cancellation/logits hiện có đạt. Thêm `parallel_prefill_routes_match_tokenwise_logits_with_tails` trên MHA/GQA, 1/4 threads, chuỗi 1/9/17 token để kiểm nhóm cuối và deterministic logits, tolerance giữ `2e-5`.
+- `python3 tools/check.py --rust --release`: **PASS**, 62 Rust tests/profile debug/release, 3 ignored/profile, fmt/Clippy đạt, 24 tooling tests và catalog 40 raw đạt. `python3 tools/check.py --http`: **PASS**, 20 complete + 10 cancel, RSS steady spread 132 KiB trên fixture (không phải 7B). Converter chưa chạy; chưa có phép đo hiệu năng mới hoặc mức tăng tốc được xác nhận.
+- Đã hỏi nhãn máy i5/i7 để ghi benchmark đúng provenance; đang chờ xác nhận trước khi chạy đo hardware. Dry-run minh họa với i5/auto/cache128MiB/threads4/max_tokens128/runs4 đã đạt; đây chỉ là preview, không xác nhận nhãn máy hiện tại. Kế hoạch A/B dùng cùng checkpoint/config/prompt, before/after xen kẽ nếu đủ điều kiện, giữ samples và kiểm token parity. Chưa nghiệm thu bản tối ưu về hiệu năng, chưa đánh dấu hoàn thành lộ trình.
+
+## 2026-10-22 — A/B i5: loại dispatch nhóm, tối ưu prefix KV có điều kiện
+
+- Người dùng xác nhận workspace là **i5**. Hardware runner quan sát: Intel Core i5-10500H, GTX1650 Max-Q; model GPU status enabled/dense_offloaded. Giữ threads4, cache128MiB/layer, context512, GPUauto. Toàn bộ raw/log/source/hash/diff và từng mẫu nằm tại [artifact thí nghiệm](../benchmarks/experiments/2026-10-22-prefill-i5/README.md); không sửa corpus40 raw/manifest lịch sử.
+- A/B runner chuẩn trên hai snapshot source local trước/sau: before→after→after→before, `Where is Mars ?`, max_tokens16, runs4/process. Mỗi process một engine-cold + ba warm; checkpoint hashes và token IDs khớp cả16 mẫu. Các snapshot có commit riêng/clean trong thư mục tạm, working tree chính vẫn dirty và không commit. Dry-run trước khi đo đạt. Có drift lớn (baseline cuối nhanh hơn baseline đầu), không lấy trung vị gộp làm speedup. Không chạy build/tests/benchmark khác đồng thời với inference đo.
+- Đo dispatch tiếp trong một release binary/model, max_tokens1, warmup4, 9 cặp đảo thứ tự: serial median2046,680ms, grouped2143,930ms; grouped chậm7/9 cặp, median delta từng cặp +4,55%. **Không bật candidate trong runtime**; giữ reference/candidate cfg(test) và ignored test `benchmark_prefill_dispatch_paired` để tái lập. Không kết luận tăng decode dù số đo process A/B có thay đổi decode.
+- Tối ưu được giữ: `take_prefix_kv` tìm longest common prefix, truncate keys/values cùng vị trí, luôn prefill ít nhất token cuối để lấy logits; cấp KV sau lookup để không tạo bộ buffer mới khi có cache dùng lại. Áp dụng cho history sửa/rút ngắn hoặc prefix chỉ khớp một phần; extension khớp hoàn toàn vẫn được reuse như cũ. Không đổi Top-K, tolerance, weights, CUDA FFI hoặc giới hạn context. R1 capacity accounting vẫn mở, không tuyên bố đã giảm RSS/allocation count bằng suy luận source.
+- Hồi quy trước sửa: `cargo test --locked --lib session_reuses_common_prefix_after_edit_and_repeated_prompt -- --nocapture` **FAIL**, reused0 thay expected3 trên MHA. Sau sửa đạt cho MHA/GQA, các trường hợp sửa/lặp/rút ngắn/đổi hoàn toàn; thêm `truncated_session_kv_preserves_logits_and_buffer_ownership` kiểm buffer giữ địa chỉ, độ dài đúng và logits sau truncate khớp full tokenwise ở tolerance2e-5. Test không đổi expected để che regression.
+- Thí nghiệm prefix trên model thật: cùng một model/binary, fixed seed KV phục hồi ngoài timing (giữ capacity), warmup1 cặp +5 cặp đảo thứ tự, prompt116 tokens, max_tokens1, câu hỏi cuối đổi trên context chung. Strict reference reuse0; mới reuse104, còn12 token prefill. Các mẫu prefill cũ: **8827,777 / 9352,213 / 9349,372 / 8846,971 / 8434,258 ms**; mới: **2922,145 / 3006,887 / 2870,175 / 2703,790 / 2629,063 ms**. Median **8846,971→2870,175ms (−67,56%)**; TTFT median8847,387→2870,468ms. Token đầu giống nhau toàn bộ mẫu. Đây là **edited-session exploratory workload**, không phải tái hiện chat Mars128→Love128 hoặc speedup decoder. OS cache/tải desktop/nhiệt/tần số chưa cố định, expert cache tiến hóa; nguồn/hash/provenance trong artifact.
+- Lệnh đo component: `RAYON_NUM_THREADS=4 MOE_PREFILL_TESTBED=i5 MOE_PREFILL_MODEL=models/olmoe-1b-7b-int8 MOE_PREFILL_REPORT=<unique.json> cargo test --release --locked --lib benchmark_session_prefix_paired -- --ignored --nocapture --test-threads=1`. Mode strict reference chỉ tồn tại cfg(test). Đây là thí nghiệm thành phần bổ sung runner A/B, không thay baseline protocol. Output create_new không overwrite; raw đã giữ nguyên byte khi chuyển từ runs ignored sang thư mục experiments.
+- Kiểm chứng cuối: `python3 tools/check.py --rust --release --http` **PASS**: **64 Rust tests/profile**, **5 ignored/profile** (hai ignored experiment mới đã chạy riêng), fmt/Clippy, 24 tooling tests, catalog40 và HTTP fixture20 hoàn tất/10 hủy; RSS steady spread172KiB chỉ là fixture. `git diff --check` đạt. GPU model runs báo enabled/dense offloaded; không có profiler xác nhận từng kernel. Converter/chất lượng chuẩn hóa/MSRV/Windows/i7 chưa chạy trong lượt này.
+- PLAN/ARCHITECTURE cập nhật hành vi cuối; ghi rõ trial dispatch bị loại. Chưa đo causal speedup cho chuỗi chat bình thường, không cam kết3,42→X tok/s. Cần khởi động lại server để nhận prefix reuse mới. Các R1/R2/R4–R7/R9 vẫn mở. Không commit/push/merge working tree chính.
+
+## 2026-10-22 — HTTP Mars→Love: baseline và candidate VRAM victim (đang đo đối chứng)
+
+- Theo yêu cầu tối ưu đúng workload web: thêm `--http-session` vào runner, đo SSE `Where is Mars`→`What is love ?`, max_tokens128, mới history/session và reset L1/L2/KV mỗi vòng. i5 đã được người dùng xác nhận; cache128MiB/layer, threads8, context512, GPUauto được cố định tường minh (không suy từ nhãn128MB/L trên UI). Server cũ không còn chạy khi bắt đầu đo; chỉ một model đo tại một thời điểm.
+- Sandbox GPU probe Available=false, host probe Available=true/GTX1650 Max-Q. Socket sandbox bị chặn; GPU/HTTP experiments chạy host bằng quyền đã được cấp. Quan sát trước khi server cũ dừng: RSS khoảng6,7GiB, VRAM3,2GiB, MemAvailable thấp/zram gần đầy; sau server dừng MemAvailable khoảng8,5GiB. Không dùng hai thời điểm này làm A/B tối ưu.
+- Instrumentation mới giữ expert_io_ms cũ và tách prefill/decode, file-read, VRAM download/upload, payload bytes và số load. File payload gồm prefetch thành công, kể cả speculative không dùng; không đồng nghĩa byte SSD. Upload có timer riêng, chưa nằm trong expert_io_ms cũ. Các timer chồng lấn không cộng thành wall. CPU fixture kiểm payload/count/phases; parser SSE từ chối generation_error/EOF thiếu finish/DONE/metric lỗi.
+- Baseline HTTP hai vòng: Mars wall62,752/56,496s, Love65,587/54,306s. Mỗi request payload upload khoảng52GiB; Love166 prompt tokens nhưng cached_prompt_tokens=11. Điều này chưa xác định chính xác nguyên nhân mismatch; không tự sửa whitespace/chat template để tăng reuse vì sẽ đổi input/model output.
+- Candidate victim: chỉ upload expert bị evict khỏi RAM, xóa bản sao VRAM khi admit vào RAM; fallback giữ L1 khi expert không vừa ngân sách L2. Không đổi weights/Top-K/reduction/prompt. Thêm remove_with_pool nội bộ, trả slot khi synchronous transfer đã hoàn tất; kiểm GPU thực xác nhận logits tolerance2e-5, tiers không trùng và reset trả đủ slots, kể cả L2 budget0. Candidate hiện opt-in qua MOE_EXPERT_CACHE_POLICY=victim; inclusive vẫn là reference.
+- Candidate hai vòng: Mars wall41,870/40,828s, Love49,395/50,579s. Đối chứng lại process riêng: inclusive43,958/46,409s (Mars/Love), victim31,560/47,707s. Output text/usage khớp các lượt đã so; có drift lớn nên **chưa dùng các trung vị này để khẳng định mức tăng tốc**. Dữ liệu tại benchmarks/experiments/2026-10-22-web-session-i5-081202; sẽ lập báo cáo/checksum sau hoàn tất.
+- Để giảm confound reload/cache OS: reset API thêm query expert_cache_policy=inclusive|victim, đổi policy+reset dưới cùng model lock, 400 với policy không hợp lệ và429 nếu bận; API cũ không query giữ policy hiện hành. `--compare-cache-policies` chạy AB/BA trong một loaded server, mỗi policy vẫn reset rồi đủ2 lượt128 token. HTTP fixture đã chạy8 requests/4cycles thành công; đang chuẩn bị phép đo GPU cùng process.
+- Các lỗi phát triển đã gặp/sửa: thêm metrics nhầm dấu phân cách khiến compile thiếu fields; Clippy báo ChatEvent lớn sau mở telemetry (giữ public API với allow cục bộ, queue vẫn8); cập nhật7 call admission trong tests sau thêm tham số; lỗi đặt metadata runner sai scope được phát hiện trước đo tiếp và sửa. Checks debug/release trước phase paired đạt; kết quả cuối và số test sẽ ghi khi nghiệm thu. Không đổi expected/tolerance fixture, chưa commit/push/merge.
+
+## 2026-10-22 — Nghiệm thu thử nghiệm HTTP/SSE i5 và bật VRAM victim cache
+
+- Đã hoàn tất20 lượt7B HTTP/SSE thật qua5 run records: các vòng process riêng để nhận diện drift, sau đó AB/BA trên cùng một server/model là phép đo chính. Mỗi vòng reset, Mars128, rồi Love128 cùng session/history; config cache128MiB/layer/context512/threads8/GPUauto. Toàn bộ [raw, từng mẫu, source, logs và giới hạn](../benchmarks/experiments/2026-10-22-web-session-i5-081202/README.md). Không đổi raw lịch sử hoặc artifact prefill trước đó.
+- Phép đo chính cùng process có thứ tự inclusive→victim→victim→inclusive, **n=2/policy/prompt**. Mars wall inclusive **63,253/59,214s**, victim **45,111/51,914s**; median **61,234→48,512s (−20,77%)**. Love wall inclusive **66,629/65,664s**, victim **54,970/59,565s**; median **66,147→57,268s (−13,42%)**. Cả hai cặp AB và BA giảm wall ở cả hai prompt. Đây là trung vị mô tả2 mẫu, không có confidence interval và không phải speedup phổ quát.
+- Decode median Mars **2,319→2,970 steps/s**, Love **2,408→2,756**. TTFT median Mars6,429→5,483s; Love13,370→11,133s. Text UTF-8 đầy đủ, usage và128 completion tokens khớp các policy; HTTP không trả token IDs nên không gọi là bit-exact logits7B. Fixture CUDA so CPU đạt tolerance2e-5. Love vẫn cached11/166 tokens; vấn đề reuse lịch sử chưa được giải thích/vá hoàn toàn.
+- File payload/load giảm: Mars **5581→4233 loads** (~32,79→24,87GiB), Love **5447→4251** (~32,00→24,97GiB). Payload file không phải SSD device bytes; raw còn có process read_bytes delta theo từng turn. D2H tăng vì tăng hit VRAM; không tuyên bố mọi truyền dữ liệu giảm. Legacy expert_io_ms không gồm upload; các timer đường load/prefetch/upload không phải riêng latency thiết bị, có overlap.
+- Đính chính số recheck chép nhanh ở mục trước: raw chính xác inclusive Mars43,955522114s/Love46,410518816s, victim Mars31,556645211s/Love47,714914159s. Các lượt process riêng này chỉ minh họa drift, **không được gộp vào phần trăm của phép đo chính**. Không so trực tiếp với46,74/53,32s do người dùng báo vì cache thật/lịch sử/tải nền của lượt đó chưa xác minh.
+- Bật mặc định `MOE_EXPERT_CACHE_POLICY=victim`; `inclusive` giữ implementation cũ để đối chứng/rollback. Resolve biến policy trước khi load; reset không query giữ policy hiện tại. Default đổi sau phép đo, nhưng policy trong AB/BA đã được ép/kiểm qua status nên không thay đường compute được đo. Source/diff cuối được giữ trong artifact; không thêm unsafe/dependency hoặc sửa chat template/sampling/expected fixture.
+- Kiểm chứng cuối: `python3 tools/check.py --rust --release` **PASS**, **68 Rust tests/profile debug/release**,5 ignored/profile; fmt/Clippy, **30 tooling tests** (9 evidence+21 runner), catalog40 đạt. Targeted host CUDA tests `victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits` (in rõ EXECUTED) và removal idempotency đạt; covers ownership/disjoint tiers/pool reset/L2 budget0. HTTP fixture chuyển policy AB/BA8 requests đạt; `python3 tools/check.py --http` host đạt30 vòng20 complete/10 cancel, RSS steady spread164KiB chỉ là fixture. Logs trong artifact validation/. Converter/MSRV/Windows/i7/quality chuẩn hóa chưa chạy.
+- Giới hạn: dirty exploratory, một testbed và hai prompt, OS cache/tải desktop/nhiệt/tần số chưa cố định; dù cùng process vẫn drift. Không đo saturation NVMe/PCIe/GPU hoặc peak RSS riêng từng policy, không kết luận chạm trần hardware. Có bằng chứng giảm lượng file load và wall trong config đã đo; I/O vẫn lớn và cần nghiên cứu tiếp. R1/R2/R4/R5/R7/R9 vẫn mở; R6 có metrics riêng mới nhưng field/nhãn legacy còn tồn tại.
+- PLAN/ARCHITECTURE/README và protocol benchmark cập nhật; chưa commit/push/merge. Server riêng của runner đã được dừng sau đo; chạy lại lệnh server hiện tại để dùng policy mặc định mới. Giữ nguyên các thay đổi trước phiên trong working tree.
+
 ## Mẫu cho mỗi bước tiếp theo
 
 ```text
@@ -1932,3 +2053,98 @@ Kết luận và bước tiếp theo:
 
 
 
+
+## 2026-10-22 — Chuẩn bị runner kiểm chứng nhiều workload HTTP
+
+- Theo yêu cầu tạo runner sẵn, dùng workflow `moe-benchmark`; không sửa Rust hoặc hiện vật thí nghiệm đã đóng băng. Thêm `tools/run_scenarios.py` và `--http-scenario` vào entry point chung: cold, warm, conversation, topics, long-context, cache-sweep. Hướng dẫn/spec/giới hạn tại [SCENARIOS.md](../benchmarks/SCENARIOS.md). Không truyền preset vẫn giữ chuỗi Mars→Love cũ.
+- Mặc định wrapper 5 mẫu mỗi policy, max_tokens128, so inclusive/victim theo AB/BA cùng loaded server. Mỗi cycle reset cache; warm chạy một warmup riêng rồi đo trong session mới để tách expert-cache warmth khỏi KV reuse. Topics giữ expert cache nhưng dùng chat/session độc lập mỗi câu để tránh context tăng. Conversation giữ history và assistant output thật. Cache sweep128/192/256MiB chạy tuần tự, dừng khi lỗi; thứ tự ngân sách cố định còn confound nên cần lặp đảo thứ tự trước khi kết luận về RAM.
+- Record giữ spec/version/hash, policy plan, history/session thực gửi, warmups riêng với measured runs; từng request hoàn tất publish ngay, không overwrite. Process read_bytes thiếu quyền/không tồn tại ghi null thay vì tự suy ra0. Long-context là prompt tĩnh dài hơn, không phải near-context theo token; input/output vượt context phải báo lỗi API.
+- Kiểm thử protocol: bổ sung8 hồi quy về warmup/session/history/reset/persist khi fail/thứ tự policy/cache sweep/forward config và từ chối custom flags bị bỏ qua. `python3 tools/check.py`: **PASS**, catalog40 raw bất biến, 9 evidence +29 runner tests. Preview cả6 preset bằng `--testbed i5 --gpu auto --threads 8 --allow-dirty --dry-run`: **PASS**; không build/hash/load model trong preview.
+- Kiểm tích hợp host (socket sandbox cần quyền host): chạy cold/warm/conversation/topics qua wrapper, fixture `tests/fixtures/olmoe/unnormalized-mha`, i5 do người dùng xác nhận, CPU/threads2/cache1MiB/context64/max_tokens3/runs2; cả4 records success, policy plan inclusive→victim→victim→inclusive. Tổng32 measured requests +4 warmups, đã kiểm số lượng trong result.json. Lệnh mẫu trong SCENARIOS; artifact kiểm protocol tạm `/tmp/moe-scenarios-fixture-vde67m7c`, không đưa corpus luận văn. Không dùng timing fixture để nhận định hiệu năng7B. Long-context chỉ preview (fixture giới hạn64 tokens); cache-sweep kiểm composition/sequential-stop bằng test và preview, chưa chạy toàn sweep trên model thật.
+- Trạng thái: runner sẵn, chưa có phép đo7B/i7/chất lượng chuẩn hóa mới, không xác nhận speedup thêm. Hướng nghiên cứu tiering/cache trên phần cứng giới hạn phù hợp và đã có bằng chứng exploratory victim cache; ưu tiên tiếp R1/R2/R4 accounting/invariant, sau đó nhiều workload/ít nhất5 mẫu mỗi policy và chất lượng/độ ổn định. Chưa đủ bằng chứng gọi hardware bão hòa hoặc bảo đảm tốc độ cho mọi prompt. Rust/CUDA/release/converter không chạy lại vì lượt này chỉ sửa tooling/docs; GPU CPU fixture không chứng minh CUDA kernels. Không commit/push.
+
+## 2026-10-22 — Handoff kế hoạch đóng giai đoạn 1
+
+- Theo yêu cầu chuẩn bị chuyển session, bổ sung mục kế hoạch nghiệm thu vào PLAN: R1/R2 → R4 → R5 và nhãn demo → checks/model thật → baseline i5 → đóng bằng chứng/tài liệu. Ghi điều kiện đạt, phạm vi chuyển giai đoạn2, giới hạn exploratory/fixture và điểm bắt đầu session mới.
+- Chỉ cập nhật tài liệu; chưa vá thêm engine, chưa benchmark hoặc xác nhận hoàn tất giai đoạn1. Giữ toàn bộ working tree hiện có; không commit/push. Kiểm `python3 tools/check.py` theo kết quả bên dưới; không cần chạy lại Rust/GPU cho thay đổi tài liệu.
+- Kiểm chứng handoff: `python3 tools/check.py` **PASS** (catalog40, 9 evidence +29 runner tests, kiểm links/cấu hình). Không có số đo hiệu năng mới.
+
+## 2026-10-22 — Đóng giai đoạn1, bước1: R1/R2
+
+- Tiếp tục trong cùng session theo yêu cầu, dùng moe-engine. R1 thêm hồi quy `session_budget_counts_reserved_capacity_for_short_prompts`: trước sửa FAIL (session ngắn vẫn admit vào budget1024B), sau sửa PASS. Admission/eviction tính capacity KV, token IDs/vector metadata/state và ID capacity; budget20.000B chỉ giữ được session mới nhất, thay vì giữ nhiều allocation full-context. Không thay output/tolerance, `kv_cache_bytes` tiếp tục nghĩa logical payload; chưa gồm HashMap buckets/allocator bookkeeping/active request và không gọi đây là RSS limit.
+- R2 ẩn PinnedBuffer.len, thêm getter và compile-fail doc test chống sửa allocation size từ safe Rust. Allocation từ chối0/>isize::MAX/context activation fail; zero-init host bytes trước khi tạo slice, doc typed validity/alias/DMA và Send/Sync invariant. Staging layout dùng checked arithmetic, buffer nhỏ fallback sang host slices. Không thêm unsafe block/dependency; làm rõ điều kiện của unsafe hiện có, không tuyên bố mọi GPU API đã được audit hoàn toàn. Zero-init có chi phí lúc cấp buffer, chưa đo tác động load/TTFT7B.
+- `cargo test --locked --doc`: PASS1 compile-fail. `python3 tools/check.py --rust --release`: PASS tooling38 tests/catalog40, fmt/Clippy và Rust debug/release (63 lib:58 pass/5 ignored mỗi profile, cùng HTTP/loader/reference đạt). GPU tests trong sandbox không xác nhận CUDA; chạy host riêng `test_gpu_pinned_buffer`, `undersized_pinned_staging_falls_back_and_preserves_logits`, `test_gpu_probe` đều PASS. Hai test in EXECUTED: kiểm zero-init/bounds/typed roundtrip và staging8B không bị ghi, pool upload fallback có experts, engine healthy, logits fixture tolerance2e-5. Probe Available=true GTX1650 Max-Q3,64GiB.
+- PLAN/ARCHITECTURE cập nhật R1/R2. Chưa benchmark7B hoặc nghiệm thu cả giai đoạn1; bước tiếp R4/R5, model thật và baseline. Giữ toàn bộ diff trước đó, chưa commit/push.
+
+## 2026-10-22 — Đóng giai đoạn1, bước2/3: R4 và SSE frontend
+
+- R4: thêm Int8Expert.allocated_bytes theo capacity, L2 admission/removal dùng allocation thay payload; recycled pool chỉ nhận buffer khi cache+pool còn vừa ngân sách, prune pool trước admission. Failed VRAM download bỏ buffer thay vì giữ ngoài ngân sách. Prefill prefetch giới hạn topK experts, phần còn lại nạp khi dùng; decode có tối đa topK active +2 lookahead. Status bổ sung recycled_bytes và headroom expert_request_payload_limit_bytes riêng: (topK+2)×payload/expert, không gồm dense/KV/scratch/pinned/metadata, không gọi là tổng RSS. Đây là thay đổi giữ bộ nhớ, chưa khẳng định tăng tốc; giảm parallel prefetch có thể đổi TTFT, cần phép đo mới.
+- Hồi quy `expert_retained_budget_covers_cache_and_recycled_after_churn` PASS: budget0/512/900/1536, nhiều prompt/decode8 tokens, cache+recycled capacity luôn trong budget, output khớp reference budget lớn, reset trả0. `prefill_prefetch_is_bounded_and_recycled_capacity_is_charged` PASS: recycled Vec rỗng nhưng có capacity vẫn bị tính, prefetch4 misses chỉ nạp2. Lỗi phát triển type inference `.sum()` trong assert đã sửa bằng `.sum::<usize>()` trước kiểm tiếp; không đổi expected/tolerance.
+- R5: tách parser dùng thật `web/chat_stream.js`, serve asset từ Rust. Parser xử lý UTF8/chunk split, generation_error, missing terminal/DONE, post-terminal data, abort; cancel/release reader khi lỗi. Handler chỉ commit history/metrics khi stream hoàn tất; request history riêng, lỗi/Stop giữ partial có nhãn nhưng không persist, error text dùng textContent. Tạm khóa Clear Chat khi đang generate. Live chunk rate ghi chunks/s, không giả token count; terminal engine metrics vẫn tok/s.
+- Nhãn demo R6/R7/R9: load wait không gọi SSD wait; VRAM ghi logical/chưa gồm pool/scratch; routing/VRAM placement ghi minh họa, bỏ pulse ngẫu nhiên theo token. Sample baseline UI gắn historical unverified; bỏ tỷ lệ tăng tốc cố định trong flow. DEMO đính chính R3 đã vá. Không sửa historical raw/claim tại nguồn cũ; accounting physical VRAM vẫn backlog.
+- Kiểm đến bước này: `python3 tools/check.py --rust --release` PASS sau R4/parser asset: 65 lib tests/profile (60 pass/5 ignored), HTTP3+loader6+reference3 đạt, tooling38/catalog40; fmt/Clippy đạt. `python3 tools/check.py --web` PASS, thêm7 Node SSE tests; syntax check JS asset và script inline PASS. Node `--test` trên môi trường này chỉ báo1 file, nên chạy trực tiếp CJS qua --web để thấy đủ7 tests. Chưa kiểm browser trực tiếp; thêm --web tùy chọn để không ép Node vào default stdlib checks. Chưa benchmark/model7B sau sửa; đang kiểm HTTP/GPU và smoke model thật tiếp.
+- Kiểm tiếp HTTP host: `python3 tools/check.py --http --web` PASS, fixture30 vòng (20 complete/10 cancel), RSS steady spread160KiB;7 Node tests đạt. Asset frontend được embed trong binary và endpoint `/chat_stream.js`. Đang chạy smoke7B riêng sau khi toàn bộ build/tests đã kết thúc, không đo đồng thời.
+
+## 2026-10-22 — Đóng giai đoạn1, bước4 và giới hạn nghiệm thu
+
+- Smoke7B HTTP trên i5/GPU thật: [artifact canonical](../benchmarks/experiments/2026-10-22-stage1-validation/README.md), giữ nguyên2 raw records (failed-harness/model-smoke), logs, runner, source ZIP, checkpoint/source/binary hashes và từng request. Copy từ runs sang experiments kiểm SHA khớp, chưa xóa raw tạm hoặc đổi manifest40. CHECKSUMS27 payload đạt. Lượt đầu Mars/Love hoàn tất rồi harness lỗi alias `http.client` bị module benchmark_http_session che tên; giữ status failed, sửa script và chạy lại server/runID mới, không coi là engine regression. Khi tạo checksum gặp sai cwd, sửa đường dẫn rồi tạo/kiểm thành công; không thay raw.
+- Lượt hoàn tất:16 requests protocol đạt, thêm1 request cố ý đóng stream sau content đầu; reset retry429 đến khi model nhả lock rồi request mới16 tokens hoàn tất. Mars32→Love32 cùng session, sau đó input dài16 và quality suite12 case/budget gốc. GPU enabled/victim/threads8/cache128MiB-layer/context512/dense3GiB, một server riêng không concurrent build/tests/inference. Hash weights trước load nên không SSD/OS-cold. `status_end` cache+recycled trong budget tất cả layer; asset frontend serve được. Không có A/B tốc độ hoặc baseline sạch mới.
+- Quality heuristic **10/12**, lỗi capital-vietnamese (model trả Hồ Chí Minh) và retrieve-day. Exact sau trim/substring case-insensitive, không chất lượng chuẩn hóa hoặc parity logits7B. Sample RSS sau request3,78–4,58GiB, không phải peak toàn hệ thống/A-B RAM; SwapFree hệ thống4.194.300→3.488.264KiB nên còn áp lực swap/tải desktop. Không gán toàn bộ swap cho engine hoặc kết luận đã ổn định bộ nhớ. Source/raw từng mẫu trong artifact; không so trực tiếp với max_tokens128 trước đó.
+- Sau smoke chạy lại host CUDA `victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits`, `undersized_pinned_staging_falls_back_and_preserves_logits`, `test_gpu_pinned_buffer`: PASS, in EXECUTED. `cargo test --locked --doc`: PASS1 compile-fail. Tổng Rust sau R4:72 pass/profile debug/release (lib60 + HTTP3 + loader6 + reference3),5 ignored/profile; tooling38 + Node7. HTTPfixture30 vòng20 complete/10 cancel, RSS spread160KiB. Sau source snapshot smoke chỉ chỉnh thêm nhãn UI về timer overlap/logical VRAM/flow file→RAM, không đổi Rust compute. Chưa kiểm trình duyệt trực tiếp: không có browser/Playwright trong môi trường; không cài thêm dependency.
+- PLAN/EVIDENCE_MATRIX/DEMO/bản thảo có đính chính và dẫn raw mới; không xóa kết luận lịch sử tại nguồn. Còn bước5 baseline>=5 mẫu/policy trên revision sạch và kiểm browser, quyết định nghiệm thu/chất lượng/swap. Working tree có nhiều thay đổi từ trước; theo PLAN không tự commit để làm sạch. Chưa chốt giai đoạn1, không commit/push/merge. INT4/VNNI/Paged KV vẫn để sau nền tảng.
+- Kiểm cuối sau nhãn UI: `python3 tools/check.py --web` PASS (38 Python +7 Node, catalog40 và links), syntax inline JS PASS; `git diff --check` đạt (Git cảnh báo CRLF hiện có ở generation.rs). `python3 tools/check.py --http --web` build lại binary cuối/HTTP fixture theo kết quả tiếp theo. Đính chính câu R2 “không thêm unsafe block”: không thêm unsafe block trong đường production; test fallback mới có unsafe đọc byte slice đã khởi tạo, không có DMA đang dùng, được kiểm host CUDA.
+- Binary cuối và HTTP fixture: `python3 tools/check.py --http --web` **PASS**,30 vòng20 complete/10 cancel, RSS steady spread148KiB trong lần cuối (160KiB là lần trước, giữ cả hai quan sát). Không có inference server của smoke/fixture được giữ chạy. Chưa chạy baseline clean hoặc commit/push; điểm tiếp tục là bước5 và kiểm browser, không lặp lại R1/R2 đã vá.
+
+## 2026-10-22 — Người dùng kiểm web đạt chức năng, phát hiện OOM thực
+
+- Người dùng tự kiểm7 bước: chat thường đúng, follow-up nhận ra Mars, Stop có nhãn chưa hoàn tất/không lưu, gửi sau Stop được, lỗi context có nhãn không lưu, reset/khôi phục và reload history bình thường. Ghi đây là manual user-reported pass, không phải automation, chưa có Console log. Số UI người dùng gửi nguyên giá trị: TTFT3.64s, decode9.44tok/s, wall17.08s, hit94.8%, I/O6.57s, expert5.72s, attention1.88s, LMhead0.36s. Chưa xác minh revision/cache/token limit/GPU thực/routing history của lượt này; không so causal với raw trước hoặc coi là baseline.
+- Người dùng báo RAM tăng rồi VS Code terminated. Read-only `journalctl -k -b` xác nhận OOM22:05:20 giờ Việt Nam: killed moe-tier-engine PID22818, anon-rss10.416.220KiB (~9,93GiB), file-rss69.184KiB, shmem94.884KiB; thuộc app VSCode scope. [Kernel log UTC đã giữ](reviews/2026-10-22-i5-oom.log). Chưa có bằng chứng riêng kernel giết VSCode; cùng scope không tự chứng minh group kill. Đây là lỗi thiếu bộ nhớ thực, không được diễn giải đơn thuần “cache ấm bình thường”.
+- Static source `detect_adaptive_cache_bytes`: MemAvailable>=8GiB chọn256MiB/layer (~4GiB/16layer), >=5GiB chọn192, >=3GiB chọn128, còn lại64; quyết định trước model load, không trừ dense/IDE/request từ budget. Smoke trước ép128MiB/layer, không tương đương startup mặc định. Cache thực tại thời điểm OOM chưa thu được, chưa quy kết adaptive là nguyên nhân duy nhất hoặc xác nhận leak. R1/R4 không phải total-RSS governor; còn dense CPU/GPU fallback, active scratch, allocator retention và OS/desktop.
+- Đề xuất giảm rủi ro khi chạy tiếp: ép64MiB/layer bằng MOE_CACHE_BYTES_PER_LAYER=67108864, một server, max_tokens32; đây là cấu hình giảm cache, chưa chứng minh hết OOM và có thể chậm hơn. Chưa chạy tải7B/build/test song song trên máy sau incident, không cố gây OOM. PLAN chuyển ưu tiên sang điều tra/budget tổng và kiểm RAM dài có giám sát trước baseline tốc độ/nghiệm thu. Không sửa runtime trong lượt chẩn đoán; tooling/docs checks ghi bên dưới.
+- Kiểm chẩn đoán/tài liệu: `python3 tools/check.py` PASS, catalog40 và38 Python tests, links/cấu hình đạt. Không chạy Rust/CUDA/benchmark mới vì lượt này chỉ đọc log/source và ghi nhận manual/OOM; chưa có bản vá hay xác nhận hết lỗi RAM.
+
+## 2026-10-22 — Hướng dẫn tiếp nhận agent trên testbed i7
+
+- Theo câu hỏi về agent máy i7, kiểm quy tắc chung đã có và bổ sung mục Tiếp nhận trên testbed i7 vào WORKFLOWS, dẫn từ AGENTS và benchmark README; không tạo status/handoff file trùng. Hướng dẫn source/commit đã chia sẻ, checkpoint độc lập/hash, Linux/WSL2, checks/GPU executed-vs-skipped, explicit testbed/config, RAM preflight trước baseline, AB/BA policy khác hardware comparison và lưu raw/log/owner PROGRESS trên branch riêng.
+- Ghi rõ clone không nhận phần chưa commit/push, hardware i7 chưa được xác minh, example cache64 là preview không phải optimum/đối chứng đã chốt, OOM i5 còn mở và không được mặc định i7 ổn định. Không thay machine inventory/manifest hoặc đổi nhãn raw lịch sử; không đo i7 trên máy i5, không commit/push.
+- `python3 tools/check.py`: PASS, links/cấu hình, catalog40 và38 Python tests. Chỉ sửa tài liệu, không chạy Rust/CUDA/benchmark hoặc xác nhận hardware i7 mới.
+
+## 2026-10-22 — Chốt hướng agent/tài liệu theo mục tiêu ghi báo cáo hai cấu hình
+
+- Người dùng làm rõ: i5/i7 cùng cách test và cùng lượng cache RAM để ghi báo cáo, không đặt mục tiêu so/xếp hạng CPU. Đồng bộ AGENTS, PLAN, WORKFLOWS, benchmark README/SCENARIOS: giữ revision/checkpoint/workload/history/context/token limit/số lượt/reset-warmup thống nhất, cache MiB/layer tường minh; hardware/backend/threads thực ghi riêng, không gán chênh lệch cho CPU. Bộ báo cáo victim dùng --single-policy; AB/BA là nghiên cứu policy độc lập, không tự áp default wrapper thành protocol nghiệm thu.
+- Ưu tiên tiếp được ghi ngay trong AGENTS/PLAN: điều tra OOM và budget tổng/headroom, kiểm RAM dài có giám sát, rồi mới chốt ngân sách cache chung và đo báo cáo/đóng giai đoạn1. Chưa chốt64/128/256MiB là mức chung an toàn. PLAN cập nhật manual web người dùng đã kiểm7 bước đạt, không coi browser hoàn toàn chưa có bằng chứng; giữ rõ thiếu automation/Console và lỗi OOM thực. Không sửa raw/artifact đóng băng hoặc diễn giải lại số đo cũ.
+- Kiểm `python3 tools/check.py`: PASS, links/cấu hình, catalog40 và38 Python tests. `git diff --check` các tài liệu sửa đạt. Chỉ chuẩn hóa chỉ dẫn/tài liệu, không sửa runtime/default runner, không đo i7/Rust/CUDA/hiệu năng mới; chưa commit/push nên clone khác chưa nhận thay đổi này.
+
+## 2026-10-22 — Tiếp tục OOM: guard RAM và runner theo dõi độc lập
+
+- Dùng moe-engine, không coi R1/R4 là total RSS cap. Bỏ adaptive cache theo MemAvailable ở server startup; mặc định64MiB/layer cố định, override vẫn tường minh. Preflight trong model load tính dense decoded từ descriptor + toàn cache cấu hình +256MiB session + conservative request reserve +512MiB overhead, từ chối trước weights nếu không đủ RSS/headroom. Đây là estimate, chưa xác định nguyên nhân duy nhất của OOM cũ.
+- Thêm src/ram.rs: Linux đọc RSS/MemAvailable, xét visible cgroup-v2 memory.max/current; default RSS=min(6GiB,RAM/2), headroom=min(1GiB,RAM/8), override MOE_RAM_LIMIT_BYTES/MOE_RAM_HEADROOM_BYTES byte dương. Thiếu telemetry cảnh báo; chưa có hard cap/cgroup ancestor/v1 đầy đủ. Generation reserve trước cấp scratch/clone rồi guard lấy mẫu25ms tại cancellation boundaries, cancel vẫn kiểm mỗi lần. Guard từ chối trả OutOfMemory; API503 trước ready, SSE generation_error sau ready; wrapper bỏ session/cache/recycled host sau khi worker dừng dùng, không force allocator release/dense unload. Logits diagnostic không dùng generation wrapper, không tuyên bố mọi API hết OOM.
+- Status ghi dense_bytes thực (thay hardcode3GiB), RSS limit/headroom, session allocated/budget, VmSwap/MemAvailable; khi bận vẫn có thể snapshot cũ. Kiểm2 pure RAM tests (reserve/RSS/headroom/overflow + KiB/unknown fields), model hồi quy memory pressure reject trước ready/clear host/retry, API503 unit đạt. `python3 tools/check.py --rust --release --web` PASS: Rust76 pass/profile (lib63+HTTP4+loader6+reference3),5 ignored/profile; fmt/Clippy, Python38 lúc trước thêm watchdog/39 sau thêm test, Node7/catalog40 đạt.
+- Host đã có server PID25175; hỏi để tránh nạp hai model, người dùng nói sẽ dừng và sau đó host pgrep xác nhận không còn server. Không tự kill server người dùng. Kiểm host `python3 tools/check.py --http --web` PASS: Python39/Node7/catalog40, HTTPfixture30 vòng20 complete/10 cancel, RSS spread148KiB. GPU probe Available=true GTX1650 Max-Q; victim cache targeted test in EXECUTED, logits tolerance2e-5/disjoint/pool reset đạt. Không chạy7B đồng thời build/tests.
+- Thêm tools/check_ram_stability.py: testbed/gpu/cache bắt buộc, prebuilt binary/source+checkpoint+binary hash, input/output/status từng turn, sampler250ms giữ memory.jsonl. Watchdog terminate chỉ child sở hữu khi RSS>5,5GiB/MemAvailable<1,5GiB/VmSwap>128MiB hoặc thiếu telemetry. Engine RSS trong test5GiB/headroom1GiB. Test watchdog thresholds/missing telemetry đạt; preview i5/auto/cache64 đạt. Đang chạy12 request7B,32 token,threads8/context512/cache64; chưa ghi kết quả khi chưa hoàn tất.
+- Lượt i5 supervised12×32 tokens hoàn tất: raw `benchmarks/runs/i5/20261022T154218.060384Z-ram-cf943e32ca074eefaf0756d10f9de762`, từng turn có output/status và memory.jsonl. Chưa suy ra stability dài hoặc causal RAM reduction. Thêm --keep-cache vào runner sau lượt này (binary engine giữ nguyên) để kiểm12×128 token giữ expert cache, snapshot Python riêng từng run.
+- Lệnh thử startup trực tiếp cache256MiB bị automatic approval review từ chối vì không có watchdog/timeout nếu preflight sai có thể gây OOM; không thực hiện lệnh đó. Thay bằng kiểm âm tính qua runner có watchdog, cache256/guard5GiB: record `20261022T154721.211773Z-ram-8da903c7837d41d1875a873c817a0a3d` status failed như mong đợi, server.log báo OutOfMemory với planned reserve7.288.299.520B trước weights. RSS ở log preflight8.208.384B; sampler250ms không bắt trúng peak ngắn, không gọi sample max là peak thực. Không có watchdog violation. Giữ nguyên record failed; không cố cấp phát tới OOM.
+- Sau kiểm âm tính đã bắt đầu supervised12×128 token/keep-cache/cache64/guard5GiB, chỉ một model. Chưa báo kết quả khi còn chạy; docs WORKFLOWS/ARCHITECTURE/DEMO/PLAN ghi guard có giới hạn và cách chạy độc lập. Không benchmark tốc độ đồng thời.
+
+## 2026-10-22 — Kết quả kiểm RAM i5 có giám sát sau guard
+
+- Artifact canonical [2026-10-22-ram-guard-i5](../benchmarks/experiments/2026-10-22-ram-guard-i5/README.md): reset-32, keep-128 và preflight-256, summary.json, time series250ms, source/binary/checkpoint hashes, từng request/status/output. Copy raw từ runs kiểm SHA khớp,38 checksum payload PASS; giữ nguyên record failed của kiểm âm tính, không đổi manifest40 hoặc xóa original ignored. Hai lượt hoàn tất có cùng binary/checkpoint/Rust source (assert PASS); Python keep-cache được thêm giữa hai lượt và snapshot riêng, không sửa runtime trong lúc đo.
+- Reset-32:12 requests,212,1s/848 samples, observed RSS/HWM max3,468647GiB, VmSwap max0KiB, MemAvailable min6,471GiB, không watchdog violation. Keep-128:12 requests,488,7s/1952 samples, chỉ reset đầu, observed RSS/HWM max3,525585GiB, VmSwap0KiB, MemAvailable min6,520GiB, không watchdog violation. Cả hai i5/GPUauto enabled/victim/threads8/context512/cache64MiB-layer, engine RSS guard5GiB/headroom1GiB và watchdogRSS5,5GiB/available1,5GiB/swap128MiB. Không build/test/inference khác đồng thời; sau thử runner terminate server riêng.
+- RSS còn nhích tăng theo requests; số mẫu hữu hạn chưa chứng minh plateau/không leak/allocator retention. Không suy ra % giảm từ OOM9,93GiB vì cache/source/history điều kiện lượt cũ không đầy đủ và đã đổi budget. Không gọi đây là benchmark tốc độ hoặc baseline sạch. Guard chỉ hợp tác, overshoot/thiếu cgroup ancestor/v1, logits diagnostic và thiếu /proc có giới hạn; không cam kết không bao giờ OOM. Chưa đo i7 hoặc nghiệm thu giai đoạn1.
+- Final tooling/docs `python3 tools/check.py --web`: PASS39 Python +7 Node/catalog40/links; `git diff --check` đạt với cảnh báo CRLF vốn có ở generation/lib. Rust debug/release76 pass/profile,5 ignored/profile; fmt/Clippy đạt trước các phép thử; HTTPfixture20 complete/10 cancel/RSS148KiB và CUDA EXECUTED đã ghi ở mục trên. Không chạy lại load nặng sau khi kết quả đủ phạm vi24 requests. README/ARCHITECTURE/DEMO/WORKFLOWS/PLAN/EVIDENCE_MATRIX cập nhật guard/default và limits, source payload evidence bất biến.
+- Không còn chặn do automatic review: lệnh thiếu watchdog không được thực hiện; đã dùng phương án có giám sát cho kiểm âm tính và giữ kết quả. Không xin/bỏ qua quyền để chạy lệnh bị từ chối. Chưa commit/push; muốn dùng bản sửa phải restart từ binary/source mới, máy i7 chưa nhận qua clone cho đến khi đồng bộ revision.
+
+## 2026-10-22 — Gom đường review khi người dùng báo quá nhiều benchmark/file
+
+- Không tạo thêm summary/status file. Đưa tóm tắt trạng thái/quyết định và bản đồ4 nhóm artifact ngay đầu PLAN, sửa2 dòng trạng thái cũ về OOM/R4 để khớp guard/test mới. Làm rõ README artifact là tầng giải thích, raw/log/source/time series/checksum chỉ tra khi audit/tái lập; không yêu cầu người dùng review từng payload.
+- Tách rõ engine/web hoạt động, RAM test hữu hạn, quality heuristic và tốc độ cuối phiên bản hiện tại chưa đo. Không gộp tốc độ UI/old policy experiments với cache64/guard mới, không biến thử nghiệm bị loại hoặc negative preflight thành thành công runtime. Không đụng raw/artifact đã freeze, không đổi runner/code/config hay mở phép đo mới.
+- Kiểm tài liệu `python3 tools/check.py` PASS (links/config/catalog40 và39 Python tests). Không chạy Rust/CUDA/model/benchmark vì chỉ sửa đường đọc và trạng thái trong PLAN.
+
+## 2026-10-22 — Chuẩn bị bộ đo báo cáo phase1-v1 và checkpoint nguồn
+
+- Theo yêu cầu tiếp tục workflow chuẩn, chỉ chốt bộ cold/warm/conversation: cache64MiB-layer/context512/threads8/max_tokens128/victim, RAM guard5GiB/headroom1GiB;5 mẫu mỗi nhóm (20 measured requests +5 warmups). Protocol/lệnh và4 dòng bảng kết quả cuối tập trung trong SCENARIOS; không thêm tối ưu engine hoặc yêu cầu review raw từng file. i7 dùng cùng protocol sau preflight tại máy đó, không xếp hạng CPU.
+- Người dùng đã cho phép **commit và push** (thay cho ràng buộc trước đó chưa commit). Đã fetch origin và tạo branch riêng phase1-report-i5, không merge main. Checkpoint sẽ chứa cả các bản vá/tooling/tài liệu/dọn archive hiện có từ các lượt trước; catalog40 giữ SHA/alias nguyên tắc đã kiểm. Không đưa models/target/benchmarks/runs hoặc credential vào commit. Thêm exception .gitignore cho logs artifact đã review và incident OOM để clone vẫn kiểm được checksum/payload đầy đủ.
+- HTTP benchmark runner bổ sung MemoryWatchdog: sampler250ms, stop child riêng khi RSS>5,5GiB/MemAvailable<1,5GiB/VmSwap>128MiB hoặc sampler lỗi; guard env mặc định5GiB/1GiB và được ghi record/preview. Cleanup idempotent, sampler lỗi không âm thầm thành run thành công, server luôn terminate kể cả publish watchdog metadata lỗi. RAM stability tool dùng chung hàm pressure_reason; không sửa engine trong bước này.
+- `python3 tools/check.py --rust --release --web` PASS: Rust76 pass/profile +5 ignored, fmt/Clippy; Python40 (9 evidence+31 runner) và Node7, catalog40/links đạt. Hồi quy mới watchdog chỉ terminate child được giao/giữ failure/cả probe lỗi, finish idempotent. Integration host ba preset CPU fixture/cache1/context64/max3/runs2 single-victim PASS, tổng8 measured +2 warmups; tất cả watchdog.json không violation, logs tại /tmp/moe-report-fixture-pd96s0h5 (protocol test, không báo tốc độ7B). Preview protocol i5 ba preset PASS.
+- Đang chuẩn bị commit checkpoint sạch và kiểm staged artifact/checksum trước khi đo; chưa có số đo nghiệm thu mới, không dùng --allow-dirty để gọi baseline sạch. Giữ source bất biến trong toàn bộ đo, ghi kết quả sau khi hoàn tất rồi commit báo cáo tiếp theo. Chưa push hoặc xác nhận giai đoạn1 hoàn tất ở thời điểm ghi mục này.
+- Trước checkpoint đã kiểm **170 checksummed payloads trong Git index**, tất cả SHA khớp bản raw; thêm .gitattributes `benchmarks/experiments/** -text` để clone không đổi CRLF của source snapshots. Không sửa checksum/payload gốc để khớp normalization. Credential-pattern scan không có hit; index không chứa models/target/benchmarks/runs/.env/.aws/.ssh. Nhánh xuất phát khớp origin/main (ahead/behind0/0). Final tooling/web checks PASS40 Python+7 Node/catalog40. Commit checkpoint local và push branch phase1-report-i5 đã được người dùng cho phép; không merge main.

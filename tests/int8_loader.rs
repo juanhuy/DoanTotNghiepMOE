@@ -207,7 +207,11 @@ fn test_load_reusing_buffers_produces_identical_expert() {
 
     let mut raw_scratch = [0u8; 16];
     index
-        .read_f32_into("model.layers.3.mlp.experts.7.qs", &mut raw_scratch, &mut scales)
+        .read_f32_into(
+            "model.layers.3.mlp.experts.7.qs",
+            &mut raw_scratch,
+            &mut scales,
+        )
         .unwrap();
     assert_eq!(&scales, &[0.5, 0.25, 2., 0.75]);
 }

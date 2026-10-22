@@ -1,0 +1,54 @@
+{
+  "primary_record": "i5/20261022T092416.839618Z-web-paired-abba-443258fd6bdd4e2c84bde18575709b5e/result.json",
+  "sample_size_per_policy_per_prompt": 2,
+  "medians": {
+    "0": {
+      "inclusive": {
+        "total_ms": 61233.6438835,
+        "time_to_first_token_ms": 6428.8951275,
+        "decode_tokens_per_second": 2.319152095076415,
+        "expert_io_ms": 40879.2463915,
+        "expert_file_read_ms": 38327.913339,
+        "expert_vram_download_ms": 2551.3330525,
+        "expert_vram_upload_ms": 14024.451446,
+        "expert_file_bytes_read": 35204055040.0,
+        "expert_vram_upload_bytes": 56127160320.0
+      },
+      "victim": {
+        "total_ms": 48512.4557995,
+        "time_to_first_token_ms": 5482.6723775,
+        "decode_tokens_per_second": 2.9698393912723793,
+        "expert_io_ms": 31450.427601,
+        "expert_file_read_ms": 26483.592046,
+        "expert_vram_download_ms": 4966.835555,
+        "expert_vram_upload_ms": 11174.821641999999,
+        "expert_file_bytes_read": 26701086720.0,
+        "expert_vram_upload_bytes": 44590120960.0
+      }
+    },
+    "1": {
+      "inclusive": {
+        "total_ms": 66146.68278899998,
+        "time_to_first_token_ms": 13370.321883,
+        "decode_tokens_per_second": 2.4084382827937074,
+        "expert_io_ms": 39403.902443,
+        "expert_file_read_ms": 35357.1509075,
+        "expert_vram_download_ms": 4046.7515355,
+        "expert_vram_upload_ms": 13501.447578,
+        "expert_file_bytes_read": 34358804480.0,
+        "expert_vram_upload_bytes": 56057774080.0
+      },
+      "victim": {
+        "total_ms": 57267.9564505,
+        "time_to_first_token_ms": 11133.2979745,
+        "decode_tokens_per_second": 2.7560764152367825,
+        "expert_io_ms": 32306.231933500003,
+        "expert_file_read_ms": 26047.5370845,
+        "expert_vram_download_ms": 6258.6948489999995,
+        "expert_vram_upload_ms": 13137.925904,
+        "expert_file_bytes_read": 26814627840.0,
+        "expert_vram_upload_bytes": 54272655360.0
+      }
+    }
+  }
+}

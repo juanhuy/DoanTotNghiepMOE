@@ -1,5 +1,6 @@
 use axum::{
     extract::DefaultBodyLimit,
+    extract::Query,
     extract::State,
     http::StatusCode,
     response::{
@@ -67,6 +68,15 @@ const INDEX_HTML: &str = include_str!("../web/index.html");
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
+        .route(
+            "/chat_stream.js",
+            get(|| async {
+                (
+                    [("content-type", "text/javascript; charset=utf-8")],
+                    include_str!("../web/chat_stream.js"),
+                )
+            }),
+        )
         .route("/health", get(|| async { "ok" }))
         .route("/experts", get(get_experts))
         .route("/v1/engine/experts", get(get_experts))
@@ -78,8 +88,17 @@ fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn reset_cache(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
-    tokio::task::spawn_blocking(move || state.engine.reset_cache())
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CacheResetOptions {
+    expert_cache_policy: Option<String>,
+}
+
+async fn reset_cache(
+    State(state): State<AppState>,
+    Query(options): Query<CacheResetOptions>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    tokio::task::spawn_blocking(move || state.engine.reset_cache_with_policy(options.expert_cache_policy.as_deref()))
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map(|()| {
@@ -89,7 +108,9 @@ async fn reset_cache(State(state): State<AppState>) -> Result<Json<serde_json::V
             }))
         })
         .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::WouldBlock {
+            if e.kind() == std::io::ErrorKind::InvalidInput {
+                StatusCode::BAD_REQUEST
+            } else if e.kind() == std::io::ErrorKind::WouldBlock {
                 StatusCode::TOO_MANY_REQUESTS
             } else {
                 StatusCode::INTERNAL_SERVER_ERROR
@@ -161,7 +182,7 @@ async fn main() -> io::Result<()> {
             .parse::<usize>()
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cache byte budget"))?
     } else {
-        detect_adaptive_cache_bytes()
+        default_cache_bytes()
     };
     let context = std::env::var("MOE_CONTEXT")
         .unwrap_or_else(|_| "512".into())
@@ -271,6 +292,7 @@ fn api_error(error: io::Error) -> ApiError {
     let status = match error.kind() {
         io::ErrorKind::InvalidInput => StatusCode::BAD_REQUEST,
         io::ErrorKind::WouldBlock => StatusCode::TOO_MANY_REQUESTS,
+        io::ErrorKind::OutOfMemory => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, error.to_string())
@@ -326,47 +348,16 @@ impl futures_core::Stream for SseEvents {
     }
 }
 
-/// Tự động phát hiện dung lượng RAM khả dụng của hệ thống để phân bổ Expert Cache tối ưu
-fn detect_adaptive_cache_bytes() -> usize {
-    const DEFAULT_CACHE_BYTES: usize = 128 * 1024 * 1024;
-    let available_kb = (|| -> Option<usize> {
-        let content = std::fs::read_to_string("/proc/meminfo").ok()?;
-        for line in content.lines() {
-            if line.starts_with("MemAvailable:") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    return parts[1].parse::<usize>().ok();
-                }
-            }
-        }
-        None
-    })();
-
-    if let Some(kb) = available_kb {
-        let avail_mib = kb / 1024;
-        let cache_bytes = if avail_mib >= 8192 {
-            256 * 1024 * 1024
-        } else if avail_mib >= 5120 {
-            192 * 1024 * 1024
-        } else if avail_mib >= 3072 {
-            128 * 1024 * 1024
-        } else {
-            64 * 1024 * 1024
-        };
-        tracing::info!(
-            available_ram_mib = avail_mib,
-            cache_mib_per_layer = cache_bytes / (1024 * 1024),
-            total_cache_gib = (cache_bytes * 16) as f64 / (1024.0 * 1024.0 * 1024.0),
-            "Adaptive Cache Sizing: Tự động điều chỉnh kích thước bộ đệm theo RAM khả dụng"
-        );
-        cache_bytes
-    } else {
-        tracing::info!(
-            cache_mib_per_layer = DEFAULT_CACHE_BYTES / (1024 * 1024),
-            "Không phát hiện được /proc/meminfo, sử dụng mức đệm mặc định 128 MiB/layer"
-        );
-        DEFAULT_CACHE_BYTES
-    }
+/// Conservative reproducible default; explicit cache budgets still pass RAM preflight.
+fn default_cache_bytes() -> usize {
+    // A cache budget is per layer, not a fraction of total process memory.
+    // Keep the default reproducible; larger explicit budgets must pass RAM preflight.
+    const DEFAULT: usize = 64 * 1024 * 1024;
+    tracing::info!(
+        cache_mib_per_layer = 64,
+        "Default expert cache; no startup auto-growth from MemAvailable"
+    );
+    DEFAULT
 }
 
 #[cfg(test)]
@@ -377,6 +368,13 @@ mod tests {
         http::Request,
     };
     use tower::ServiceExt;
+
+    #[test]
+    fn memory_pressure_is_a_retryable_service_error() {
+        let (status, message) = api_error(io::Error::new(io::ErrorKind::OutOfMemory, "RAM guard"));
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(message, "RAM guard");
+    }
 
     #[tokio::test]
     async fn http_stream_reports_payload_error_after_headers() {
@@ -419,6 +417,47 @@ mod tests {
         assert!(text.contains("generation_error"));
         assert_eq!(text.matches("data: [DONE]").count(), 1);
         assert!(!text.contains("\"usage\""));
+    }
+
+    #[tokio::test]
+    async fn http_cache_policy_switch_validates_and_preserves_reset_defaults() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/olmoe/unnormalized-mha");
+        let engine = Arc::new(
+            InferenceEngine::load_with_limits(directory, 10_000, 64, 10_000_000)
+                .await
+                .unwrap(),
+        );
+        let app = app(AppState {
+            engine: Arc::clone(&engine),
+            stream_send_timeout: Duration::from_secs(1),
+        });
+        for (query, status, policy) in [
+            ("?expert_cache_policy=victim", StatusCode::OK, "victim"),
+            (
+                "?expert_cache_policy=invalid",
+                StatusCode::BAD_REQUEST,
+                "victim",
+            ),
+            ("", StatusCode::OK, "victim"),
+            (
+                "?expert_cache_policy=inclusive",
+                StatusCode::OK,
+                "inclusive",
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post(format!("/api/cache/reset{query}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            assert_eq!(engine.expert_status().unwrap().expert_cache_policy, policy);
+        }
     }
 
     #[tokio::test]

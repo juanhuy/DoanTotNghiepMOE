@@ -1,0 +1,65 @@
+{
+  "id": "quality-math-multiply",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is 7 times 8? Answer with the number."
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "quality-math-multiply",
+  "response": {
+    "text": " 7 times 8 is equal to 56. The answer is 56.",
+    "usage": {
+      "completion_tokens": 14,
+      "prompt_tokens": 27,
+      "total_tokens": 41
+    },
+    "metrics": {
+      "attention_ms": 245.673441,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 2747.399771,
+      "decode_ms": 4793.5017259999995,
+      "decode_tokens_per_second": 2.7120048647292383,
+      "expert_bytes_read": 7228784640,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 1146,
+      "expert_cache_hits": 4545,
+      "expert_cache_misses": 575,
+      "expert_compute_ms": 2885.545976,
+      "expert_file_bytes_read": 4812881920,
+      "expert_file_loads": 763,
+      "expert_file_read_ms": 4034.168666,
+      "expert_io_ms": 5093.026358,
+      "expert_vram_download_bytes": 3601776640,
+      "expert_vram_download_ms": 1058.8576919999998,
+      "expert_vram_loads": 571,
+      "expert_vram_upload_bytes": 7228784640,
+      "expert_vram_upload_ms": 2193.450722,
+      "kv_cache_bytes": 10485760,
+      "lm_head_ms": 40.471911999999996,
+      "prefill_expert_io_ms": 2345.6265869999997,
+      "prefill_ms": 5057.4050179999995,
+      "time_to_first_token_ms": 5070.163437,
+      "tokenizer_ms": 0.125975,
+      "total_ms": 9863.677458
+    },
+    "finish_reason": "stop",
+    "client_first_content_after_headers_ms": 5057.490805999805,
+    "client_wall_ms": 9867.791395000495
+  },
+  "process_before": {
+    "VmHWM": 4718096,
+    "VmRSS": 4700704,
+    "VmSwap": 0,
+    "read_bytes": 30874034176,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4726692,
+    "VmRSS": 4702752,
+    "VmSwap": 0,
+    "read_bytes": 33420554240,
+    "write_bytes": 4096
+  }
+}

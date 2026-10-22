@@ -1,0 +1,2 @@
+2026-10-22T15:47:37.576491Z  INFO moe_tier_engine::ram: Cooperative RAM guard; limit includes dense/cache/request/allocator RSS, not a kernel cap rss_limit_bytes=5368709120 system_headroom_bytes=1073741824
+Error: Custom { kind: OutOfMemory, error: "RAM guard: rss=Some(8208384), limit=5368709120, available=Some(11125202944), headroom=1073741824, reserve=7288299520 bytes; reduce cache/context or free memory" }

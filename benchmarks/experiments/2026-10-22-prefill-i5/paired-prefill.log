@@ -1,0 +1,26 @@
+    Finished `release` profile [optimized] target(s) in 0.05s
+     Running unittests src/lib.rs (target/release/deps/moe_tier_engine-1745916ffb9c337c)
+
+running 1 test
+test olmoe::cancellation_tests::benchmark_prefill_dispatch_paired ... pair 0, serial=true, prefill_ms=2571.892
+pair 0, serial=false, prefill_ms=2132.050
+pair 1, serial=false, prefill_ms=2143.930
+pair 1, serial=true, prefill_ms=2184.676
+pair 2, serial=true, prefill_ms=1988.396
+pair 2, serial=false, prefill_ms=2176.767
+pair 3, serial=false, prefill_ms=2151.255
+pair 3, serial=true, prefill_ms=2004.289
+pair 4, serial=true, prefill_ms=1945.666
+pair 4, serial=false, prefill_ms=2108.076
+pair 5, serial=false, prefill_ms=2248.372
+pair 5, serial=true, prefill_ms=2150.463
+pair 6, serial=true, prefill_ms=2046.680
+pair 6, serial=false, prefill_ms=2129.426
+pair 7, serial=false, prefill_ms=2121.548
+pair 7, serial=true, prefill_ms=2050.890
+pair 8, serial=true, prefill_ms=1985.965
+pair 8, serial=false, prefill_ms=2181.052
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 59.47s
+

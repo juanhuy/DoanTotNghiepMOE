@@ -1,0 +1,33 @@
+{
+  "scope": "exploratory local source snapshots; desktop background load and OS page cache uncontrolled",
+  "testbed_user_confirmed": "i5",
+  "original_head": "1d98587258157a656104f255703da0aeb05f31c5",
+  "variants": {
+    "before": {
+      "snapshot_commit": "b8d53b96a6337f981192319b20b2ea06ac3a7b8d",
+      "source_sha256": {
+        "src/olmoe.rs": "4a3dcdc799a69851aed2b0c8e1ab5980dc35e1e6b11fc817203071fa1a359843",
+        "src/int8_expert.rs": "2e0c05d7ca5b493316f769e94973ee1736fe2e336e0b9cf9ebdcaf55a16722fc",
+        "Cargo.toml": "bc684537d929add22986e49cae2b6f88e148148577e716900673a48b4c93626c",
+        "Cargo.lock": "7dc5677da4a7c4a20dd2510a8832551c4cea2c78fd882c48af27893f472e3f93",
+        "examples/benchmark_olmoe.rs": "fb962cafa2bd6b84c4933c899e32eaad90975557a69e192c1a8974449f37e16b"
+      }
+    },
+    "after": {
+      "snapshot_commit": "3f63b77c6f99af4cee0cd61adf3c65b5e16f922c",
+      "source_sha256": {
+        "src/olmoe.rs": "6e9814b378c02fdd9b3be2d61a70ec5c70895ce3137d1e83fb72179c9eb911fd",
+        "src/int8_expert.rs": "2e0c05d7ca5b493316f769e94973ee1736fe2e336e0b9cf9ebdcaf55a16722fc",
+        "Cargo.toml": "bc684537d929add22986e49cae2b6f88e148148577e716900673a48b4c93626c",
+        "Cargo.lock": "7dc5677da4a7c4a20dd2510a8832551c4cea2c78fd882c48af27893f472e3f93",
+        "examples/benchmark_olmoe.rs": "fb962cafa2bd6b84c4933c899e32eaad90975557a69e192c1a8974449f37e16b"
+      }
+    }
+  },
+  "ordered_runs": [
+    "before",
+    "after",
+    "after",
+    "before"
+  ]
+}

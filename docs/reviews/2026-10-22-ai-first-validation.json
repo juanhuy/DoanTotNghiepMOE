@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-22",
+  "base_commit": "1d98587258157a656104f255703da0aeb05f31c5",
+  "purpose": "AI-first repository setup validation, not a hardware performance benchmark",
+  "raw_byte_identical_to_base": 40,
+  "deduplication": {
+    "exact_json_copies_removed": 33,
+    "superseded_doc_snapshots_removed": 4,
+    "generated_csv_removed": 3,
+    "canonical_raw_remaining": 40
+  },
+  "tooling_tests": {
+    "evidence": 9,
+    "runner": 15
+  },
+  "rust_tests": {
+    "debug_passed": 59,
+    "release_passed": 59,
+    "ignored_per_profile": 3,
+    "fmt": "pass",
+    "clippy": "pass"
+  },
+  "fixture_integrations": [
+    {
+      "run_id": "20261022T050736.352918Z-fixture-integration-424fc526c4c94e7f81a27721652279b5",
+      "status": "success",
+      "schema_version": 2,
+      "testbed": "i5",
+      "git_dirty": true,
+      "config": {
+        "cache_mib_per_layer": 1,
+        "context": 64,
+        "runs": 2,
+        "max_tokens": 3,
+        "prompt": "token3 token4",
+        "suite_case": null
+      },
+      "result_runs": 2,
+      "checkpoint_sha256": "b1719a2d8c9b3d519f78abd6a89750172322748c6e1e11c5737be42785f522f2",
+      "scope": "tiny fixture integration only; not accepted model performance evidence"
+    },
+    {
+      "run_id": "20261022T050757.402605Z-suite-fixture-integration-2a9c5001902545ba8795e1211f4fbd62",
+      "status": "success",
+      "schema_version": 2,
+      "testbed": "i5",
+      "git_dirty": true,
+      "config": {
+        "cache_mib_per_layer": 1,
+        "context": 64,
+        "runs": 2,
+        "max_tokens": null,
+        "prompt": null,
+        "suite_case": "*"
+      },
+      "result_runs": 2,
+      "checkpoint_sha256": "b1719a2d8c9b3d519f78abd6a89750172322748c6e1e11c5737be42785f522f2",
+      "scope": "tiny fixture integration only; not accepted model performance evidence"
+    }
+  ],
+  "http_standalone": {
+    "model_directory": "tests/fixtures/olmoe/unnormalized-mha",
+    "cycles": 30,
+    "completed": 20,
+    "cancelled": 10,
+    "elapsed_ms": 308.09068900089187,
+    "rss_kib": {
+      "first": 401108,
+      "last": 407676,
+      "steady_min": 407544,
+      "steady_max": 407676,
+      "steady_spread": 132
+    },
+    "checks": [
+      "stream completes with usage and DONE",
+      "disconnect releases the single-request permit",
+      "health remains available after every cycle",
+      "steady VmRSS spread is at most 64 MiB"
+    ],
+    "notes": [
+      "fixture stress test; not model-quality or production-load evaluation",
+      "VmRSS includes allocator/cache behavior and is sampled after each cycle"
+    ]
+  },
+  "optional_checks": {
+    "cuda": "not available; not exercised",
+    "converter": "blocked: torch not installed on host",
+    "github_actions": "configured, not run remotely",
+    "skill_full_validator": "blocked: PyYAML missing; restricted frontmatter and TOML checked locally",
+    "docs_mcp": "project registration discovered by codex mcp list; disabled, no handshake",
+    "native_roles": "TOML parsed; no claim of client role execution"
+  },
+  "constraints": [
+    "No new accepted 7B/i5-vs-i7 measurements",
+    "Fixture integration runs intentionally allow dirty workspace",
+    "Historical labels and checksums do not prove original provenance"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "cycle": 1,
+  "turn": 1,
+  "prompt": "What is love ?",
+  "response": {
+    "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+    "usage": {
+      "completion_tokens": 128,
+      "prompt_tokens": 166,
+      "total_tokens": 294
+    },
+    "metrics": {
+      "attention_ms": 4073.923379,
+      "cached_prompt_tokens": 11,
+      "decode_expert_io_ms": 23760.001344,
+      "decode_ms": 42719.049163,
+      "decode_tokens_per_second": 2.9729126113134035,
+      "expert_bytes_read": 54417735680,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 8627,
+      "expert_cache_hits": 31212,
+      "expert_cache_misses": 4884,
+      "expert_compute_ms": 13096.667999,
+      "expert_file_bytes_read": 34358804480,
+      "expert_file_loads": 5447,
+      "expert_file_read_ms": 23197.667232,
+      "expert_io_ms": 27412.327106,
+      "expert_vram_download_bytes": 23610245120,
+      "expert_vram_download_ms": 4214.659874,
+      "expert_vram_loads": 3743,
+      "expert_vram_upload_bytes": 56057774080,
+      "expert_vram_upload_ms": 13891.191202,
+      "kv_cache_bytes": 76808192,
+      "lm_head_ms": 363.182805,
+      "prefill_expert_io_ms": 3652.3257620000004,
+      "prefill_ms": 11581.08993,
+      "time_to_first_token_ms": 11586.797419,
+      "tokenizer_ms": 0.39560399999999996,
+      "total_ms": 54305.916107000005
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 11580.987277997338,
+    "client_wall_ms": 54309.348356000555
+  },
+  "process_before": {
+    "VmHWM": 6207668,
+    "VmRSS": 5805532,
+    "VmSwap": 306456,
+    "read_bytes": 85810450432,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 6207668,
+    "VmRSS": 5829024,
+    "VmSwap": 359672,
+    "read_bytes": 100973883392,
+    "write_bytes": 4096
+  },
+  "process_read_bytes_delta": 15163432960
+}

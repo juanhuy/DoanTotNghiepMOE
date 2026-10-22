@@ -1,0 +1,65 @@
+{
+  "id": "quality-python-even",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a short Python function is_even(n) that returns whether n is even. Return only code."
+    }
+  ],
+  "max_tokens": 64,
+  "session_id": "quality-python-even",
+  "response": {
+    "text": "    def is_even(n):\n        \"\"\"\n        Returns whether n is even.\n        \"\"\"\n        return n % 2 == 0\n\nHere's how the function works:\n\n- The modulo operator `%` returns the remainder of a division.\n- If the remainder of dividing `n",
+    "usage": {
+      "completion_tokens": 64,
+      "prompt_tokens": 38,
+      "total_tokens": 102
+    },
+    "metrics": {
+      "attention_ms": 1268.1084409999999,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 9952.678441,
+      "decode_ms": 18100.572505,
+      "decode_tokens_per_second": 3.480552893152813,
+      "expert_bytes_read": 17731338240,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 2811,
+      "expert_cache_hits": 11868,
+      "expert_cache_misses": 1060,
+      "expert_compute_ms": 8278.205740000001,
+      "expert_file_bytes_read": 13738475520,
+      "expert_file_loads": 2178,
+      "expert_file_read_ms": 9076.210116,
+      "expert_io_ms": 12224.063064999998,
+      "expert_vram_download_bytes": 11045027840,
+      "expert_vram_download_ms": 3147.8529489999996,
+      "expert_vram_loads": 1751,
+      "expert_vram_upload_bytes": 17731338240,
+      "expert_vram_upload_ms": 5337.308776999999,
+      "kv_cache_bytes": 26476544,
+      "lm_head_ms": 186.015703,
+      "prefill_expert_io_ms": 2271.384624,
+      "prefill_ms": 5832.822991999999,
+      "time_to_first_token_ms": 5841.936197,
+      "tokenizer_ms": 0.38436299999999995,
+      "total_ms": 23942.568741
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 5832.876907999889,
+    "client_wall_ms": 23948.626790999697
+  },
+  "process_before": {
+    "VmHWM": 4789176,
+    "VmRSS": 4777576,
+    "VmSwap": 0,
+    "read_bytes": 47607721984,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4801624,
+    "VmRSS": 4798672,
+    "VmSwap": 0,
+    "read_bytes": 51449774080,
+    "write_bytes": 4096
+  }
+}

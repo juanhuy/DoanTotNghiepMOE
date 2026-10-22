@@ -1,0 +1,65 @@
+{
+  "id": "quality-follow-exact-ok",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply with exactly: OK"
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "quality-follow-exact-ok",
+  "response": {
+    "text": " OK",
+    "usage": {
+      "completion_tokens": 2,
+      "prompt_tokens": 21,
+      "total_tokens": 23
+    },
+    "metrics": {
+      "attention_ms": 67.191523,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 214.33617099999998,
+      "decode_ms": 321.612106,
+      "decode_tokens_per_second": 3.109335691486688,
+      "expert_bytes_read": 2441134080,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 387,
+      "expert_cache_hits": 2556,
+      "expert_cache_misses": 260,
+      "expert_compute_ms": 1517.370382,
+      "expert_file_bytes_read": 1778810880,
+      "expert_file_loads": 282,
+      "expert_file_read_ms": 1452.787904,
+      "expert_io_ms": 1687.452141,
+      "expert_vram_download_bytes": 801095680,
+      "expert_vram_download_ms": 234.66423699999999,
+      "expert_vram_loads": 127,
+      "expert_vram_upload_bytes": 2441134080,
+      "expert_vram_upload_ms": 744.079898,
+      "kv_cache_bytes": 5767168,
+      "lm_head_ms": 5.757939,
+      "prefill_expert_io_ms": 1473.11597,
+      "prefill_ms": 3696.238206,
+      "time_to_first_token_ms": 3707.839514,
+      "tokenizer_ms": 0.126426,
+      "total_ms": 4029.454307
+    },
+    "finish_reason": "stop",
+    "client_first_content_after_headers_ms": 3693.290918000457,
+    "client_wall_ms": 4034.4258649993208
+  },
+  "process_before": {
+    "VmHWM": 4785504,
+    "VmRSS": 4780204,
+    "VmSwap": 0,
+    "read_bytes": 41688211456,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4785504,
+    "VmRSS": 4780204,
+    "VmSwap": 0,
+    "read_bytes": 42581970944,
+    "write_bytes": 4096
+  }
+}

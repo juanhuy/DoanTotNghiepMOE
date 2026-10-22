@@ -1,0 +1,65 @@
+{
+  "id": "quality-math-add",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is 2 + 2? Answer briefly."
+    }
+  ],
+  "max_tokens": 16,
+  "session_id": "quality-math-add",
+  "response": {
+    "text": "\n2 + 2 equals 4. This is a basic arithmetic calculation that follows the",
+    "usage": {
+      "completion_tokens": 16,
+      "prompt_tokens": 25,
+      "total_tokens": 41
+    },
+    "metrics": {
+      "attention_ms": 269.505624,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 3496.958884,
+      "decode_ms": 6167.462446,
+      "decode_tokens_per_second": 2.4321185789673474,
+      "expert_bytes_read": 8887746560,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 1409,
+      "expert_cache_hits": 4412,
+      "expert_cache_misses": 708,
+      "expert_compute_ms": 3204.503773,
+      "expert_file_bytes_read": 5317509120,
+      "expert_file_loads": 843,
+      "expert_file_read_ms": 4649.578611,
+      "expert_io_ms": 5918.567395,
+      "expert_vram_download_bytes": 4421795840,
+      "expert_vram_download_ms": 1268.9887840000001,
+      "expert_vram_loads": 701,
+      "expert_vram_upload_bytes": 8887746560,
+      "expert_vram_upload_ms": 2714.419614,
+      "kv_cache_bytes": 10485760,
+      "lm_head_ms": 46.565105,
+      "prefill_expert_io_ms": 2421.608511,
+      "prefill_ms": 5361.944407,
+      "time_to_first_token_ms": 5375.57528,
+      "tokenizer_ms": 0.192798,
+      "total_ms": 11543.053417
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 5362.886550999974,
+    "client_wall_ms": 11547.113735000494
+  },
+  "process_before": {
+    "VmHWM": 4640844,
+    "VmRSS": 4640844,
+    "VmSwap": 0,
+    "read_bytes": 27799949312,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4718096,
+    "VmRSS": 4700704,
+    "VmSwap": 0,
+    "read_bytes": 30874034176,
+    "write_bytes": 4096
+  }
+}

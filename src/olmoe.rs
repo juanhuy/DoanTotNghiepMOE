@@ -103,6 +103,8 @@ struct CachedExpert {
 pub struct SystemTelemetry {
     pub vm_rss_kib: Option<u64>,
     pub vm_hwm_kib: Option<u64>,
+    pub vm_swap_kib: Option<u64>,
+    pub mem_available_kib: Option<u64>,
     pub io_read_bytes: Option<u64>,
     pub io_rchar: Option<u64>,
     pub gpu_vram_used_mib: Option<u64>,
@@ -113,14 +115,22 @@ pub struct LayerExpertStatus {
     pub resident_experts: Vec<usize>,
     pub heat: Vec<u32>,
     pub cache_bytes: usize,
+    pub recycled_bytes: usize,
 }
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ExpertStatusReport {
+    pub expert_cache_policy: &'static str,
     pub num_layers: usize,
     pub num_experts: usize,
     pub cache_bytes_per_layer: usize,
+    /// Separate upper bound for active expert payloads/prefetch, not total RSS.
+    pub expert_request_payload_limit_bytes: usize,
     pub dense_bytes: usize,
+    pub ram_rss_limit_bytes: usize,
+    pub ram_system_headroom_bytes: usize,
+    pub session_cache_allocated_bytes: usize,
+    pub session_cache_limit_bytes: usize,
     pub layers: Vec<LayerExpertStatus>,
     pub system_telemetry: SystemTelemetry,
     pub gpu: crate::gpu::GpuTierStatus,
@@ -141,6 +151,38 @@ struct Layer {
     heat: Vec<u32>,
     clock: u64,
     recycled_buffers: Vec<(Vec<u8>, Vec<f32>)>,
+}
+
+impl Layer {
+    fn recycled_bytes(&self) -> usize {
+        self.recycled_buffers
+            .iter()
+            .map(|(w, s)| w.capacity() + s.capacity() * 4)
+            .sum()
+    }
+
+    fn trim_recycled(&mut self, budget: usize) {
+        let mut bytes = self.recycled_bytes();
+        while self.bytes.saturating_add(bytes) > budget {
+            let Some((w, s)) = self.recycled_buffers.pop() else {
+                break;
+            };
+            bytes = bytes.saturating_sub(w.capacity() + s.capacity() * 4);
+        }
+    }
+
+    fn recycle(&mut self, buffers: (Vec<u8>, Vec<f32>), budget: usize) {
+        let bytes = buffers.0.capacity() + buffers.1.capacity() * 4;
+        if self.recycled_buffers.len() < 16
+            && self
+                .bytes
+                .saturating_add(self.recycled_bytes())
+                .saturating_add(bytes)
+                <= budget
+        {
+            self.recycled_buffers.push(buffers);
+        }
+    }
 }
 #[derive(Default)]
 struct Kv {
@@ -170,6 +212,14 @@ struct RequestProfile {
     expert_compute: Duration,
     lm_head: Duration,
     expert_io: Duration,
+    file_io: Duration,
+    vram_io: Duration,
+    upload_io: Duration,
+    file_bytes: u64,
+    vram_bytes: u64,
+    upload_bytes: u64,
+    file_loads: u64,
+    vram_loads: u64,
     cache_hits: u64,
     cache_misses: u64,
     cache_evictions: u64,
@@ -228,7 +278,14 @@ impl StepScratch {
 }
 
 pub struct OlmoeModel {
+    // Retain the serial reference only in tests for paired in-process measurements.
+    #[cfg(test)]
+    serial_prefill_reference: bool,
+    #[cfg(test)]
+    strict_session_prefix_reference: bool,
     config: Config,
+    ram_guard: crate::ram::RamGuard,
+    dense_bytes: usize,
     index: TensorIndex,
     embedding: Matrix,
     head: Matrix,
@@ -241,6 +298,7 @@ pub struct OlmoeModel {
     sessions: HashMap<String, SessionState>,
     session_clock: u64,
     session_cache_bytes: usize,
+    victim_expert_cache: bool,
     gpu_tier: crate::gpu::GpuTierManager,
     gpu_dense: Option<crate::gpu::GpuDenseStorage>,
     inter_layer_transitions: Vec<Vec<u16>>,
@@ -284,6 +342,16 @@ impl OlmoeModel {
         dense_budget: usize,
     ) -> io::Result<Self> {
         configure_parallelism()?;
+        let victim_expert_cache = match std::env::var("MOE_EXPERT_CACHE_POLICY").as_deref() {
+            Ok("victim") | Err(std::env::VarError::NotPresent) => true,
+            Ok("inclusive") => false,
+            _ => {
+                return Err(invalid(
+                    "MOE_EXPERT_CACHE_POLICY must be inclusive or victim",
+                ))
+            }
+        };
+
         let path = path.as_ref();
         if path.join("INCOMPLETE").exists() {
             return Err(invalid("checkpoint conversion is incomplete"));
@@ -309,6 +377,39 @@ impl OlmoeModel {
         let active_set_bytes = expert_bytes
             .checked_mul(config.num_experts_per_tok)
             .ok_or_else(|| invalid("active expert set size overflow"))?;
+        let ram_guard = crate::ram::RamGuard::from_environment()?;
+        let dense_planned = index
+            .tensors()
+            .iter()
+            .filter(|(name, _)| name.ends_with(".weight"))
+            .try_fold(0usize, |total, (_, tensor)| {
+                let count = tensor
+                    .shape
+                    .iter()
+                    .try_fold(1usize, |n, &dim| n.checked_mul(dim))?;
+                total.checked_add(count.checked_mul(4)?)
+            })
+            .ok_or_else(|| invalid("dense RAM estimate overflow"))?;
+        // Reserve full configured caches and conservative transient/tokenizer/
+        // allocator headroom before reading large weights. This is a plan,
+        // not an exact RSS prediction or a replacement for runtime checks.
+        let request_reserve = context_limit
+            .saturating_mul(d)
+            .saturating_mul(4)
+            .saturating_mul(config.num_experts_per_tok + 12)
+            .saturating_add(
+                context_limit
+                    .saturating_mul(kd)
+                    .saturating_mul(8)
+                    .saturating_mul(config.num_hidden_layers),
+            )
+            .saturating_add(expert_bytes.saturating_mul(config.num_experts_per_tok + 2));
+        let planned = dense_planned
+            .saturating_add(cache_bytes_per_layer.saturating_mul(config.num_hidden_layers))
+            .saturating_add(256 * 1024 * 1024)
+            .saturating_add(512 * 1024 * 1024)
+            .saturating_add(request_reserve);
+        ram_guard.check(planned)?;
         if cache_bytes_per_layer < active_set_bytes {
             tracing::warn!(
                 cache_bytes_per_layer,
@@ -480,7 +581,13 @@ impl OlmoeModel {
 
         let num_layers = layers.len();
         Ok(Self {
+            #[cfg(test)]
+            serial_prefill_reference: true,
+            #[cfg(test)]
+            strict_session_prefix_reference: false,
             config,
+            ram_guard,
+            dense_bytes: dense_budget - budget,
             index,
             embedding,
             head,
@@ -493,6 +600,7 @@ impl OlmoeModel {
             sessions: HashMap::new(),
             session_clock: 0,
             session_cache_bytes: 256 * 1024 * 1024,
+            victim_expert_cache,
             gpu_tier,
             gpu_dense,
             inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
@@ -507,6 +615,7 @@ impl OlmoeModel {
                 resident_experts: layer.cache.iter().map(|entry| entry.id).collect(),
                 heat: layer.heat.clone(),
                 cache_bytes: layer.bytes,
+                recycled_bytes: layer.recycled_bytes(),
             })
             .collect();
         let mut gpu_status = self.gpu_tier.status();
@@ -529,10 +638,29 @@ impl OlmoeModel {
             system_telemetry.gpu_vram_used_mib = Some(gpu_status.allocated_vram_bytes / 1048576);
         }
         ExpertStatusReport {
+            expert_cache_policy: if self.victim_expert_cache {
+                "victim"
+            } else {
+                "inclusive"
+            },
             num_layers: self.layers.len(),
             num_experts: self.config.num_experts,
             cache_bytes_per_layer: self.cache_bytes_per_layer,
-            dense_bytes: 3 * 1024 * 1024 * 1024,
+            expert_request_payload_limit_bytes: (self.config.num_experts_per_tok + 2)
+                * (self.config.hidden_size * self.config.intermediate_size * 3
+                    + (self.config.intermediate_size * 2 + self.config.hidden_size) * 4),
+            dense_bytes: self.dense_bytes,
+            ram_rss_limit_bytes: self.ram_guard.rss_limit,
+            ram_system_headroom_bytes: self.ram_guard.system_headroom,
+            session_cache_allocated_bytes: self.sessions.iter().fold(
+                0usize,
+                |total, (id, state)| {
+                    total
+                        .saturating_add(id.capacity())
+                        .saturating_add(session_bytes(state))
+                },
+            ),
+            session_cache_limit_bytes: self.session_cache_bytes,
             layers,
             system_telemetry,
             gpu: gpu_status,
@@ -566,7 +694,7 @@ impl OlmoeModel {
     pub fn reset_cache(&mut self) {
         // 1. Xóa toàn bộ KV session cache
         self.sessions.clear();
-        self.session_cache_bytes = 0;
+        // Keep the configured admission budget so subsequent sessions can cache KV again.
         self.session_clock = 0;
 
         // 2. Xóa toàn bộ Host RAM L2 expert cache và đặt lại heatmap
@@ -590,6 +718,18 @@ impl OlmoeModel {
         }
     }
 
+    pub(crate) fn reset_cache_with_policy(&mut self, policy: Option<&str>) -> io::Result<()> {
+        if let Some(policy) = policy {
+            self.victim_expert_cache = match policy {
+                "inclusive" => false,
+                "victim" => true,
+                _ => return Err(invalid("invalid expert cache policy")),
+            };
+        }
+        self.reset_cache();
+        Ok(())
+    }
+
     fn get_system_telemetry() -> SystemTelemetry {
         let mut telem = SystemTelemetry {
             gpu_vram_used_mib: Some(0),
@@ -601,8 +741,16 @@ impl OlmoeModel {
                     telem.vm_rss_kib = s.split_whitespace().next().and_then(|v| v.parse().ok());
                 } else if let Some(s) = line.strip_prefix("VmHWM:") {
                     telem.vm_hwm_kib = s.split_whitespace().next().and_then(|v| v.parse().ok());
+                } else if let Some(s) = line.strip_prefix("VmSwap:") {
+                    telem.vm_swap_kib = s.split_whitespace().next().and_then(|v| v.parse().ok());
                 }
             }
+        }
+        if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
+            telem.mem_available_kib = info.lines().find_map(|line| {
+                line.strip_prefix("MemAvailable:")
+                    .and_then(|value| value.split_whitespace().next()?.parse().ok())
+            });
         }
         if let Ok(io) = std::fs::read_to_string("/proc/self/io") {
             for line in io.lines() {
@@ -823,10 +971,15 @@ impl OlmoeModel {
         expert_id: usize,
         weights: &[u8],
         scales: &[f32],
+        profile: &mut RequestProfile,
     ) {
         if let Some(storage) = gpu_dense.as_mut() {
             if gpu_enabled && storage.expert_cache.max_bytes > 0 {
-                storage.upload_and_cache(layer_id, expert_id, weights, scales);
+                let started = Instant::now();
+                if storage.upload_and_cache(layer_id, expert_id, weights, scales) {
+                    profile.upload_io += started.elapsed();
+                    profile.upload_bytes += (weights.len() + std::mem::size_of_val(scales)) as u64;
+                }
             }
         }
     }
@@ -842,6 +995,7 @@ impl OlmoeModel {
         layer: &mut Layer,
         gpu_dense: Option<&crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
+        max_prefetch_experts: usize,
     ) -> (HashMap<usize, Int8Expert>, Duration) {
         use rayon::prelude::*;
 
@@ -859,6 +1013,7 @@ impl OlmoeModel {
                 }
                 true
             })
+            .take(max_prefetch_experts)
             .collect();
 
         if missing_ids.len() < 2 {
@@ -869,9 +1024,10 @@ impl OlmoeModel {
         let scale_count = intermediate_size * 2 + d;
         let mut buffers = Vec::with_capacity(missing_ids.len());
         for _ in 0..missing_ids.len() {
-            let buf = layer.recycled_buffers.pop().unwrap_or_else(|| {
-                (vec![0u8; weight_count], vec![0.0f32; scale_count])
-            });
+            let buf = layer
+                .recycled_buffers
+                .pop()
+                .unwrap_or_else(|| (vec![0u8; weight_count], vec![0.0f32; scale_count]));
             buffers.push(buf);
         }
 
@@ -880,17 +1036,9 @@ impl OlmoeModel {
             .into_par_iter()
             .zip(buffers.into_par_iter())
             .filter_map(|(eid, (w, s))| {
-                Int8Expert::load_reusing(
-                    index,
-                    layer_id,
-                    eid,
-                    d,
-                    intermediate_size,
-                    w,
-                    s,
-                )
-                .ok()
-                .map(|exp| (eid, exp))
+                Int8Expert::load_reusing(index, layer_id, eid, d, intermediate_size, w, s)
+                    .ok()
+                    .map(|exp| (eid, exp))
             })
             .collect();
         let elapsed = started.elapsed();
@@ -980,98 +1128,107 @@ impl OlmoeModel {
         layer: &mut Layer,
         gpu_dense: &mut Option<crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
+        victim_cache: bool,
         profile: &mut RequestProfile,
         uses_count: u64,
         preloaded: &mut HashMap<usize, Int8Expert>,
     ) -> io::Result<(Int8Expert, bool, u32, bool)> {
-        let (expert, l2_hit, hits_in_cache, is_protected) = if let Some(pos) =
-            layer.cache.iter().position(|entry| entry.id == expert_id)
-        {
-            profile.cache_hits += uses_count;
-            let entry = layer.cache.remove(pos).unwrap();
-            layer.bytes = layer.bytes.saturating_sub(entry.expert.resident_bytes());
-            (
-                entry.expert,
-                true,
-                entry.hits_in_cache.saturating_add(1),
-                entry.is_protected,
-            )
-        } else {
-            // Cấp 1: Kiểm tra L1 GPU VRAM Cache trước khi đọc đĩa SSD NVMe
-            let mut from_vram = None;
-            if let Some(storage) = gpu_dense.as_mut() {
-                if gpu_enabled {
-                    let crate::gpu::GpuDenseStorage {
-                        engine,
-                        expert_cache,
-                        ..
-                    } = storage;
-                    if let Some(gpu_weights) = expert_cache.get(layer_id, expert_id) {
-                        let io_started = Instant::now();
-                        let (mut weights, mut scales) =
-                            layer.recycled_buffers.pop().unwrap_or_else(|| {
-                                (vec![0u8; weight_count], vec![0.0f32; scale_count])
-                            });
-                        weights.resize(weight_count, 0);
-                        scales.resize(scale_count, 0.0);
-                        if engine
-                            .download_expert(gpu_weights, &mut weights, &mut scales)
-                            .is_ok()
-                        {
-                            let exp = Int8Expert::from_raw(d, intermediate_size, weights, scales);
-                            profile.expert_io += io_started.elapsed();
-                            profile.bytes_read += exp.resident_bytes() as u64;
-                            profile.cache_hits += uses_count;
-                            from_vram = Some(exp);
-                        } else {
-                            layer.recycled_buffers.push((weights, scales));
+        let (expert, l2_hit, hits_in_cache, is_protected) =
+            if let Some(pos) = layer.cache.iter().position(|entry| entry.id == expert_id) {
+                profile.cache_hits += uses_count;
+                let entry = layer.cache.remove(pos).unwrap();
+                layer.bytes = layer.bytes.saturating_sub(entry.expert.allocated_bytes());
+                (
+                    entry.expert,
+                    true,
+                    entry.hits_in_cache.saturating_add(1),
+                    entry.is_protected,
+                )
+            } else {
+                // Cấp 1: Kiểm tra L1 GPU VRAM Cache trước khi đọc đĩa SSD NVMe
+                let mut from_vram = None;
+                if let Some(storage) = gpu_dense.as_mut() {
+                    if gpu_enabled {
+                        let crate::gpu::GpuDenseStorage {
+                            engine,
+                            expert_cache,
+                            ..
+                        } = storage;
+                        if let Some(gpu_weights) = expert_cache.get(layer_id, expert_id) {
+                            let io_started = Instant::now();
+                            let (mut weights, mut scales) =
+                                layer.recycled_buffers.pop().unwrap_or_else(|| {
+                                    (vec![0u8; weight_count], vec![0.0f32; scale_count])
+                                });
+                            weights.resize(weight_count, 0);
+                            scales.resize(scale_count, 0.0);
+                            if engine
+                                .download_expert(gpu_weights, &mut weights, &mut scales)
+                                .is_ok()
+                            {
+                                let exp =
+                                    Int8Expert::from_raw(d, intermediate_size, weights, scales);
+                                let elapsed = io_started.elapsed();
+                                profile.expert_io += elapsed;
+                                profile.vram_io += elapsed;
+                                profile.vram_loads += 1;
+                                profile.vram_bytes += exp.resident_bytes() as u64;
+                                profile.bytes_read += exp.resident_bytes() as u64;
+                                profile.cache_hits += uses_count;
+                                from_vram = Some(exp);
+                            }
                         }
                     }
                 }
-            }
 
-            if let Some(exp) = from_vram {
-                (exp, false, 1, false)
-            } else {
-                // Cấp 2: Miss cả L1 và L2 -> Lấy từ preloaded (16-B) hoặc nạp từ SSD NVMe Cold Storage
-                profile.cache_misses += 1;
-                profile.cache_hits += uses_count.saturating_sub(1);
-                let (exp, io_elapsed) = if let Some(p) = preloaded.remove(&expert_id) {
-                    (p, Duration::ZERO)
+                if let Some(exp) = from_vram {
+                    (exp, false, 1, false)
                 } else {
-                    let io_started = Instant::now();
-                    let (w, s) = layer
-                        .recycled_buffers
-                        .pop()
-                        .unwrap_or_else(|| (vec![0u8; weight_count], vec![0.0f32; scale_count]));
-                    let loaded = Int8Expert::load_reusing(
-                        index,
-                        layer_id,
-                        expert_id,
-                        d,
-                        intermediate_size,
-                        w,
-                        s,
-                    )?;
-                    (loaded, io_started.elapsed())
-                };
-                profile.expert_io += io_elapsed;
-                profile.bytes_read += exp.resident_bytes() as u64;
+                    // Cấp 2: Miss cả L1 và L2 -> Lấy từ preloaded (16-B) hoặc nạp từ SSD NVMe Cold Storage
+                    profile.cache_misses += 1;
+                    profile.cache_hits += uses_count.saturating_sub(1);
+                    let (exp, io_elapsed) = if let Some(p) = preloaded.remove(&expert_id) {
+                        (p, Duration::ZERO)
+                    } else {
+                        let io_started = Instant::now();
+                        let (w, s) = layer.recycled_buffers.pop().unwrap_or_else(|| {
+                            (vec![0u8; weight_count], vec![0.0f32; scale_count])
+                        });
+                        let loaded = Int8Expert::load_reusing(
+                            index,
+                            layer_id,
+                            expert_id,
+                            d,
+                            intermediate_size,
+                            w,
+                            s,
+                        )?;
+                        let elapsed = io_started.elapsed();
+                        profile.file_io += elapsed;
+                        profile.file_loads += 1;
+                        profile.file_bytes += loaded.resident_bytes() as u64;
+                        (loaded, elapsed)
+                    };
+                    profile.expert_io += io_elapsed;
+                    profile.bytes_read += exp.resident_bytes() as u64;
 
-                // Tự động thăng hạng (promote) expert vừa đọc lên L1 VRAM Cache
-                Self::promote_to_vram(
-                    gpu_dense,
-                    gpu_enabled,
-                    layer_id,
-                    expert_id,
-                    exp.weights(),
-                    exp.scales(),
-                );
-                (exp, false, 1, false)
-            }
-        };
+                    if !victim_cache {
+                        // Tự động thăng hạng (promote) expert vừa đọc lên L1 VRAM Cache
+                        Self::promote_to_vram(
+                            gpu_dense,
+                            gpu_enabled,
+                            layer_id,
+                            expert_id,
+                            exp.weights(),
+                            exp.scales(),
+                            profile,
+                        );
+                    }
+                    (exp, false, 1, false)
+                }
+            };
 
-        if l2_hit {
+        if l2_hit && !victim_cache {
             Self::promote_to_vram(
                 gpu_dense,
                 gpu_enabled,
@@ -1079,6 +1236,7 @@ impl OlmoeModel {
                 expert_id,
                 expert.weights(),
                 expert.scales(),
+                profile,
             );
         }
 
@@ -1101,9 +1259,26 @@ impl OlmoeModel {
         mut is_protected: bool,
         cache_bytes_per_layer: usize,
         profile: &mut RequestProfile,
+        gpu_dense: &mut Option<crate::gpu::GpuDenseStorage>,
+        gpu_enabled: bool,
+        victim_cache: bool,
+        layer_id: usize,
     ) {
-        let bytes = expert.resident_bytes();
+        let bytes = expert.allocated_bytes();
         if bytes == 0 || bytes > cache_bytes_per_layer {
+            if bytes > cache_bytes_per_layer && victim_cache {
+                // With no room in L2, retain the expert in L1 rather than losing
+                // both caches. Existing L1 entries make this upload a no-op.
+                Self::promote_to_vram(
+                    gpu_dense,
+                    gpu_enabled,
+                    layer_id,
+                    expert_id,
+                    expert.weights(),
+                    expert.scales(),
+                    profile,
+                );
+            }
             return;
         }
 
@@ -1161,15 +1336,38 @@ impl OlmoeModel {
             };
 
             if let Some(removed) = layer.cache.remove(idx) {
-                layer.bytes = layer.bytes.saturating_sub(removed.expert.resident_bytes());
-                if layer.recycled_buffers.len() < 16 {
-                    layer.recycled_buffers.push(removed.expert.into_raw());
+                layer.bytes = layer.bytes.saturating_sub(removed.expert.allocated_bytes());
+                if victim_cache {
+                    Self::promote_to_vram(
+                        gpu_dense,
+                        gpu_enabled,
+                        layer_id,
+                        removed.id,
+                        removed.expert.weights(),
+                        removed.expert.scales(),
+                        profile,
+                    );
                 }
+                layer.recycle(
+                    removed.expert.into_raw(),
+                    cache_bytes_per_layer.saturating_sub(bytes),
+                );
                 profile.cache_evictions += 1;
             }
         }
 
         if layer.bytes <= cache_bytes_per_layer - bytes {
+            layer.trim_recycled(cache_bytes_per_layer - bytes);
+            if victim_cache && gpu_enabled {
+                if let Some(storage) = gpu_dense.as_mut() {
+                    // Synchronous download is complete; L2 now owns the host payload.
+                    storage.expert_cache.remove_with_pool(
+                        layer_id,
+                        expert_id,
+                        storage.expert_pool.as_mut(),
+                    );
+                }
+            }
             layer.bytes += bytes;
             layer.cache.push_back(CachedExpert {
                 id: expert_id,
@@ -1189,6 +1387,7 @@ impl OlmoeModel {
         scratch: &mut StepScratch,
         check: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
+        let victim_cache = self.victim_expert_cache;
         let c = &self.config;
         if token >= c.vocab_size {
             return Err(invalid("token ID exceeds model vocabulary"));
@@ -1344,9 +1543,7 @@ impl OlmoeModel {
 
             // Hoàn trả các expert còn lại trong lookahead_prefetched (nếu không dùng đến) vào recycled_buffers
             for (_, unused_exp) in lookahead_prefetched.drain() {
-                if layer.recycled_buffers.len() < 16 {
-                    layer.recycled_buffers.push(unused_exp.into_raw());
-                }
+                layer.recycle(unused_exp.into_raw(), cache_bytes_per_layer);
             }
 
             // 3. Dự đoán Speculative Lookahead Candidates cho tầng tiếp theo (id + 1):
@@ -1402,6 +1599,7 @@ impl OlmoeModel {
                     layer,
                     gpu_dense,
                     gpu_tier.is_enabled(),
+                    victim_cache,
                     profile,
                     1,
                     if is_preloaded {
@@ -1429,9 +1627,10 @@ impl OlmoeModel {
             let (curr_buffers, next_buffers) = if has_io_work {
                 let mut cb = Vec::with_capacity(miss_ids.len());
                 for _ in 0..miss_ids.len() {
-                    let buf = layer.recycled_buffers.pop().unwrap_or_else(|| {
-                        (vec![0u8; weight_count], vec![0.0f32; scale_count])
-                    });
+                    let buf = layer
+                        .recycled_buffers
+                        .pop()
+                        .unwrap_or_else(|| (vec![0u8; weight_count], vec![0.0f32; scale_count]));
                     cb.push(buf);
                 }
                 let mut nb = Vec::with_capacity(next_candidates.len());
@@ -1460,17 +1659,9 @@ impl OlmoeModel {
                             .into_par_iter()
                             .zip(curr_buffers.into_par_iter())
                             .filter_map(|(eid, (w, s))| {
-                                Int8Expert::load_reusing(
-                                    index,
-                                    id,
-                                    eid,
-                                    d,
-                                    intermediate_size,
-                                    w,
-                                    s,
-                                )
-                                .ok()
-                                .map(|exp| (eid, exp))
+                                Int8Expert::load_reusing(index, id, eid, d, intermediate_size, w, s)
+                                    .ok()
+                                    .map(|exp| (eid, exp))
                             })
                             .collect();
 
@@ -1515,6 +1706,14 @@ impl OlmoeModel {
                 compute_res.0?;
                 profile.expert_compute += compute_res.1;
                 profile.expert_io += io_res.2;
+                profile.file_io += io_res.2;
+                profile.file_loads += (io_res.0.len() + io_res.1.len()) as u64;
+                profile.file_bytes += io_res
+                    .0
+                    .values()
+                    .chain(io_res.1.values())
+                    .map(|e| e.resident_bytes() as u64)
+                    .sum::<u64>();
                 preloaded.extend(io_res.0);
                 lookahead_prefetched = io_res.1;
             } else if has_io_work {
@@ -1535,24 +1734,24 @@ impl OlmoeModel {
                         .into_par_iter()
                         .zip(next_buffers.into_par_iter())
                         .filter_map(|(eid, (w, s))| {
-                            Int8Expert::load_reusing(
-                                index,
-                                id + 1,
-                                eid,
-                                d,
-                                intermediate_size,
-                                w,
-                                s,
-                            )
-                            .ok()
-                            .map(|exp| (eid, exp))
+                            Int8Expert::load_reusing(index, id + 1, eid, d, intermediate_size, w, s)
+                                .ok()
+                                .map(|exp| (eid, exp))
                         })
                         .collect()
                 } else {
                     HashMap::new()
                 };
 
-                profile.expert_io += started.elapsed();
+                let elapsed = started.elapsed();
+                profile.expert_io += elapsed;
+                profile.file_io += elapsed;
+                profile.file_loads += (curr_loaded.len() + next_loaded.len()) as u64;
+                profile.file_bytes += curr_loaded
+                    .values()
+                    .chain(next_loaded.values())
+                    .map(|e| e.resident_bytes() as u64)
+                    .sum::<u64>();
                 preloaded.extend(curr_loaded);
                 lookahead_prefetched = next_loaded;
             } else {
@@ -1591,6 +1790,7 @@ impl OlmoeModel {
                     layer,
                     gpu_dense,
                     gpu_tier.is_enabled(),
+                    victim_cache,
                     profile,
                     1,
                     &mut preloaded,
@@ -1654,6 +1854,10 @@ impl OlmoeModel {
                     item.is_protected,
                     cache_bytes_per_layer,
                     profile,
+                    gpu_dense,
+                    gpu_tier.is_enabled(),
+                    victim_cache,
+                    id,
                 );
             }
 
@@ -1667,6 +1871,10 @@ impl OlmoeModel {
                     item.is_protected,
                     cache_bytes_per_layer,
                     profile,
+                    gpu_dense,
+                    gpu_tier.is_enabled(),
+                    victim_cache,
+                    id,
                 );
             }
             finite(&scratch.x)?;
@@ -1695,6 +1903,7 @@ impl OlmoeModel {
         scratch: &mut StepScratch,
         check: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
+        let victim_cache = self.victim_expert_cache;
         let c = &self.config;
         let d = c.hidden_size;
         let hd = d / c.num_attention_heads;
@@ -1723,6 +1932,16 @@ impl OlmoeModel {
             .checked_mul(d)
             .ok_or_else(|| invalid("prefill contribution size overflow"))?;
         let mut contributions = vec![0.0; contribution_count];
+        // The grouped candidate remains test-only: paired measurements on i5
+        // found it slower than the serial token dispatch used in production.
+        #[cfg(not(test))]
+        let dispatch_width = 1;
+        #[cfg(test)]
+        let dispatch_width = if self.serial_prefill_reference {
+            1
+        } else {
+            scratch.expert_scratches.len()
+        };
         let mut expert_uses: Vec<Vec<(usize, usize, f32)>> = (0..c.num_experts)
             .map(|_| Vec::with_capacity(tokens.len()))
             .collect();
@@ -1888,8 +2107,15 @@ impl OlmoeModel {
                 layer,
                 gpu_dense.as_ref(),
                 gpu_tier.is_enabled(),
+                c.num_experts_per_tok,
             );
             profile.expert_io += prefetch_io;
+            profile.file_io += prefetch_io;
+            profile.file_loads += preloaded.len() as u64;
+            profile.file_bytes += preloaded
+                .values()
+                .map(|e| e.resident_bytes() as u64)
+                .sum::<u64>();
 
             for (expert_id, uses) in expert_uses.iter().enumerate().take(c.num_experts) {
                 if uses.is_empty() {
@@ -1913,25 +2139,56 @@ impl OlmoeModel {
                     layer,
                     gpu_dense,
                     gpu_tier.is_enabled(),
+                    victim_cache,
                     profile,
                     uses.len() as u64,
                     &mut preloaded,
                 )?;
 
-                for &(token, slot, weight) in uses {
+                // Dispatch tokens sharing this expert together. Each task owns a scratch
+                // slot and uses the serial kernel, avoiding nested row-level fork/joins.
+                // Copy results back in route order before the deterministic Top-K reduction.
+                for routes in uses.chunks(dispatch_width) {
                     check()?;
                     let expert_started = Instant::now();
-                    let result = expert.forward_reuse(
-                        &hidden_batch[token * d..(token + 1) * d],
-                        &mut scratch.expert,
-                    )?;
-                    profile.expert_compute += expert_started.elapsed();
-                    let contribution = (token * c.num_experts_per_tok + slot) * d;
-                    for (target, value) in contributions[contribution..contribution + d]
-                        .iter_mut()
-                        .zip(result)
-                    {
-                        *target = weight * value;
+                    if routes.len() == 1 {
+                        let (token, slot, weight) = routes[0];
+                        let result = expert.forward_reuse(
+                            &hidden_batch[token * d..(token + 1) * d],
+                            &mut scratch.expert,
+                        )?;
+                        profile.expert_compute += expert_started.elapsed();
+                        let contribution = (token * c.num_experts_per_tok + slot) * d;
+                        for (target, value) in contributions[contribution..contribution + d]
+                            .iter_mut()
+                            .zip(result)
+                        {
+                            *target = weight * value;
+                        }
+                    } else {
+                        scratch.expert_scratches[..routes.len()]
+                            .par_iter_mut()
+                            .zip(routes.par_iter())
+                            .try_for_each(|(buffer, &(token, _, _))| {
+                                expert.forward_single_threaded(
+                                    &hidden_batch[token * d..(token + 1) * d],
+                                    buffer,
+                                )?;
+                                Ok::<(), io::Error>(())
+                            })?;
+                        profile.expert_compute += expert_started.elapsed();
+                        check()?;
+                        for (&(token, slot, weight), buffer) in
+                            routes.iter().zip(&scratch.expert_scratches)
+                        {
+                            let contribution = (token * c.num_experts_per_tok + slot) * d;
+                            for (target, value) in contributions[contribution..contribution + d]
+                                .iter_mut()
+                                .zip(&buffer.output)
+                            {
+                                *target = weight * value;
+                            }
+                        }
                     }
                 }
 
@@ -1944,6 +2201,10 @@ impl OlmoeModel {
                     is_protected,
                     cache_bytes_per_layer,
                     profile,
+                    gpu_dense,
+                    gpu_tier.is_enabled(),
+                    victim_cache,
+                    layer_id,
                 );
             }
             for token in 0..tokens.len() {
@@ -2001,7 +2262,75 @@ impl OlmoeModel {
         self.generate_controlled(prompt, max_tokens, None, &|| Ok(()), || Ok(()), None)
     }
 
+    fn take_prefix_kv(
+        &mut self,
+        tokens: &[usize],
+        session_id: Option<&str>,
+        kd: usize,
+    ) -> (usize, Vec<Kv>) {
+        if let Some(mut state) = session_id.and_then(|id| self.sessions.remove(id)) {
+            // Causal KV remains valid up to the first changed token. Recompute at
+            // least the final prompt token because the cache does not retain logits.
+            let prefix = tokens
+                .iter()
+                .zip(&state.tokens)
+                .take_while(|(a, b)| a == b)
+                .count()
+                .min(tokens.len() - 1);
+            #[cfg(test)]
+            let prefix = if self.strict_session_prefix_reference {
+                if state.tokens.len() < tokens.len() && tokens.starts_with(&state.tokens) {
+                    state.tokens.len()
+                } else {
+                    0
+                }
+            } else {
+                prefix
+            };
+            if prefix > 0 {
+                for cache in &mut state.kv {
+                    cache.keys.truncate(prefix * kd);
+                    cache.values.truncate(prefix * kd);
+                }
+                return (prefix, state.kv);
+            }
+        }
+        // Allocate only after lookup; a reusable session already owns its buffers.
+        (
+            0,
+            (0..self.layers.len())
+                .map(|_| Kv::with_capacity(self.context_limit, kd))
+                .collect(),
+        )
+    }
+
     pub(crate) fn generate_controlled(
+        &mut self,
+        prompt: &str,
+        max_tokens: usize,
+        session_id: Option<&str>,
+        check: &dyn Fn() -> io::Result<()>,
+        ready: impl FnOnce() -> io::Result<()>,
+        emit: Option<&mut DeltaSink<'_>>,
+    ) -> io::Result<Generation> {
+        let result = self.generate_inner(prompt, max_tokens, session_id, check, ready, emit);
+        if result
+            .as_ref()
+            .is_err_and(|error| error.kind() == io::ErrorKind::OutOfMemory)
+        {
+            // Drop host-owned cache payloads after the worker has stopped using
+            // them. Allocators may retain freed pages; this cannot force RSS down.
+            self.sessions.clear();
+            for layer in &mut self.layers {
+                layer.cache.clear();
+                layer.recycled_buffers.clear();
+                layer.bytes = 0;
+            }
+        }
+        result
+    }
+
+    fn generate_inner(
         &mut self,
         prompt: &str,
         max_tokens: usize,
@@ -2010,6 +2339,39 @@ impl OlmoeModel {
         ready: impl FnOnce() -> io::Result<()>,
         mut emit: Option<&mut DeltaSink<'_>>,
     ) -> io::Result<Generation> {
+        let guard = self.ram_guard;
+        // Check at existing cancellation boundaries, including inside layers.
+        // A small forward reserve leaves room for one bounded expert load group.
+        let reserve = (self.config.hidden_size * self.config.intermediate_size * 3
+            + (self.config.intermediate_size * 2 + self.config.hidden_size) * 4)
+            .saturating_mul(self.config.num_experts_per_tok + 2);
+        let request_reserve = self
+            .context_limit
+            .saturating_mul(self.config.hidden_size)
+            .saturating_mul(4)
+            .saturating_mul(self.config.num_experts_per_tok + 12)
+            .saturating_add(
+                self.context_limit
+                    .saturating_mul(self.config.hidden_size)
+                    .saturating_mul(8)
+                    .saturating_mul(self.layers.len()),
+            )
+            .saturating_add(reserve)
+            .saturating_add(64 * 1024 * 1024);
+        check()?;
+        guard.check(request_reserve)?;
+        let last_check = std::cell::Cell::new(Instant::now());
+        let guarded_check = || {
+            check()?;
+            // Cancellation stays cheap and immediate. Sampling avoids reading
+            // /proc for every routed token while retaining layer/load boundaries.
+            if last_check.get().elapsed() >= Duration::from_millis(25) {
+                guard.check(reserve)?;
+                last_check.set(Instant::now());
+            }
+            Ok(())
+        };
+        let check: &dyn Fn() -> io::Result<()> = &guarded_check;
         check()?;
         let total_started = Instant::now();
         let bad = |s| io::Error::new(io::ErrorKind::InvalidInput, s);
@@ -2043,21 +2405,9 @@ impl OlmoeModel {
         ready()?;
         check()?;
         self.session_clock = self.session_clock.wrapping_add(1);
-        let mut cached_prompt_tokens = 0;
         let d = self.config.hidden_size;
         let kd = d / self.config.num_attention_heads * self.config.num_key_value_heads;
-        let mut kv: Vec<_> = (0..self.layers.len())
-            .map(|_| Kv::with_capacity(self.context_limit, kd))
-            .collect();
-        if let Some(id) = session_id {
-            if let Some(state) = self.sessions.remove(id) {
-                let prefix = state.tokens.len();
-                if prefix < tokens.len() && tokens.starts_with(&state.tokens) {
-                    cached_prompt_tokens = prefix;
-                    kv = state.kv;
-                }
-            }
-        }
+        let (cached_prompt_tokens, mut kv) = self.take_prefix_kv(&tokens, session_id, kd);
         let mut profile = RequestProfile::default();
         let mut scratch = StepScratch::new(&self.config);
         let prefill_started = Instant::now();
@@ -2069,6 +2419,7 @@ impl OlmoeModel {
             check,
         )?;
         let prefill_elapsed = prefill_started.elapsed();
+        let prefill_expert_io = profile.expert_io;
         let mut output = Vec::new();
         let mut finish_reason = "length";
         let first_token_started = total_started.elapsed();
@@ -2125,8 +2476,23 @@ impl OlmoeModel {
             .map(|cache| (cache.keys.len() + cache.values.len()) * std::mem::size_of::<f32>())
             .sum();
         if let Some(id) = session_id {
-            if kv_bytes <= self.session_cache_bytes {
-                while self.sessions.values().map(session_bytes).sum::<usize>() + kv_bytes
+            let id = id.to_owned();
+            let state = SessionState {
+                tokens: processed_tokens,
+                kv,
+                last_used: self.session_clock,
+            };
+            let retained_bytes = session_bytes(&state).saturating_add(id.capacity());
+            if retained_bytes <= self.session_cache_bytes {
+                while self
+                    .sessions
+                    .iter()
+                    .fold(0usize, |total, (key, state)| {
+                        total
+                            .saturating_add(session_bytes(state))
+                            .saturating_add(key.capacity())
+                    })
+                    .saturating_add(retained_bytes)
                     > self.session_cache_bytes
                 {
                     let Some(oldest) = self
@@ -2139,14 +2505,7 @@ impl OlmoeModel {
                     };
                     self.sessions.remove(&oldest);
                 }
-                self.sessions.insert(
-                    id.to_owned(),
-                    SessionState {
-                        tokens: processed_tokens,
-                        kv,
-                        last_used: self.session_clock,
-                    },
-                );
+                self.sessions.insert(id, state);
             }
         }
         let seconds = decode_elapsed.as_secs_f64();
@@ -2170,6 +2529,16 @@ impl OlmoeModel {
                 expert_compute_ms: ms(profile.expert_compute),
                 lm_head_ms: ms(profile.lm_head),
                 expert_io_ms: ms(profile.expert_io),
+                prefill_expert_io_ms: ms(prefill_expert_io),
+                decode_expert_io_ms: ms(profile.expert_io.saturating_sub(prefill_expert_io)),
+                expert_file_read_ms: ms(profile.file_io),
+                expert_vram_download_ms: ms(profile.vram_io),
+                expert_vram_upload_ms: ms(profile.upload_io),
+                expert_file_bytes_read: profile.file_bytes,
+                expert_vram_download_bytes: profile.vram_bytes,
+                expert_vram_upload_bytes: profile.upload_bytes,
+                expert_file_loads: profile.file_loads,
+                expert_vram_loads: profile.vram_loads,
                 expert_cache_hits: profile.cache_hits,
                 expert_cache_misses: profile.cache_misses,
                 expert_cache_evictions: profile.cache_evictions,
@@ -2183,11 +2552,28 @@ impl OlmoeModel {
 }
 
 fn session_bytes(state: &SessionState) -> usize {
-    state
-        .kv
-        .iter()
-        .map(|cache| (cache.keys.len() + cache.values.len()) * std::mem::size_of::<f32>())
-        .sum()
+    // Retained vector allocations, including unused capacity after prefix truncation.
+    // HashMap buckets/allocator bookkeeping and the active request are separate.
+    state.kv.iter().fold(
+        std::mem::size_of::<SessionState>()
+            .saturating_add(
+                state
+                    .tokens
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<usize>()),
+            )
+            .saturating_add(
+                state
+                    .kv
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<Kv>()),
+            ),
+        |total, cache| {
+            total
+                .saturating_add(cache.keys.capacity().saturating_mul(4))
+                .saturating_add(cache.values.capacity().saturating_mul(4))
+        },
+    )
 }
 
 fn ms(duration: Duration) -> f64 {
@@ -2283,6 +2669,147 @@ mod cancellation_tests {
     }
 
     #[test]
+    fn undersized_pinned_staging_falls_back_and_preserves_logits() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 512, 64, 10_000_000).unwrap();
+        let Some(storage) = model.gpu_dense.as_mut() else {
+            eprintln!("SKIPPED undersized pinned CUDA execution: GPU unavailable");
+            return;
+        };
+        storage.pinned_upload_buf =
+            Some(crate::gpu::PinnedBuffer::alloc(&storage.engine, 8).unwrap());
+        storage.expert_cache.max_bytes = 1024;
+        storage.expert_pool =
+            Some(crate::gpu::GpuExpertPool::new(&storage.engine, 2, 384, 128).unwrap());
+        model.victim_expert_cache = true;
+        model.set_gpu_enabled(false);
+        let tokens = [1, 3, 4, 5, 6, 7, 8];
+        let expected = model.logits(&tokens).unwrap();
+        model.reset_cache();
+        model.set_gpu_enabled(true);
+        let actual = model.logits(&tokens).unwrap();
+        for (actual, expected) in actual.iter().zip(expected) {
+            let error = actual
+                .iter()
+                .zip(expected)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(
+                error < 2e-5,
+                "undersized pinned fallback logit error={error}"
+            );
+        }
+        let storage = model.gpu_dense.as_ref().unwrap();
+        assert!(storage.engine.is_healthy());
+        assert!(
+            !storage.expert_cache.is_empty(),
+            "fallback must upload through the pool"
+        );
+        let pinned = storage.pinned_upload_buf.as_ref().unwrap();
+        assert_eq!(pinned.len(), 8);
+        assert!(
+            unsafe { pinned.as_slice::<u8>() }
+                .iter()
+                .all(|&byte| byte == 0),
+            "undersized staging must stay untouched"
+        );
+        eprintln!("EXECUTED undersized pinned staging fallback/logits on CUDA");
+    }
+
+    #[test]
+    fn victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 512, 64, 10_000_000).unwrap();
+        let Some(storage) = model.gpu_dense.as_mut() else {
+            eprintln!("SKIPPED victim cache CUDA execution: GPU unavailable");
+            return;
+        };
+        storage.expert_cache.max_bytes = 1024;
+        storage.expert_pool =
+            Some(crate::gpu::GpuExpertPool::new(&storage.engine, 2, 384, 128).unwrap());
+        model.victim_expert_cache = true;
+        model.set_gpu_enabled(false);
+        let tokens = [1, 3, 4, 5, 6, 7, 8];
+        let expected = model.logits(&tokens).unwrap();
+        model.reset_cache();
+        model.set_gpu_enabled(true);
+        let actual = model.logits(&tokens).unwrap();
+        for (actual, expected) in actual.iter().zip(&expected) {
+            let error = actual
+                .iter()
+                .zip(expected)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(error < 2e-5, "victim CUDA logit error={error}");
+        }
+        let storage = model.gpu_dense.as_ref().unwrap();
+        assert!(storage.engine.is_healthy());
+        assert!(
+            !storage.expert_cache.is_empty(),
+            "evictions should populate VRAM"
+        );
+        for &(layer, expert) in storage.expert_cache.entries.keys() {
+            assert!(!model.layers[layer]
+                .cache
+                .iter()
+                .any(|entry| entry.id == expert));
+        }
+        model.reset_cache();
+        let storage = model.gpu_dense.as_ref().unwrap();
+        assert!(storage.expert_cache.is_empty());
+        let pool = storage.expert_pool.as_ref().unwrap();
+        assert_eq!(pool.available_slots(), pool.max_slots);
+        // If RAM cannot admit even one expert, keep L1 useful as the only cache.
+        model.cache_bytes_per_layer = 0;
+        let storage = model.gpu_dense.as_mut().unwrap();
+        storage.expert_cache.max_bytes = 8 * 512;
+        storage.expert_pool =
+            Some(crate::gpu::GpuExpertPool::new(&storage.engine, 8, 384, 128).unwrap());
+        let result = model.generate("[BOS]token3 token4 ", 4).unwrap();
+        assert!(model.layers.iter().all(|layer| layer.cache.is_empty()));
+        let metrics = result.metrics.unwrap();
+        assert!(metrics.expert_vram_upload_bytes > 0);
+        assert!(metrics.expert_vram_loads > 0);
+        eprintln!("EXECUTED victim cache CUDA: logits, disjoint tiers, pool reset passed");
+    }
+
+    #[test]
+    fn expert_io_metrics_separate_phases_and_file_payload() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        model.set_gpu_enabled(false);
+        for limit in [1, 4] {
+            model.reset_cache();
+            let metrics = model
+                .generate("[BOS]token3 token4 ", limit)
+                .unwrap()
+                .metrics
+                .unwrap();
+            assert!(metrics.expert_file_loads > 0);
+            let payload = model.config.hidden_size * model.config.intermediate_size * 3
+                + (model.config.intermediate_size * 2 + model.config.hidden_size) * 4;
+            assert_eq!(
+                metrics.expert_file_bytes_read,
+                metrics.expert_file_loads * payload as u64
+            );
+            assert!((metrics.expert_io_ms - metrics.expert_file_read_ms).abs() < 1e-6);
+            assert!(
+                (metrics.expert_io_ms - metrics.prefill_expert_io_ms - metrics.decode_expert_io_ms)
+                    .abs()
+                    < 1e-6
+            );
+            assert_eq!(metrics.expert_vram_download_bytes, 0);
+            assert_eq!(metrics.expert_vram_upload_bytes, 0);
+            if limit == 1 {
+                assert_eq!(metrics.decode_expert_io_ms, 0.0);
+            }
+        }
+    }
+
+    #[test]
     fn session_prefix_cache_matches_fresh_generation() {
         let directory =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
@@ -2314,6 +2841,452 @@ mod cancellation_tests {
             reused.metrics.unwrap().cached_prompt_tokens > 0,
             "the exact token prefix should reuse KV"
         );
+    }
+
+    #[test]
+    fn session_reuses_common_prefix_after_edit_and_repeated_prompt() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/olmoe")
+                .join(fixture);
+            let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+            model.set_gpu_enabled(false);
+            for prompt in [
+                "[BOS]token3 token4 token5 ",
+                "[BOS]token3 token4 token6 ",
+                "[BOS]token3 token4 token6 ",
+                "[BOS]token3 ",
+                "token7 token8 ",
+            ] {
+                let tokens: Vec<_> = model
+                    .tokenizer
+                    .as_ref()
+                    .unwrap()
+                    .encode(prompt, false)
+                    .unwrap()
+                    .get_ids()
+                    .iter()
+                    .map(|&id| id as usize)
+                    .collect();
+                let expected_cached = model.sessions.get("edited-session").map_or(0, |state| {
+                    tokens
+                        .iter()
+                        .zip(&state.tokens)
+                        .take_while(|(a, b)| a == b)
+                        .count()
+                        .min(tokens.len() - 1)
+                });
+                let reused = model
+                    .generate_controlled(
+                        prompt,
+                        3,
+                        Some("edited-session"),
+                        &|| Ok(()),
+                        || Ok(()),
+                        None,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    reused.metrics.unwrap().cached_prompt_tokens,
+                    expected_cached,
+                    "{fixture}, prompt={prompt}"
+                );
+                let expected = model.generate(prompt, 3).unwrap();
+                assert_eq!(reused.token_ids, expected.token_ids, "{fixture}, {prompt}");
+            }
+        }
+    }
+
+    #[test]
+    fn truncated_session_kv_preserves_logits_and_buffer_ownership() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/olmoe")
+                .join(fixture);
+            let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+            model.set_gpu_enabled(false);
+            model
+                .generate_controlled(
+                    "[BOS]token3 token4 token5 ",
+                    1,
+                    Some("fork"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            let addresses: Vec<_> = model.sessions["fork"]
+                .kv
+                .iter()
+                .map(|cache| (cache.keys.as_ptr(), cache.values.as_ptr()))
+                .collect();
+            let tokens = [1, 3, 4, 6];
+            let expected = model.logits(&tokens).unwrap().pop().unwrap();
+            let kd = model.config.hidden_size / model.config.num_attention_heads
+                * model.config.num_key_value_heads;
+            let (prefix, mut kv) = model.take_prefix_kv(&tokens, Some("fork"), kd);
+            assert_eq!(prefix, 3);
+            assert!(!model.sessions.contains_key("fork"));
+            for (cache, addresses) in kv.iter().zip(addresses) {
+                assert_eq!((cache.keys.as_ptr(), cache.values.as_ptr()), addresses);
+                assert_eq!(cache.keys.len(), prefix * kd);
+                assert_eq!(cache.values.len(), prefix * kd);
+            }
+            let mut profile = RequestProfile::default();
+            let mut scratch = StepScratch::new(&model.config);
+            model
+                .prefill(
+                    &tokens[prefix..],
+                    &mut kv,
+                    &mut profile,
+                    &mut scratch,
+                    &|| Ok(()),
+                )
+                .unwrap();
+            let error = scratch
+                .logits
+                .iter()
+                .zip(expected)
+                .map(|(actual, expected)| (actual - expected).abs())
+                .fold(0.0f32, f32::max);
+            assert!(error < 2e-5, "{fixture}: truncated KV logit error={error}");
+        }
+    }
+
+    #[test]
+    fn reset_cache_preserves_session_budget_and_allows_new_prefix_reuse() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        let budget = model.session_cache_bytes;
+        assert!(budget > 0);
+        for cycle in 0..2 {
+            model
+                .generate_controlled(
+                    "[BOS]token3 ",
+                    1,
+                    Some("reset-session"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            assert!(!model.sessions.is_empty(), "cycle {cycle}");
+            model.reset_cache();
+            assert!(model.sessions.is_empty());
+            assert!(model.layers.iter().all(|layer| {
+                layer.cache.is_empty() && layer.recycled_buffers.is_empty() && layer.bytes == 0
+            }));
+            assert_eq!(
+                model.session_cache_bytes, budget,
+                "reset must retain budget"
+            );
+            let first = model
+                .generate_controlled(
+                    "[BOS]token3 ",
+                    1,
+                    Some("reset-session"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(first.metrics.unwrap().cached_prompt_tokens, 0);
+            let reused = model
+                .generate_controlled(
+                    "[BOS]token3 token4 ",
+                    3,
+                    Some("reset-session"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            let metrics = reused.metrics.unwrap();
+            assert!(metrics.cached_prompt_tokens > 0, "cycle {cycle}");
+            assert!(metrics.cached_prompt_tokens < reused.prompt_tokens);
+            let expected = model.generate("[BOS]token3 token4 ", 3).unwrap();
+            assert_eq!(reused.token_ids, expected.token_ids);
+        }
+    }
+
+    #[test]
+    fn prefix_prefill_matches_full_logits_for_every_split() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/olmoe")
+                .join(fixture);
+            let reference: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(directory.join("reference.json")).unwrap())
+                    .unwrap();
+            let tokens: Vec<_> = reference["ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() as usize)
+                .collect();
+            let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+            let expected = model.logits(&tokens).unwrap().pop().unwrap();
+            for split in 1..tokens.len() {
+                let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+                let mut profile = RequestProfile::default();
+                let mut scratch = StepScratch::new(&model.config);
+                for part in [&tokens[..split], &tokens[split..]] {
+                    model
+                        .prefill(part, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                        .unwrap();
+                }
+                assert_eq!(scratch.logits.len(), expected.len());
+                let error = scratch
+                    .logits
+                    .iter()
+                    .zip(&expected)
+                    .map(|(actual, expected)| (actual - expected).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(
+                    error < 2e-5,
+                    "{fixture}, split {split}: logit error={error}"
+                );
+                let kd = model.config.hidden_size / model.config.num_attention_heads
+                    * model.config.num_key_value_heads;
+                assert!(kv.iter().all(|cache| cache.keys.len() / kd == tokens.len()));
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "release-only paired model prefill experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED"]
+    fn benchmark_prefill_dispatch_paired() {
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(!cfg!(debug_assertions), "run with --release");
+        }
+        let testbed = std::env::var("MOE_PREFILL_TESTBED").expect("explicit i5/i7 required");
+        assert!(matches!(testbed.as_str(), "i5" | "i7"));
+        let model_path = std::env::var("MOE_PREFILL_MODEL").expect("set model directory");
+        let output = std::env::var("MOE_PREFILL_REPORT").expect("set unique output path");
+        let mut model =
+            OlmoeModel::load(&model_path, 128 * 1024 * 1024, 512, 3 * 1024 * 1024 * 1024).unwrap();
+        let prompt = model
+            .render_chat(&[crate::engine::ChatMessage {
+                role: "user".into(),
+                content: "Where is Mars ?".into(),
+            }])
+            .unwrap();
+        let gpu_start = model.expert_status().gpu;
+        // Warm both paths before sampling; no cache reset between measurements.
+        for serial in [true, false, true, false] {
+            model.serial_prefill_reference = serial;
+            model.generate(&prompt, 1).unwrap();
+        }
+        let mut samples = Vec::new();
+        let mut expected = None;
+        for pair in 0..9 {
+            let order = if pair % 2 == 0 {
+                [true, false]
+            } else {
+                [false, true]
+            };
+            for serial in order {
+                model.serial_prefill_reference = serial;
+                let response = model.generate(&prompt, 1).unwrap();
+                if let Some(tokens) = &expected {
+                    assert_eq!(&response.token_ids, tokens);
+                } else {
+                    expected = Some(response.token_ids.clone());
+                }
+                eprintln!(
+                    "pair {pair}, serial={serial}, prefill_ms={:.3}",
+                    response.metrics.as_ref().unwrap().prefill_ms
+                );
+                samples.push(serde_json::json!({
+                    "pair": pair, "variant": if serial { "before" } else { "after" },
+                    "response": response
+                }));
+            }
+        }
+        let report = serde_json::json!({
+            "schema_version": 1, "scope": "exploratory paired prefill experiment",
+            "testbed": testbed, "model_directory": model_path,
+            "prompt": "Where is Mars ?", "max_tokens": 1, "cache_mib_per_layer": 128,
+            "context": 512, "threads": rayon::current_num_threads(),
+            "gpu_start": gpu_start, "gpu_end": model.expert_status().gpu,
+            "warmup": 4, "samples": samples,
+            "notes": ["one loaded model; alternating order within each pair; expert caches evolve",
+                "one output token isolates prefill; no session KV reuse",
+                "same checkpoint as runner A/B; OS cache and desktop load uncontrolled",
+                "serial reference is compiled only in tests; not a production runtime toggle"]
+        });
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(output)
+            .unwrap();
+        serde_json::to_writer_pretty(&mut file, &report).unwrap();
+    }
+
+    #[test]
+    #[ignore = "release-only paired session experiment; requires MOE_PREFILL_MODEL/REPORT/TESTBED"]
+    fn benchmark_session_prefix_paired() {
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(!cfg!(debug_assertions), "run with --release");
+        }
+        let testbed = std::env::var("MOE_PREFILL_TESTBED").expect("explicit i5/i7 required");
+        assert!(matches!(testbed.as_str(), "i5" | "i7"));
+        let model_path = std::env::var("MOE_PREFILL_MODEL").expect("set model directory");
+        let output = std::env::var("MOE_PREFILL_REPORT").expect("set unique output path");
+        let mut model =
+            OlmoeModel::load(&model_path, 128 * 1024 * 1024, 512, 3 * 1024 * 1024 * 1024).unwrap();
+        let context = "Context note: Mars is a planet in our solar system. ".repeat(8);
+        let render = |model: &OlmoeModel, question: &str| {
+            model
+                .render_chat(&[crate::engine::ChatMessage {
+                    role: "user".into(),
+                    content: format!("{context}{question}"),
+                }])
+                .unwrap()
+        };
+        let seed_prompt = render(&model, "Where is Mars ?");
+        let target_prompt = render(&model, "What is love ?");
+        model
+            .generate_controlled(
+                &seed_prompt,
+                1,
+                Some("paired-session"),
+                &|| Ok(()),
+                || Ok(()),
+                None,
+            )
+            .unwrap();
+        let seed = model.sessions.remove("paired-session").unwrap();
+        let gpu_start = model.expert_status().gpu;
+        let mut samples = Vec::new();
+        let mut expected = None;
+        // Clone a fixed seed outside generation timing, preserving its reserved capacities.
+        // Warm both variants once, then collect alternating paired samples.
+        for pair in 0..6 {
+            let order = if pair % 2 == 0 {
+                [true, false]
+            } else {
+                [false, true]
+            };
+            for strict in order {
+                let kv = seed
+                    .kv
+                    .iter()
+                    .map(|cache| {
+                        let mut copy = Kv::with_capacity(
+                            model.context_limit,
+                            cache.keys.len() / seed.tokens.len(),
+                        );
+                        copy.keys.extend_from_slice(&cache.keys);
+                        copy.values.extend_from_slice(&cache.values);
+                        copy
+                    })
+                    .collect();
+                model.sessions.insert(
+                    "paired-session".into(),
+                    SessionState {
+                        tokens: seed.tokens.clone(),
+                        kv,
+                        last_used: model.session_clock,
+                    },
+                );
+                model.strict_session_prefix_reference = strict;
+                let response = model
+                    .generate_controlled(
+                        &target_prompt,
+                        1,
+                        Some("paired-session"),
+                        &|| Ok(()),
+                        || Ok(()),
+                        None,
+                    )
+                    .unwrap();
+                if let Some(tokens) = &expected {
+                    assert_eq!(&response.token_ids, tokens);
+                } else {
+                    expected = Some(response.token_ids.clone());
+                }
+                let metrics = response.metrics.as_ref().unwrap();
+                if strict {
+                    assert_eq!(metrics.cached_prompt_tokens, 0);
+                } else {
+                    assert!(metrics.cached_prompt_tokens > 0);
+                }
+                eprintln!(
+                    "pair {pair}, strict={strict}, prefill_ms={:.3}, cached={}",
+                    metrics.prefill_ms, metrics.cached_prompt_tokens
+                );
+                if pair > 0 {
+                    samples.push(serde_json::json!({
+                        "pair": pair, "variant": if strict { "before" } else { "after" },
+                        "response": response
+                    }));
+                }
+            }
+        }
+        let report = serde_json::json!({
+            "schema_version": 1, "scope": "exploratory edited-session prefix experiment",
+            "testbed": testbed, "model_directory": model_path,
+            "seed_prompt": seed_prompt, "target_prompt": target_prompt,
+            "max_tokens": 1, "cache_mib_per_layer": 128, "context": 512,
+            "threads": rayon::current_num_threads(), "gpu_start": gpu_start,
+            "gpu_end": model.expert_status().gpu, "warmup_pairs": 1, "samples": samples,
+            "notes": ["fixed seed KV restored outside generation timing; one model; alternating order",
+                "edited last question sharing a long prefix; not the user's ordinary two-turn chat",
+                "one output token isolates prefill; OS cache and desktop load uncontrolled",
+                "strict reference is compiled only in tests; same final serial expert dispatch"]
+        });
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(output)
+            .unwrap();
+        serde_json::to_writer_pretty(&mut file, &report).unwrap();
+    }
+
+    #[test]
+    fn parallel_prefill_routes_match_tokenwise_logits_with_tails() {
+        for threads in [1, 4] {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap()
+                .install(|| {
+                    for fixture in ["unnormalized-mha", "normalized-gqa"] {
+                        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("tests/fixtures/olmoe")
+                            .join(fixture);
+                        let mut model =
+                            OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+                        model.set_gpu_enabled(false);
+                        model.serial_prefill_reference = false;
+                        for length in [1, 9, 17] {
+                            let tokens: Vec<_> = (0..length).map(|i| [1, 3, 4, 5][i % 4]).collect();
+                            let expected = model.logits(&tokens).unwrap().pop().unwrap();
+                            let mut kv: Vec<_> =
+                                (0..model.layers.len()).map(|_| Kv::default()).collect();
+                            let mut profile = RequestProfile::default();
+                            let mut scratch = StepScratch::new(&model.config);
+                            model
+                                .prefill(&tokens, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                                .unwrap();
+                            let error = scratch
+                                .logits
+                                .iter()
+                                .zip(&expected)
+                                .map(|(actual, expected)| (actual - expected).abs())
+                                .fold(0.0f32, f32::max);
+                            assert!(
+                                error < 2e-5,
+                                "{fixture}, threads={threads}, tokens={length}: error={error}"
+                            );
+                        }
+                    }
+                });
+        }
     }
 
     #[test]
@@ -2582,6 +3555,172 @@ mod routing_and_topk_tests {
     }
 
     #[test]
+    fn ram_pressure_rejects_and_clears_host_cache_then_allows_retry() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        model.set_gpu_enabled(false);
+        model
+            .generate_controlled(
+                "[BOS]token3 ",
+                3,
+                Some("ram-test"),
+                &|| Ok(()),
+                || Ok(()),
+                None,
+            )
+            .unwrap();
+        assert!(!model.sessions.is_empty());
+        assert!(model.layers.iter().any(|layer| !layer.cache.is_empty()));
+        let guard = model.ram_guard;
+        model.ram_guard.rss_limit = 1;
+        let ready = std::cell::Cell::new(false);
+        let error = model
+            .generate_controlled(
+                "[BOS]token3 ",
+                3,
+                Some("ram-test"),
+                &|| Ok(()),
+                || {
+                    ready.set(true);
+                    Ok(())
+                },
+                None,
+            )
+            .err()
+            .unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+        assert!(!ready.get(), "reject before SSE ready");
+        assert!(model.sessions.is_empty());
+        assert!(model
+            .layers
+            .iter()
+            .all(|l| l.bytes == 0 && l.cache.is_empty() && l.recycled_buffers.is_empty()));
+        model.ram_guard = guard;
+        assert!(model.generate("[BOS]token3 ", 3).is_ok());
+    }
+
+    #[test]
+    fn expert_retained_budget_covers_cache_and_recycled_after_churn() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        for budget in [0, 512, 900, 1536] {
+            let mut model = OlmoeModel::load(&directory, budget, 64, 10_000_000).unwrap();
+            model.set_gpu_enabled(false);
+            let mut reference = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+            reference.set_gpu_enabled(false);
+            for prompt in [
+                "[BOS]token3 token4 token5 ",
+                "[BOS]token8 token9 ",
+                "[BOS]token10 token11 token12 ",
+            ] {
+                let expected = reference.generate(prompt, 8).unwrap();
+                let actual = model.generate(prompt, 8).unwrap();
+                assert_eq!(actual.token_ids, expected.token_ids, "budget={budget}");
+                for layer in &model.layers {
+                    assert_eq!(
+                        layer.bytes,
+                        layer
+                            .cache
+                            .iter()
+                            .map(|e| e.expert.allocated_bytes())
+                            .sum::<usize>()
+                    );
+                    assert!(
+                        layer.bytes + layer.recycled_bytes() <= budget,
+                        "budget={budget}, cached={}, recycled={}",
+                        layer.bytes,
+                        layer.recycled_bytes()
+                    );
+                }
+            }
+            model.reset_cache();
+            assert!(model
+                .layers
+                .iter()
+                .all(|l| l.bytes + l.recycled_bytes() == 0));
+        }
+    }
+
+    #[test]
+    fn prefill_prefetch_is_bounded_and_recycled_capacity_is_charged() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 900, 64, 10_000_000).unwrap();
+        model.set_gpu_enabled(false);
+        let layer = &mut model.layers[0];
+        layer.recycle((Vec::with_capacity(384), Vec::with_capacity(32)), 900);
+        assert_eq!(layer.recycled_bytes(), 512);
+        layer.recycle((Vec::with_capacity(384), Vec::with_capacity(32)), 900);
+        assert_eq!(layer.recycled_buffers.len(), 1);
+        let (prefetched, _) = OlmoeModel::prefetch_missing_experts(
+            0,
+            &[0, 1, 2, 3],
+            16,
+            8,
+            &model.index,
+            layer,
+            None,
+            false,
+            2,
+        );
+        assert_eq!(
+            prefetched.len(),
+            2,
+            "do not allocate all missing experts at once"
+        );
+        assert!(
+            prefetched
+                .values()
+                .map(Int8Expert::allocated_bytes)
+                .sum::<usize>()
+                <= 1024
+        );
+    }
+
+    #[test]
+    fn session_budget_counts_reserved_capacity_for_short_prompts() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        model.set_gpu_enabled(false);
+        model.session_cache_bytes = 1024;
+        for id in ["short-a", "short-b"] {
+            model
+                .generate_controlled("[BOS]token3 ", 1, Some(id), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+        }
+        assert!(
+            model.sessions.is_empty(),
+            "full-context buffers exceed the small session budget"
+        );
+        model.session_cache_bytes = 20_000;
+        for id in ["short-a", "short-b", "short-c"] {
+            model
+                .generate_controlled("[BOS]token3 ", 1, Some(id), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let retained: usize = model
+                .sessions
+                .iter()
+                .map(|(id, state)| {
+                    id.capacity()
+                        + std::mem::size_of::<SessionState>()
+                        + state.tokens.capacity() * std::mem::size_of::<usize>()
+                        + state.kv.capacity() * std::mem::size_of::<Kv>()
+                        + state
+                            .kv
+                            .iter()
+                            .map(|kv| (kv.keys.capacity() + kv.values.capacity()) * 4)
+                            .sum::<usize>()
+                })
+                .sum();
+            assert!(retained <= model.session_cache_bytes);
+        }
+        assert_eq!(model.sessions.len(), 1, "evict older reserved buffers");
+        assert!(model.sessions.contains_key("short-c"));
+    }
+
+    #[test]
     fn test_kv_cache_preallocation_capacity() {
         let context_limit = 512;
         let kd = 1024;
@@ -2689,6 +3828,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
         assert_eq!(layer.cache.len(), 1);
         assert!(!layer.cache[0].is_protected);
@@ -2707,6 +3850,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
         assert_eq!(layer.cache.len(), 1);
         assert!(layer.cache[0].is_protected);
@@ -2723,6 +3870,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
         let _ = layer.cache.pop_back().unwrap();
         layer.bytes -= expert_bytes;
@@ -2737,6 +3888,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
 
         // 4. Nạp expert 30 (probationary) và 40 (probationary) -> Bộ đệm đầy 4/4 slots
@@ -2751,6 +3906,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
         layer.clock = 6;
         layer.heat[40] = 1;
@@ -2763,6 +3922,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
         assert_eq!(layer.cache.len(), 4);
         assert_eq!(layer.bytes, cache_capacity);
@@ -2779,6 +3942,10 @@ mod routing_and_topk_tests {
             false,
             cache_capacity,
             &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
         );
         assert_eq!(layer.cache.len(), 4);
         assert_eq!(layer.bytes, cache_capacity);

@@ -1,0 +1,65 @@
+{
+  "id": "quality-capital-france",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the capital of France? Answer briefly."
+    }
+  ],
+  "max_tokens": 24,
+  "session_id": "quality-capital-france",
+  "response": {
+    "text": "\nThe capital of France is Paris. Paris is not only the capital but also the most populous city in France,",
+    "usage": {
+      "completion_tokens": 24,
+      "prompt_tokens": 26,
+      "total_tokens": 50
+    },
+    "metrics": {
+      "attention_ms": 398.338118,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 6068.058624,
+      "decode_ms": 11122.918452,
+      "decode_tokens_per_second": 2.067802627453804,
+      "expert_bytes_read": 15157739520,
+      "expert_cache_bytes": 2119434240,
+      "expert_cache_evictions": 2403,
+      "expert_cache_hits": 5381,
+      "expert_cache_misses": 891,
+      "expert_compute_ms": 3810.90681,
+      "expert_file_bytes_read": 6926008320,
+      "expert_file_loads": 1098,
+      "expert_file_read_ms": 5581.014659,
+      "expert_io_ms": 8324.747907,
+      "expert_vram_download_bytes": 9537454080,
+      "expert_vram_download_ms": 2743.733248,
+      "expert_vram_loads": 1512,
+      "expert_vram_upload_bytes": 15157739520,
+      "expert_vram_upload_ms": 4556.6050669999995,
+      "kv_cache_bytes": 12845056,
+      "lm_head_ms": 69.421048,
+      "prefill_expert_io_ms": 2256.689283,
+      "prefill_ms": 5108.446587,
+      "time_to_first_token_ms": 5117.880633000001,
+      "tokenizer_ms": 0.134358,
+      "total_ms": 16240.817400000002
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 5108.736824000516,
+    "client_wall_ms": 16244.727576000514
+  },
+  "process_before": {
+    "VmHWM": 4726692,
+    "VmRSS": 4702752,
+    "VmSwap": 0,
+    "read_bytes": 33420554240,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 4752808,
+    "VmRSS": 4735136,
+    "VmSwap": 0,
+    "read_bytes": 36925902848,
+    "write_bytes": 4096
+  }
+}
