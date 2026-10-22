@@ -2,13 +2,13 @@
 
 Hai máy là `i5` (máy người dùng) và `i7` (máy đồng nghiệp), xem [machines.json](machines.json). Đây là nhãn khai báo, không phải suy luận từ số luồng. 4/8 Rayon threads là cấu hình khởi đầu ghi rõ, **chưa chứng minh tối ưu**. Không ghi thông số RAM bandwidth/kiến trúc GPU từ phỏng đoán.
 
-Agent nhận workspace máy i7 làm theo mục **Tiếp nhận trên testbed i7** trong [WORKFLOWS](../docs/WORKFLOWS.md): kiểm source/checkpoint/môi trường/RAM trước khi đo và giữ raw theo testbed; OOM i5 hiện chưa được giải quyết không cho phép mặc định baseline ổn định trên i7.
+Agent nhận workspace máy i7 làm theo mục **Tiếp nhận trên testbed i7** trong [WORKFLOWS](../docs/WORKFLOWS.md): kiểm source/checkpoint/môi trường/RAM trước khi đo và giữ raw theo testbed; guard và bộ đo i5 đã có bằng chứng hữu hạn; i7 vẫn phải kiểm RAM độc lập.
 
 ## Mục tiêu bộ ghi báo cáo i5/i7
 
 Chạy cùng bộ test và cùng ngân sách cache RAM trên từng cấu hình để mô tả khả năng vận hành của engine. Giữ revision/checkpoint, preset/prompt/history, context/token limit, số mẫu và reset/warmup thống nhất; ghi hardware/backend/threads thực của từng máy. Không đặt mục tiêu xếp hạng i5/i7 hoặc quy chênh lệch cho riêng CPU. Nếu sau này nghiên cứu causal hardware comparison, đó là thí nghiệm riêng.
 
-Ngân sách cache chung chưa chốt vì OOM i5 còn mở. Sau kiểm RAM, dùng `--cache` tường minh ở cả hai máy; cache budget khác total RSS. Bộ báo cáo runtime mặc định victim dùng `--single-policy --expert-cache-policy victim` khi gọi `run_scenarios.py`; mặc định AB/BA của wrapper dành cho nghiên cứu policy, không tự coi là protocol báo cáo đã chốt. Các con số cache/threads trong ví dụ dưới là minh họa, không phải cấu hình nghiệm thu an toàn.
+Protocol phase1-v1 chốt64MiB/layer và đã đo trên i5; i7 còn chờ preflight/đo cùng cấu hình. Dùng `--cache` tường minh ở cả hai máy; cache budget khác total RSS. Bộ báo cáo runtime mặc định victim dùng `--single-policy --expert-cache-policy victim` khi gọi `run_scenarios.py`; mặc định AB/BA của wrapper dành cho nghiên cứu policy, không tự coi là protocol báo cáo đã chốt. Các con số cache/threads trong ví dụ dưới là minh họa, không phải cấu hình nghiệm thu an toàn.
 
 ## Dữ liệu và nguồn gốc
 
@@ -71,4 +71,4 @@ Dirty run là exploratory; giữ source/hash/binary/checkpoint/config/server log
 
 ## Đưa run mới thành bằng chứng
 
-Reviewer kiểm metadata/log/status/output và điều kiện trước khi chọn artifact. Giữ run ID, result + log cùng nhau, ghi lý do/scope claim vào EVIDENCE_MATRIX/PROGRESS. Có thể force-add riêng thư mục run đã chấp nhận vào PR; không sửa số liệu để khớp claim. Manifest hiện khóa corpus lịch sử; không nhét schema v2 vào corpus cũ hoặc giả status historical. Chưa có benchmark mới được nghiệm thu trong lần chuẩn hóa này.
+Reviewer kiểm metadata/log/status/output và điều kiện trước khi chọn artifact. Giữ run ID, result + log cùng nhau, ghi lý do/scope claim vào EVIDENCE_MATRIX/PROGRESS. Có thể force-add riêng thư mục run đã chấp nhận vào PR; không sửa số liệu để khớp claim. Manifest hiện khóa corpus lịch sử; không nhét schema v2 vào corpus cũ hoặc giả status historical. Bộ i5 phase1-v1 đã hoàn tất trên source sạch; xem [báo cáo chính](experiments/2026-10-22-phase1-i5/README.md). i7 chưa đo mới.

@@ -1,0 +1,77 @@
+{
+  "cycle": 3,
+  "policy": "victim",
+  "turn": 1,
+  "prompt": "What is love ?",
+  "warmup": false,
+  "session_id": "benchmark-566f27745156486ab80e19e5e34e1590",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Where is Mars"
+    },
+    {
+      "role": "assistant",
+      "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n"
+    },
+    {
+      "role": "user",
+      "content": "What is love ?"
+    }
+  ],
+  "response": {
+    "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+    "usage": {
+      "completion_tokens": 128,
+      "prompt_tokens": 166,
+      "total_tokens": 294
+    },
+    "metrics": {
+      "attention_ms": 4178.585358,
+      "cached_prompt_tokens": 11,
+      "decode_expert_io_ms": 13046.102255,
+      "decode_ms": 39264.432248,
+      "decode_tokens_per_second": 3.2344794698125034,
+      "expert_bytes_read": 79693250560,
+      "expert_cache_bytes": 1009254400,
+      "expert_cache_evictions": 12634,
+      "expert_cache_hits": 30633,
+      "expert_cache_misses": 5463,
+      "expert_compute_ms": 14292.016534,
+      "expert_file_bytes_read": 38156124160,
+      "expert_file_loads": 6049,
+      "expert_file_read_ms": 5050.281007,
+      "expert_io_ms": 13911.228706,
+      "expert_vram_download_bytes": 45233520640,
+      "expert_vram_download_ms": 8860.947699,
+      "expert_vram_loads": 7171,
+      "expert_vram_upload_bytes": 79693250560,
+      "expert_vram_upload_ms": 18382.718709999997,
+      "kv_cache_bytes": 76808192,
+      "lm_head_ms": 359.203249,
+      "prefill_expert_io_ms": 865.126451,
+      "prefill_ms": 9103.897576,
+      "time_to_first_token_ms": 9109.177232,
+      "tokenizer_ms": 0.395632,
+      "total_ms": 48373.667401
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 9103.975305999484,
+    "client_wall_ms": 48376.890055998956
+  },
+  "process_before": {
+    "VmHWM": 3510056,
+    "VmRSS": 3500048,
+    "VmSwap": 0,
+    "read_bytes": 224657408,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 3510056,
+    "VmRSS": 3506200,
+    "VmSwap": 0,
+    "read_bytes": 224657408,
+    "write_bytes": 4096
+  },
+  "process_read_bytes_delta": 0
+}

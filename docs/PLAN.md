@@ -4,18 +4,18 @@ Trạng thái ngày 2026-10-22. [PROGRESS.md](PROGRESS.md) giữ lịch sử; ho
 
 ## Tóm tắt để review — chỉ cần đọc mục này trước
 
-**Hiện đã có prototype chạy được và bản bảo vệ RAM đã qua phép thử hữu hạn trên i5. Chưa có bộ kết quả tốc độ cuối cùng cho phiên bản hiện tại; chưa chốt nghiệm thu giai đoạn1.**
+**Đã hoàn tất bộ kiểm chứng và báo cáo i5 phase1-v1 trên checkpoint sạch `d4adefd`. Phần triển khai/đo i5 đã chốt; nghiệm thu đầy đủ hai testbed còn chờ i7 chạy cùng protocol. Không mở thêm tối ưu để kéo dài giai đoạn1 trên i5.**
 
 | Câu hỏi | Tình hình hiện tại |
 | --- | --- |
 | Engine/web chạy được không? | Có. Bạn đã kiểm7 thao tác web đạt; Rust/HTTP/parser và targeted CUDA tests đạt trong phạm vi đã ghi. |
 | RAM/OOM đã xử lý tới đâu? | Thêm guard và cache mặc định64MiB/layer. Test i5 dùng guard5GiB:24 request chia hai lượt khoảng3,5 và8,1 phút, observed RSS max3,47/3,53GiB, process swap0. Chưa chứng minh hết leak/OOM mọi workload. |
-| Tốc độ bản hiện tại bao nhiêu? | Chưa có baseline tốc độ cuối cùng. Số UI người dùng và các thử nghiệm cũ khác cache/history/token budget không ghép thành một mức speedup. |
+| Tốc độ bản hiện tại bao nhiêu? | Đã đo 5 mẫu/nhóm: cold Mars3,66, warm Mars3,99, conversation Mars3,68, conversation Love3,23 steps/s; bảng/raw trong báo cáo chính. Không suy speedup so số UI/config cũ. |
 | Chất lượng câu trả lời? | Smoke12 câu đạt10 tiêu chí; có câu trả lời sai. Đây là heuristic, không phải đánh giá chất lượng chuẩn hóa. |
-| Hai máy dùng bộ test nào? | Mục tiêu cùng revision/checkpoint/bộ test/cache để ghi báo cáo riêng i5/i7. Chưa có run i7 mới; cache64 là candidate đã thử trên i5, chưa phải ngân sách chung nghiệm thu. |
-| Việc tiếp theo? | Chốt một cấu hình/version, đo một bộ báo cáo thống nhất; ghi giới hạn rồi quyết định đóng giai đoạn1. Không cần mở thêm tối ưu/backend lúc này. |
+| Hai máy dùng bộ test nào? | Mục tiêu cùng revision/checkpoint/bộ test/cache để ghi báo cáo riêng i5/i7. i5 đã đo cache64MiB/layer; i7 dùng cùng source/checkpoint/protocol/cache sau preflight tại máy đó. Chưa có run i7 mới, không gọi cache64 đã được nghiệm thu trên i7. |
+| Việc tiếp theo? | Chạy phần i7 độc lập từ checkpoint nguồn d4adefd, kiểm hashes/config và bổ sung báo cáo. i5 không cần chạy lại nếu engine/protocol không đổi; INT4/backend mới để giai đoạn2. |
 
-**Đường đọc:** PLAN là trạng thái/quyết định; [báo cáo RAM mới](../benchmarks/experiments/2026-10-22-ram-guard-i5/README.md) là bằng chứng RAM hiện tại; [SCENARIOS](../benchmarks/SCENARIOS.md) chỉ cần khi thực sự chạy phép đo. PROGRESS là nhật ký tra cứu, không phải danh sách bắt bạn review lại mọi mục.
+**Đường đọc:** PLAN là trạng thái/quyết định; [báo cáo i5 chính](../benchmarks/experiments/2026-10-22-phase1-i5/README.md) là trang review duy nhất cho bộ đo cuối; báo cáo RAM cũ chỉ tra khi cần kiểm guard; [SCENARIOS](../benchmarks/SCENARIOS.md) chỉ cần khi thực sự chạy phép đo. PROGRESS là nhật ký tra cứu, không phải danh sách bắt bạn review lại mọi mục.
 
 | Nhóm artifact đã có | Vai trò, không phải bộ báo cáo cuối |
 | --- | --- |
@@ -38,8 +38,8 @@ Trong mỗi artifact, README là bản giải thích; JSON/log/time series/sourc
 | R4/R5: budget RAM tổng, SSE frontend | Vá thành phần đạt; manual web pass và guard đã thử i5 hữu hạn | Cache+recycled theo capacity cùng budget; active expert payload có trần riêng topK+2 experts, prefill prefetch tối đa topK; web chỉ lưu sau terminal+DONE; guard hợp tác/RAM test mới có giới hạn nêu ở tóm tắt, chưa hard RSS cap |
 | R6/R7/R9: I/O/VRAM/routing telemetry | Nhãn demo đã phân biệt giới hạn; accounting VRAM còn mở | Expert load wait không gọi SSD wait; VRAM ghi logical thiếu pool/scratch; placement/routing ghi minh họa, bỏ random token pulses; expert_bytes_read legacy vẫn trộn |
 | R8: runner/provenance không overwrite | Hoàn thành tooling, đã kiểm fixture | Unique ID, revision/hash/config/hardware, hồi quy giữ kết quả cũ và lỗi |
-| Baseline mới i5/i7 | Chưa đo | Cùng revision/checkpoint/suite/config, đo độc lập, đủ mẫu, raw/log/điều kiện rõ |
-| Runner HTTP nhiều workload | Đã có preset và kiểm protocol fixture | Cold/warm/conversation/topics/long-context/cache-sweep; preview trước đo, AB/BA mặc định, warmup tách mẫu; chưa đo mới 7B bằng các preset |
+| Baseline phase1-v1 i5/i7 | i5 hoàn tất; i7 chờ máy đồng nghiệp | i5 source sạch d4adefd, cold/warm/conversation,5 mẫu/nhóm; i7 giữ cùng source/checkpoint/config/protocol, kiểm RAM riêng |
+| Runner HTTP nhiều workload | Đã có preset và kiểm protocol fixture | Cold/warm/conversation/topics/long-context/cache-sweep; preview trước đo, AB/BA mặc định, warmup tách mẫu; đã đo 7B cold/warm/conversation trên i5; các preset còn lại chưa đo |
 | Chất lượng/độ ổn định model thật | Sau OOM đã có guard/test RAM hữu hạn; chưa nghiệm thu stability tổng quát | 16 request hoàn tất +1 hủy/reset/retry, input dài; quality10/12 heuristic, có swap; manual web người dùng đạt, chưa tải dài/baseline sạch |
 | INT4/mở rộng backend | Chưa triển khai decoder | Sau correctness/accounting và baseline đủ tin cậy |
 
@@ -47,7 +47,7 @@ Phạm vi demo/nghiên cứu local, một request OLMoE, greedy decoding/context
 
 [Review gốc](reviews/2026-10-22-system-review.md) phản ánh commit tại lúc review; theo dõi trạng thái vá tại đây/PROGRESS. Lượt chuẩn hóa không sửa thuật toán engine.
 
-## Ưu tiên tiếp theo và mục tiêu báo cáo hiện hành
+## Checklist lịch sử trước bộ đo (được cập nhật bởi quyết định cuối trang)
 
 1. Điều tra OOM/tổng RAM trước: xác minh cache thực và allocations theo request, chừa headroom OS/IDE, kiểm chạy dài có giám sát; không cố gây OOM để lấy bằng chứng.
 2. Sau khi bộ nhớ ổn định, chốt protocol chung i5/i7: cùng revision/checkpoint, preset/prompt/history/context/token limit, cache MiB/layer tường minh, số mẫu/reset/warmup. Ghi kết quả độc lập để mô tả khả năng vận hành trên hai cấu hình, không xếp hạng CPU. Backend/threads khác phải ghi rõ; mức cache chung chưa được chốt.
@@ -95,3 +95,14 @@ Kết quả thử RAM sau guard: [artifact i5](../benchmarks/experiments/2026-10
 Đã chốt ứng viên i5 từ kiểm RAM: cache64MiB/layer/context512/threads8/max_tokens128/victim/guard5GiB/headroom1GiB. Một bộ cold/warm/conversation,5 mẫu mỗi nhóm; tổng20 measured requests +5 warmups, bảng cuối4 dòng. Protocol/lệnh duy nhất trong [SCENARIOS](../benchmarks/SCENARIOS.md); không mở thêm thí nghiệm tối ưu hoặc ép i7 có kết quả trước khi máy đó preflight. Runtime source không đổi trong bước này.
 
 Runner HTTP bổ sung memory watchdog và giữ memory.jsonl/watchdog.json; cùng cơ chế/ngưỡng cho bộ báo cáo. Cần checkpoint commit nguồn sạch (workspace có cả thay đổi từ trước); đang chờ người dùng chọn cho phép checkpoint local hoặc tự commit, không tự commit/push. Trong lúc chờ chỉ chuẩn bị/check fixture/preview, không lách bằng dirty run rồi gọi baseline sạch.
+
+
+### Kết quả chốt i5 phase1-v1 và việc còn lại
+
+Bộ đo nguồn sạch `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` đã hoàn tất, cùng binary/source/checkpoint hashes và config cache64MiB-layer/context512/threads8/max128/victim/guard5GiB/headroom1GiB. [Một báo cáo i5 chính](../benchmarks/experiments/2026-10-22-phase1-i5/README.md) giữ20 mẫu +5 warmup,4 nhóm mỗi nhóm5 mẫu; output/usage khớp trong nhóm. RSS/HWM quan sát cao nhất3,494GiB, process swap0, không watchdog violation. Đây là mức hiệu năng hiện tại, không A/B tăng tốc.
+
+**Chốt phần triển khai/kiểm chứng/báo cáo i5 của giai đoạn1.** Không cần lặp7 bước web đã đạt hoặc tiếp tục tối ưu để đạt ngưỡng tok/s tùy ý. Phần nghiệm thu hai testbed còn mở duy nhất việc chạy/kiểm bộ i7 tương ứng sau preflight, rồi bổ sung bằng chứng và quyết định đóng toàn bộ giai đoạn1. Không dùng kết quả i5 thay i7. Những checklist “chưa commit/chưa baseline” phía trên mô tả thời điểm trước bộ này và đã được cập nhật bởi mục này.
+
+Checkpoint nguồn đã push lên nhánh `phase1-report-i5`; người dùng cho phép commit/push, không merge main. Agent i7 lấy branch này nhưng tạo branch đo từ **commit nguồn d4adefd** để giữ cùng revision với i5 (commit báo cáo sau đó chỉ bổ sung tài liệu/bằng chứng). Theo SCENARIOS phase1-v1, đối chiếu checkpoint hash và settings; đổi đúng nhãn testbed, giữ cache64/context512/max128/threads8/victim/guard5GiB/headroom1GiB và5 mẫu/nhóm. Nếu máy không đáp ứng, dừng/ghi lý do; không tự giảm cache rồi coi cùng protocol.
+
+Giới hạn chuyển tiếp: guard hợp tác không hard cap; chưa chứng minh hết leak/OOM hoặc tối ưu toàn cục; quality smoke10/12 cũ có lỗi, không phải chất lượng chuẩn hóa; file payload không bằng SSD physical bytes, timer chồng lấn và logical VRAM còn giới hạn. INT4/backend mới/quality chuẩn hóa/accounting đầy đủ là backlog sau nền tảng này, không phải thành tích đã có.

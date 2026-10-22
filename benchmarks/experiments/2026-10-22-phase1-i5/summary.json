@@ -1,0 +1,1848 @@
+{
+  "protocol": "phase1-v1",
+  "source_commit": "d4adefd9e53627bdc1fd250eabab436c3ac54b0d",
+  "testbed": "i5",
+  "status": "completed",
+  "config": {
+    "threads": 8,
+    "cache_mib": 64,
+    "context": 512,
+    "max_tokens": 128,
+    "cycles": 5,
+    "gpu_requested": "auto",
+    "expert_cache_policy": "victim"
+  },
+  "ram_environment": {
+    "MOE_RAM_LIMIT_BYTES": "5368709120",
+    "MOE_RAM_HEADROOM_BYTES": "1073741824"
+  },
+  "checkpoint": {
+    "config_sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b",
+    "files": [
+      {
+        "path": ".coli_analysis.json",
+        "size": 1655,
+        "sha256": "d8f8d6d46befe273cc71b355ae614de050d24fca17d58b95ce8606b3a312bec5"
+      },
+      {
+        "path": "_meta/config.json",
+        "size": 759,
+        "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c"
+      },
+      {
+        "path": "_meta/generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "_meta/special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "_meta/tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "_meta/tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      },
+      {
+        "path": "config.json",
+        "size": 784,
+        "sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "model-00000.safetensors",
+        "size": 1834100784,
+        "sha256": "215a2a74ede3b54c81418cab274c835cde1fdf4dc3eee40471a1864f13aae635"
+      },
+      {
+        "path": "model-00001.safetensors",
+        "size": 1657854168,
+        "sha256": "c83c75dbc51b7868e2199cc904e3f1337cd78362bef50b64a86d50e23d4c43e0"
+      },
+      {
+        "path": "model-00002.safetensors",
+        "size": 1628059584,
+        "sha256": "45f9996dcf938fbd9321e729764bb9c6746ae8258c3d50a45403421c0172a4c8"
+      },
+      {
+        "path": "model-00003.safetensors",
+        "size": 1821755792,
+        "sha256": "83984c933d29af5d18c328a68d8a84577c342f8af3d7503920a9dbc14916ee97"
+      },
+      {
+        "path": "model-00004.safetensors",
+        "size": 471116928,
+        "sha256": "56934a3b93691be6857b6d02a5f597f3db7eab49fc3554f8cc76abb6ea465ba6"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      }
+    ]
+  },
+  "binary_sha256": "e877d61a86969cab83e23c9414edde6d5649515549d906a7bf612f8b9f83bdd6",
+  "groups": [
+    {
+      "group": "cold Mars",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-c0a6b1346e0b4bc6a61dda6b05e5d885",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1864.13553,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 12397.929703999998,
+              "decode_ms": 34749.213367000004,
+              "decode_tokens_per_second": 3.65475899148287,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 8851.835077,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 6562.101452,
+              "expert_io_ms": 13643.817632999999,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7081.716181,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15700.158769,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 363.352189,
+              "prefill_expert_io_ms": 1245.887929,
+              "prefill_ms": 2722.8192870000003,
+              "time_to_first_token_ms": 2756.8743090000003,
+              "tokenizer_ms": 7.263114,
+              "total_ms": 37506.124620999995
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2723.2663510003476,
+            "client_wall_ms": 37510.10076700004
+          },
+          "process_before": {
+            "VmHWM": 2265532,
+            "VmRSS": 2265532,
+            "VmSwap": 0,
+            "read_bytes": 131072,
+            "write_bytes": 8192
+          },
+          "process_after": {
+            "VmHWM": 3393844,
+            "VmRSS": 3390464,
+            "VmSwap": 0,
+            "read_bytes": 1145167872,
+            "write_bytes": 8192
+          },
+          "process_read_bytes_delta": 1145036800
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-0a554ac9d7e34dc88f2dc02f1f37ee1d",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1839.124303,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11257.521402,
+              "decode_ms": 33622.165197,
+              "decode_tokens_per_second": 3.777270120941878,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 8745.956831000001,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 5001.345377,
+              "expert_io_ms": 12043.328935,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7041.983558,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15503.470403,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 358.12704299999996,
+              "prefill_expert_io_ms": 785.8075329999999,
+              "prefill_ms": 2115.403122,
+              "time_to_first_token_ms": 2120.553805,
+              "tokenizer_ms": 0.09033400000000001,
+              "total_ms": 35742.755062000004
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2115.445675000956,
+            "client_wall_ms": 35745.659575999525
+          },
+          "process_before": {
+            "VmHWM": 3393844,
+            "VmRSS": 3357728,
+            "VmSwap": 0,
+            "read_bytes": 1145167872,
+            "write_bytes": 8192
+          },
+          "process_after": {
+            "VmHWM": 3501288,
+            "VmRSS": 3492208,
+            "VmSwap": 0,
+            "read_bytes": 1348792320,
+            "write_bytes": 8192
+          },
+          "process_read_bytes_delta": 203624448
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-fcefa18839ae475c8c601a72d7627bf9",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1811.6759519999998,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11275.966941,
+              "decode_ms": 33572.877208,
+              "decode_tokens_per_second": 3.7828154915997927,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 8728.709018,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4761.787864000001,
+              "expert_io_ms": 11807.171111000001,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7045.383247,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15489.353246,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 357.96441899999996,
+              "prefill_expert_io_ms": 531.20417,
+              "prefill_ms": 1785.5550700000001,
+              "time_to_first_token_ms": 1790.991982,
+              "tokenizer_ms": 0.06548899999999999,
+              "total_ms": 35363.914675
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 1785.5919240009825,
+            "client_wall_ms": 35366.753504999
+          },
+          "process_before": {
+            "VmHWM": 3501288,
+            "VmRSS": 3447156,
+            "VmSwap": 0,
+            "read_bytes": 1348792320,
+            "write_bytes": 8192
+          },
+          "process_after": {
+            "VmHWM": 3501288,
+            "VmRSS": 3490192,
+            "VmSwap": 0,
+            "read_bytes": 1357611008,
+            "write_bytes": 8192
+          },
+          "process_read_bytes_delta": 8818688
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-0625a624c6584ceab641974ba9a74278",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1881.9202719999998,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11568.488787,
+              "decode_ms": 34673.70970399999,
+              "decode_tokens_per_second": 3.6627174041706057,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9333.365056999999,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4910.398221,
+              "expert_io_ms": 12074.716374,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7164.318153,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15728.48704,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 358.82195900000005,
+              "prefill_expert_io_ms": 506.227587,
+              "prefill_ms": 1789.599079,
+              "time_to_first_token_ms": 1794.6185369999998,
+              "tokenizer_ms": 0.062537,
+              "total_ms": 36468.377287
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 1789.6561839988863,
+            "client_wall_ms": 36471.09474100034
+          },
+          "process_before": {
+            "VmHWM": 3501288,
+            "VmRSS": 3447184,
+            "VmSwap": 0,
+            "read_bytes": 1357611008,
+            "write_bytes": 8192
+          },
+          "process_after": {
+            "VmHWM": 3501464,
+            "VmRSS": 3492252,
+            "VmSwap": 0,
+            "read_bytes": 1392074752,
+            "write_bytes": 8192
+          },
+          "process_read_bytes_delta": 34463744
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-52e71aab0412430a95952f9c80155653",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1922.70244,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11610.42139,
+              "decode_ms": 34781.445356,
+              "decode_tokens_per_second": 3.651372123846825,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9526.223974,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 5102.409919000001,
+              "expert_io_ms": 12233.72523,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7131.315310999999,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15871.069515000001,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 360.02689,
+              "prefill_expert_io_ms": 623.30384,
+              "prefill_ms": 2099.4892379999997,
+              "time_to_first_token_ms": 2104.38213,
+              "tokenizer_ms": 0.064461,
+              "total_ms": 36885.866827
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2099.4850549996045,
+            "client_wall_ms": 36889.0269099993
+          },
+          "process_before": {
+            "VmHWM": 3501464,
+            "VmRSS": 3447196,
+            "VmSwap": 0,
+            "read_bytes": 1392074752,
+            "write_bytes": 8192
+          },
+          "process_after": {
+            "VmHWM": 3501464,
+            "VmRSS": 3492260,
+            "VmSwap": 0,
+            "read_bytes": 1416724480,
+            "write_bytes": 8192
+          },
+          "process_read_bytes_delta": 24649728
+        }
+      ],
+      "text_sha256": "252c9e692eddf275e4d2fcac98fdb9aef24bd2e74bd07ca9361b166627da25e9",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 19,
+        "total_tokens": 147
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 2104.38213,
+          "min": 1790.991982,
+          "max": 2756.8743090000003
+        },
+        "decode_tokens_per_second": {
+          "median": 3.6627174041706057,
+          "min": 3.651372123846825,
+          "max": 3.7828154915997927
+        },
+        "total_ms": {
+          "median": 36468.377287,
+          "min": 35363.914675,
+          "max": 37506.124620999995
+        },
+        "expert_file_loads": {
+          "median": 5819,
+          "min": 5819,
+          "max": 5819
+        },
+        "expert_file_bytes_read": {
+          "median": 36705320960,
+          "min": 36705320960,
+          "max": 36705320960
+        },
+        "expert_vram_download_bytes": {
+          "median": 36124999680,
+          "min": 36124999680,
+          "max": 36124999680
+        },
+        "expert_vram_upload_bytes": {
+          "median": 68616683520,
+          "min": 68616683520,
+          "max": 68616683520
+        },
+        "expert_io_ms": {
+          "median": 12074.716374,
+          "min": 11807.171111000001,
+          "max": 13643.817632999999
+        },
+        "expert_compute_ms": {
+          "median": 8851.835077,
+          "min": 8728.709018,
+          "max": 9526.223974
+        },
+        "attention_ms": {
+          "median": 1864.13553,
+          "min": 1811.6759519999998,
+          "max": 1922.70244
+        },
+        "lm_head_ms": {
+          "median": 358.82195900000005,
+          "min": 357.96441899999996,
+          "max": 363.352189
+        },
+        "cached_prompt_tokens": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "group": "warm Mars",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-aa700a9082654bc081cb6fdbe25c3dbe",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1889.957741,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 10278.522122,
+              "decode_ms": 31911.350036000003,
+              "decode_tokens_per_second": 3.979775216552358,
+              "expert_bytes_read": 62964858880,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9982,
+              "expert_cache_hits": 13842,
+              "expert_cache_misses": 4846,
+              "expert_compute_ms": 9157.330467,
+              "expert_file_bytes_read": 34175877120,
+              "expert_file_loads": 5418,
+              "expert_file_read_ms": 4519.732434,
+              "expert_io_ms": 10768.679926,
+              "expert_vram_download_bytes": 32397066240,
+              "expert_vram_download_ms": 6248.947492,
+              "expert_vram_loads": 5136,
+              "expert_vram_upload_bytes": 62964858880,
+              "expert_vram_upload_ms": 14542.472528,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.192534,
+              "prefill_expert_io_ms": 490.157804,
+              "prefill_ms": 2032.983865,
+              "time_to_first_token_ms": 2038.7175069999998,
+              "tokenizer_ms": 0.110794,
+              "total_ms": 33950.113561000006
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2033.3742820002954,
+            "client_wall_ms": 33953.269468000144
+          },
+          "process_before": {
+            "VmHWM": 3398440,
+            "VmRSS": 3394344,
+            "VmSwap": 0,
+            "read_bytes": 36392960,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3476508,
+            "VmRSS": 3476508,
+            "VmSwap": 0,
+            "read_bytes": 36392960,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-92eb01911189401ab7cec837b0261d1a",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1914.398327,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 10361.155176,
+              "decode_ms": 31855.058273000002,
+              "decode_tokens_per_second": 3.9868079634826414,
+              "expert_bytes_read": 62964858880,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9982,
+              "expert_cache_hits": 13842,
+              "expert_cache_misses": 4846,
+              "expert_compute_ms": 9132.642199,
+              "expert_file_bytes_read": 34175877120,
+              "expert_file_loads": 5418,
+              "expert_file_read_ms": 4599.471161,
+              "expert_io_ms": 10856.853361000001,
+              "expert_vram_download_bytes": 32397066240,
+              "expert_vram_download_ms": 6257.3822,
+              "expert_vram_loads": 5136,
+              "expert_vram_upload_bytes": 62964858880,
+              "expert_vram_upload_ms": 14471.218508,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.178729,
+              "prefill_expert_io_ms": 495.698185,
+              "prefill_ms": 2038.341117,
+              "time_to_first_token_ms": 2044.3350649999998,
+              "tokenizer_ms": 0.075329,
+              "total_ms": 33899.436144
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2039.205363000292,
+            "client_wall_ms": 33902.56684900123
+          },
+          "process_before": {
+            "VmHWM": 3553108,
+            "VmRSS": 3553108,
+            "VmSwap": 0,
+            "read_bytes": 36442112,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3634640,
+            "VmRSS": 3627744,
+            "VmSwap": 0,
+            "read_bytes": 36958208,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 516096
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-b6021696bf214d9f9998e34cd3a3b17d",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1892.750145,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 10348.069414,
+              "decode_ms": 31840.181904,
+              "decode_tokens_per_second": 3.988670679800523,
+              "expert_bytes_read": 62964858880,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9982,
+              "expert_cache_hits": 13842,
+              "expert_cache_misses": 4846,
+              "expert_compute_ms": 9109.654099,
+              "expert_file_bytes_read": 34175877120,
+              "expert_file_loads": 5418,
+              "expert_file_read_ms": 4576.437486,
+              "expert_io_ms": 10837.714176000001,
+              "expert_vram_download_bytes": 32397066240,
+              "expert_vram_download_ms": 6261.27669,
+              "expert_vram_loads": 5136,
+              "expert_vram_upload_bytes": 62964858880,
+              "expert_vram_upload_ms": 14480.196043,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.093516,
+              "prefill_expert_io_ms": 489.644762,
+              "prefill_ms": 2017.7676789999998,
+              "time_to_first_token_ms": 2022.8899779999997,
+              "tokenizer_ms": 0.070551,
+              "total_ms": 33863.123891
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2017.8984159992979,
+            "client_wall_ms": 33866.59430100008
+          },
+          "process_before": {
+            "VmHWM": 3634640,
+            "VmRSS": 3628904,
+            "VmSwap": 0,
+            "read_bytes": 60977152,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3657560,
+            "VmRSS": 3645576,
+            "VmSwap": 0,
+            "read_bytes": 61493248,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 516096
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-f7eacc9e572e4dc8ba5836e88ff62729",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1890.915434,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 10336.697408999999,
+              "decode_ms": 31786.569961,
+              "decode_tokens_per_second": 3.9953980613768807,
+              "expert_bytes_read": 62964858880,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9982,
+              "expert_cache_hits": 13842,
+              "expert_cache_misses": 4846,
+              "expert_compute_ms": 9048.950957000001,
+              "expert_file_bytes_read": 34175877120,
+              "expert_file_loads": 5418,
+              "expert_file_read_ms": 4592.4857,
+              "expert_io_ms": 10841.320366,
+              "expert_vram_download_bytes": 32397066240,
+              "expert_vram_download_ms": 6248.834666,
+              "expert_vram_loads": 5136,
+              "expert_vram_upload_bytes": 62964858880,
+              "expert_vram_upload_ms": 14484.392478,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.142658,
+              "prefill_expert_io_ms": 504.62295700000004,
+              "prefill_ms": 1999.276925,
+              "time_to_first_token_ms": 2004.559876,
+              "tokenizer_ms": 0.087676,
+              "total_ms": 33791.177362
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 1999.2939540006773,
+            "client_wall_ms": 33794.38787900108
+          },
+          "process_before": {
+            "VmHWM": 3657560,
+            "VmRSS": 3633292,
+            "VmSwap": 0,
+            "read_bytes": 85512192,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3663892,
+            "VmRSS": 3651736,
+            "VmSwap": 0,
+            "read_bytes": 86028288,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 516096
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-d066418aee084141b2444dc87a5fbbcd",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1903.118808,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 10430.185976,
+              "decode_ms": 32045.941053,
+              "decode_tokens_per_second": 3.9630604010023545,
+              "expert_bytes_read": 62964858880,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9982,
+              "expert_cache_hits": 13842,
+              "expert_cache_misses": 4846,
+              "expert_compute_ms": 9203.856839,
+              "expert_file_bytes_read": 34175877120,
+              "expert_file_loads": 5418,
+              "expert_file_read_ms": 4634.512646,
+              "expert_io_ms": 10922.931794,
+              "expert_vram_download_bytes": 32397066240,
+              "expert_vram_download_ms": 6288.419148,
+              "expert_vram_loads": 5136,
+              "expert_vram_upload_bytes": 62964858880,
+              "expert_vram_upload_ms": 14552.804987,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.294245,
+              "prefill_expert_io_ms": 492.745818,
+              "prefill_ms": 2014.007614,
+              "time_to_first_token_ms": 2018.967871,
+              "tokenizer_ms": 0.096411,
+              "total_ms": 34064.947904
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2014.0924970000924,
+            "client_wall_ms": 34068.27523500033
+          },
+          "process_before": {
+            "VmHWM": 3663892,
+            "VmRSS": 3633304,
+            "VmSwap": 0,
+            "read_bytes": 110047232,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3663892,
+            "VmRSS": 3655836,
+            "VmSwap": 0,
+            "read_bytes": 110047232,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        }
+      ],
+      "text_sha256": "252c9e692eddf275e4d2fcac98fdb9aef24bd2e74bd07ca9361b166627da25e9",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 19,
+        "total_tokens": 147
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 2022.8899779999997,
+          "min": 2004.559876,
+          "max": 2044.3350649999998
+        },
+        "decode_tokens_per_second": {
+          "median": 3.9868079634826414,
+          "min": 3.9630604010023545,
+          "max": 3.9953980613768807
+        },
+        "total_ms": {
+          "median": 33899.436144,
+          "min": 33791.177362,
+          "max": 34064.947904
+        },
+        "expert_file_loads": {
+          "median": 5418,
+          "min": 5418,
+          "max": 5418
+        },
+        "expert_file_bytes_read": {
+          "median": 34175877120,
+          "min": 34175877120,
+          "max": 34175877120
+        },
+        "expert_vram_download_bytes": {
+          "median": 32397066240,
+          "min": 32397066240,
+          "max": 32397066240
+        },
+        "expert_vram_upload_bytes": {
+          "median": 62964858880,
+          "min": 62964858880,
+          "max": 62964858880
+        },
+        "expert_io_ms": {
+          "median": 10841.320366,
+          "min": 10768.679926,
+          "max": 10922.931794
+        },
+        "expert_compute_ms": {
+          "median": 9132.642199,
+          "min": 9048.950957000001,
+          "max": 9203.856839
+        },
+        "attention_ms": {
+          "median": 1892.750145,
+          "min": 1889.957741,
+          "max": 1914.398327
+        },
+        "lm_head_ms": {
+          "median": 359.178729,
+          "min": 359.093516,
+          "max": 359.294245
+        },
+        "cached_prompt_tokens": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "group": "conversation Mars",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-fc0b5f1e4499415cad861844c804863f",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1912.851243,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11357.723947,
+              "decode_ms": 34466.451155999996,
+              "decode_tokens_per_second": 3.6847425754737606,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9282.96906,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4964.850803,
+              "expert_io_ms": 12049.749270999999,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7084.898468,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15869.586371000001,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 362.711957,
+              "prefill_expert_io_ms": 692.0253240000001,
+              "prefill_ms": 2171.993628,
+              "time_to_first_token_ms": 2181.266654,
+              "tokenizer_ms": 1.4611480000000001,
+              "total_ms": 36647.756916
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2172.2430030004034,
+            "client_wall_ms": 36650.80100100022
+          },
+          "process_before": {
+            "VmHWM": 2265332,
+            "VmRSS": 2265332,
+            "VmSwap": 0,
+            "read_bytes": 11288576,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3395912,
+            "VmRSS": 3392020,
+            "VmSwap": 0,
+            "read_bytes": 32911360,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 21622784
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-6b07dd42848d4e35b2d3e4a87b30b666",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1916.8871,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11383.881232,
+              "decode_ms": 34580.493522,
+              "decode_tokens_per_second": 3.6725907315117703,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9355.20041,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4843.828359,
+              "expert_io_ms": 11946.83495,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7103.006590999999,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15848.615583,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.244971,
+              "prefill_expert_io_ms": 562.9537180000001,
+              "prefill_ms": 2000.3029890000003,
+              "time_to_first_token_ms": 2005.3403099999998,
+              "tokenizer_ms": 0.06944,
+              "total_ms": 36585.890992
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2000.385241000913,
+            "client_wall_ms": 36588.812218000385
+          },
+          "process_before": {
+            "VmHWM": 3492984,
+            "VmRSS": 3448764,
+            "VmSwap": 0,
+            "read_bytes": 213110784,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3509988,
+            "VmRSS": 3497952,
+            "VmSwap": 0,
+            "read_bytes": 216145920,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 3035136
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-bd8b28ef45df4394bd1ce473f312a1c1",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1910.1809749999998,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11399.416009999999,
+              "decode_ms": 34505.51062,
+              "decode_tokens_per_second": 3.6805715295338524,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9289.289637,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4839.077547999999,
+              "expert_io_ms": 11956.609707,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7117.532158999999,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15849.164456,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.004634,
+              "prefill_expert_io_ms": 557.193697,
+              "prefill_ms": 2008.1257899999998,
+              "time_to_first_token_ms": 2013.8195190000001,
+              "tokenizer_ms": 0.06807,
+              "total_ms": 36519.382851
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2008.1678630012902,
+            "client_wall_ms": 36522.40567199988
+          },
+          "process_before": {
+            "VmHWM": 3509988,
+            "VmRSS": 3448832,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510280,
+            "VmRSS": 3510280,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-566f27745156486ab80e19e5e34e1590",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1910.227414,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11351.717226,
+              "decode_ms": 34441.777079,
+              "decode_tokens_per_second": 3.6873823237603798,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9272.954168,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4801.7512799999995,
+              "expert_io_ms": 11902.258804000001,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7100.507524000001,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15814.569337,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.640504,
+              "prefill_expert_io_ms": 550.5415780000001,
+              "prefill_ms": 1978.140737,
+              "time_to_first_token_ms": 1983.5360520000002,
+              "tokenizer_ms": 0.082928,
+              "total_ms": 36425.351842
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 1978.148678999787,
+            "client_wall_ms": 36428.441482999915
+          },
+          "process_before": {
+            "VmHWM": 3510056,
+            "VmRSS": 3448848,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510056,
+            "VmRSS": 3500048,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-27143f942d1d4fe4be934de115e4e12d",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 19,
+              "total_tokens": 147
+            },
+            "metrics": {
+              "attention_ms": 1897.899017,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11389.896990000001,
+              "decode_ms": 34566.395516,
+              "decode_tokens_per_second": 3.674088608435166,
+              "expert_bytes_read": 69625937920,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10878,
+              "expert_cache_hits": 13377,
+              "expert_cache_misses": 5311,
+              "expert_compute_ms": 9367.889791,
+              "expert_file_bytes_read": 36705320960,
+              "expert_file_loads": 5819,
+              "expert_file_read_ms": 4844.318185,
+              "expert_io_ms": 11941.443951,
+              "expert_vram_download_bytes": 36124999680,
+              "expert_vram_download_ms": 7097.125765999999,
+              "expert_vram_loads": 5727,
+              "expert_vram_upload_bytes": 68616683520,
+              "expert_vram_upload_ms": 15887.767349000002,
+              "kv_cache_bytes": 38273024,
+              "lm_head_ms": 359.216285,
+              "prefill_expert_io_ms": 551.546961,
+              "prefill_ms": 1999.175685,
+              "time_to_first_token_ms": 2008.521936,
+              "tokenizer_ms": 0.130671,
+              "total_ms": 36574.956048
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 1999.1624630001752,
+            "client_wall_ms": 36578.29499299987
+          },
+          "process_before": {
+            "VmHWM": 3510056,
+            "VmRSS": 3448856,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510136,
+            "VmRSS": 3500060,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        }
+      ],
+      "text_sha256": "252c9e692eddf275e4d2fcac98fdb9aef24bd2e74bd07ca9361b166627da25e9",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 19,
+        "total_tokens": 147
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 2008.521936,
+          "min": 1983.5360520000002,
+          "max": 2181.266654
+        },
+        "decode_tokens_per_second": {
+          "median": 3.6805715295338524,
+          "min": 3.6725907315117703,
+          "max": 3.6873823237603798
+        },
+        "total_ms": {
+          "median": 36574.956048,
+          "min": 36425.351842,
+          "max": 36647.756916
+        },
+        "expert_file_loads": {
+          "median": 5819,
+          "min": 5819,
+          "max": 5819
+        },
+        "expert_file_bytes_read": {
+          "median": 36705320960,
+          "min": 36705320960,
+          "max": 36705320960
+        },
+        "expert_vram_download_bytes": {
+          "median": 36124999680,
+          "min": 36124999680,
+          "max": 36124999680
+        },
+        "expert_vram_upload_bytes": {
+          "median": 68616683520,
+          "min": 68616683520,
+          "max": 68616683520
+        },
+        "expert_io_ms": {
+          "median": 11946.83495,
+          "min": 11902.258804000001,
+          "max": 12049.749270999999
+        },
+        "expert_compute_ms": {
+          "median": 9289.289637,
+          "min": 9272.954168,
+          "max": 9367.889791
+        },
+        "attention_ms": {
+          "median": 1910.227414,
+          "min": 1897.899017,
+          "max": 1916.8871
+        },
+        "lm_head_ms": {
+          "median": 359.244971,
+          "min": 359.004634,
+          "max": 362.711957
+        },
+        "cached_prompt_tokens": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "group": "conversation Love",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-fc0b5f1e4499415cad861844c804863f",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 166,
+              "total_tokens": 294
+            },
+            "metrics": {
+              "attention_ms": 4154.357036,
+              "cached_prompt_tokens": 11,
+              "decode_expert_io_ms": 13220.792588,
+              "decode_ms": 39602.471734,
+              "decode_tokens_per_second": 3.2068705421476613,
+              "expert_bytes_read": 79693250560,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12634,
+              "expert_cache_hits": 30633,
+              "expert_cache_misses": 5463,
+              "expert_compute_ms": 14594.283085000001,
+              "expert_file_bytes_read": 38156124160,
+              "expert_file_loads": 6049,
+              "expert_file_read_ms": 5311.773384,
+              "expert_io_ms": 14198.502558,
+              "expert_vram_download_bytes": 45233520640,
+              "expert_vram_download_ms": 8886.729174,
+              "expert_vram_loads": 7171,
+              "expert_vram_upload_bytes": 79693250560,
+              "expert_vram_upload_ms": 18511.860569,
+              "kv_cache_bytes": 76808192,
+              "lm_head_ms": 359.55716,
+              "prefill_expert_io_ms": 977.70997,
+              "prefill_ms": 9471.378955,
+              "time_to_first_token_ms": 9477.156716,
+              "tokenizer_ms": 0.49930199999999997,
+              "total_ms": 49079.667651
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 9471.391346998644,
+            "client_wall_ms": 49082.96296399931
+          },
+          "process_before": {
+            "VmHWM": 3395912,
+            "VmRSS": 3392020,
+            "VmSwap": 0,
+            "read_bytes": 32911360,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3492984,
+            "VmRSS": 3489716,
+            "VmSwap": 0,
+            "read_bytes": 213110784,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 180199424
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-6b07dd42848d4e35b2d3e4a87b30b666",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 166,
+              "total_tokens": 294
+            },
+            "metrics": {
+              "attention_ms": 4190.931065,
+              "cached_prompt_tokens": 11,
+              "decode_expert_io_ms": 12960.855437,
+              "decode_ms": 39346.896518999994,
+              "decode_tokens_per_second": 3.227700561813654,
+              "expert_bytes_read": 79693250560,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12634,
+              "expert_cache_hits": 30633,
+              "expert_cache_misses": 5463,
+              "expert_compute_ms": 14309.231397,
+              "expert_file_bytes_read": 38156124160,
+              "expert_file_loads": 6049,
+              "expert_file_read_ms": 4969.3113809999995,
+              "expert_io_ms": 13852.069218,
+              "expert_vram_download_bytes": 45233520640,
+              "expert_vram_download_ms": 8882.757837,
+              "expert_vram_loads": 7171,
+              "expert_vram_upload_bytes": 79693250560,
+              "expert_vram_upload_ms": 18419.657869000002,
+              "kv_cache_bytes": 76808192,
+              "lm_head_ms": 359.361966,
+              "prefill_expert_io_ms": 891.213781,
+              "prefill_ms": 9093.855818,
+              "time_to_first_token_ms": 9099.217077000001,
+              "tokenizer_ms": 0.368748,
+              "total_ms": 48446.166742
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 9093.918252001458,
+            "client_wall_ms": 48449.28386099855
+          },
+          "process_before": {
+            "VmHWM": 3509988,
+            "VmRSS": 3497952,
+            "VmSwap": 0,
+            "read_bytes": 216145920,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510268,
+            "VmRSS": 3510268,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 8511488
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-bd8b28ef45df4394bd1ce473f312a1c1",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 166,
+              "total_tokens": 294
+            },
+            "metrics": {
+              "attention_ms": 4155.960755,
+              "cached_prompt_tokens": 11,
+              "decode_expert_io_ms": 12912.686916,
+              "decode_ms": 39077.783769,
+              "decode_tokens_per_second": 3.249928418426528,
+              "expert_bytes_read": 79693250560,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12634,
+              "expert_cache_hits": 30633,
+              "expert_cache_misses": 5463,
+              "expert_compute_ms": 13901.585772,
+              "expert_file_bytes_read": 38156124160,
+              "expert_file_loads": 6049,
+              "expert_file_read_ms": 4956.9520840000005,
+              "expert_io_ms": 13781.685044,
+              "expert_vram_download_bytes": 45233520640,
+              "expert_vram_download_ms": 8824.732960000001,
+              "expert_vram_loads": 7171,
+              "expert_vram_upload_bytes": 79693250560,
+              "expert_vram_upload_ms": 18306.57523,
+              "kv_cache_bytes": 76808192,
+              "lm_head_ms": 358.92422400000004,
+              "prefill_expert_io_ms": 868.998128,
+              "prefill_ms": 8753.137066000001,
+              "time_to_first_token_ms": 8758.628414,
+              "tokenizer_ms": 0.41970799999999997,
+              "total_ms": 47836.45742
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 8753.289851001682,
+            "client_wall_ms": 47839.65599300063
+          },
+          "process_before": {
+            "VmHWM": 3510280,
+            "VmRSS": 3510280,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510056,
+            "VmRSS": 3504144,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-566f27745156486ab80e19e5e34e1590",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 166,
+              "total_tokens": 294
+            },
+            "metrics": {
+              "attention_ms": 4178.585358,
+              "cached_prompt_tokens": 11,
+              "decode_expert_io_ms": 13046.102255,
+              "decode_ms": 39264.432248,
+              "decode_tokens_per_second": 3.2344794698125034,
+              "expert_bytes_read": 79693250560,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12634,
+              "expert_cache_hits": 30633,
+              "expert_cache_misses": 5463,
+              "expert_compute_ms": 14292.016534,
+              "expert_file_bytes_read": 38156124160,
+              "expert_file_loads": 6049,
+              "expert_file_read_ms": 5050.281007,
+              "expert_io_ms": 13911.228706,
+              "expert_vram_download_bytes": 45233520640,
+              "expert_vram_download_ms": 8860.947699,
+              "expert_vram_loads": 7171,
+              "expert_vram_upload_bytes": 79693250560,
+              "expert_vram_upload_ms": 18382.718709999997,
+              "kv_cache_bytes": 76808192,
+              "lm_head_ms": 359.203249,
+              "prefill_expert_io_ms": 865.126451,
+              "prefill_ms": 9103.897576,
+              "time_to_first_token_ms": 9109.177232,
+              "tokenizer_ms": 0.395632,
+              "total_ms": 48373.667401
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 9103.975305999484,
+            "client_wall_ms": 48376.890055998956
+          },
+          "process_before": {
+            "VmHWM": 3510056,
+            "VmRSS": 3500048,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510056,
+            "VmRSS": 3506200,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-27143f942d1d4fe4be934de115e4e12d",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": " Mars is the fourth planet from the sun in our solar system. It is located in the inner solar system, between Earth and Jupiter. Mars is the second smallest planet in our solar system, after Mercury.\n\nMars is also known as the Red Planet because its surface is covered in red dust and rocks. This is due to the presence of iron oxide, which gives Mars its reddish appearance.\n\nMars is a terrestrial planet, which means it is made up of rocky material and has a solid surface. It has a thin atmosphere, which is mostly made up of carbon dioxide, nitrogen, and argon.\n\n"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "\nLove is a complex and multifaceted emotion that can be difficult to define. At its core, love is often described as a feeling of deep affection, care, and attachment towards another person. It can also involve a sense of protectiveness, warmth, and respect.\n\nLove can take many forms, including romantic love between partners, familial love between family members, and platonic love between friends. It can also be expressed through acts of kindness, generosity, and selflessness.\n\nLove is often associated with positive emotions such as happiness, joy, and contentment. It can also bring about a sense of purpose and fulfillment",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 166,
+              "total_tokens": 294
+            },
+            "metrics": {
+              "attention_ms": 4187.18339,
+              "cached_prompt_tokens": 11,
+              "decode_expert_io_ms": 13055.451679000002,
+              "decode_ms": 39374.901794000005,
+              "decode_tokens_per_second": 3.225404869945667,
+              "expert_bytes_read": 79693250560,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12634,
+              "expert_cache_hits": 30633,
+              "expert_cache_misses": 5463,
+              "expert_compute_ms": 14311.786231,
+              "expert_file_bytes_read": 38156124160,
+              "expert_file_loads": 6049,
+              "expert_file_read_ms": 5041.222276,
+              "expert_io_ms": 13921.557563,
+              "expert_vram_download_bytes": 45233520640,
+              "expert_vram_download_ms": 8880.335287,
+              "expert_vram_loads": 7171,
+              "expert_vram_upload_bytes": 79693250560,
+              "expert_vram_upload_ms": 18411.63384,
+              "kv_cache_bytes": 76808192,
+              "lm_head_ms": 359.256772,
+              "prefill_expert_io_ms": 866.105884,
+              "prefill_ms": 9079.886672,
+              "time_to_first_token_ms": 9085.885416,
+              "tokenizer_ms": 0.38334399999999996,
+              "total_ms": 48460.826570000005
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 9080.026534000353,
+            "client_wall_ms": 48464.00323099988
+          },
+          "process_before": {
+            "VmHWM": 3510136,
+            "VmRSS": 3500060,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3510192,
+            "VmRSS": 3506212,
+            "VmSwap": 0,
+            "read_bytes": 224657408,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        }
+      ],
+      "text_sha256": "c34fc95c41113777341ce94b9c0d1ade7ceb4e26c4af352d42079c804056c11b",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 166,
+        "total_tokens": 294
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 9099.217077000001,
+          "min": 8758.628414,
+          "max": 9477.156716
+        },
+        "decode_tokens_per_second": {
+          "median": 3.227700561813654,
+          "min": 3.2068705421476613,
+          "max": 3.249928418426528
+        },
+        "total_ms": {
+          "median": 48446.166742,
+          "min": 47836.45742,
+          "max": 49079.667651
+        },
+        "expert_file_loads": {
+          "median": 6049,
+          "min": 6049,
+          "max": 6049
+        },
+        "expert_file_bytes_read": {
+          "median": 38156124160,
+          "min": 38156124160,
+          "max": 38156124160
+        },
+        "expert_vram_download_bytes": {
+          "median": 45233520640,
+          "min": 45233520640,
+          "max": 45233520640
+        },
+        "expert_vram_upload_bytes": {
+          "median": 79693250560,
+          "min": 79693250560,
+          "max": 79693250560
+        },
+        "expert_io_ms": {
+          "median": 13911.228706,
+          "min": 13781.685044,
+          "max": 14198.502558
+        },
+        "expert_compute_ms": {
+          "median": 14309.231397,
+          "min": 13901.585772,
+          "max": 14594.283085000001
+        },
+        "attention_ms": {
+          "median": 4178.585358,
+          "min": 4154.357036,
+          "max": 4190.931065
+        },
+        "lm_head_ms": {
+          "median": 359.256772,
+          "min": 358.92422400000004,
+          "max": 359.55716
+        },
+        "cached_prompt_tokens": {
+          "median": 11,
+          "min": 11,
+          "max": 11
+        }
+      }
+    }
+  ],
+  "memory": [
+    {
+      "scenario": "cold",
+      "samples": 733,
+      "max_rss_gib": 3.3402481079101562,
+      "max_observed_hwm_gib": 3.3402481079101562,
+      "max_process_swap_kib": 0,
+      "min_available_gib": 6.844661712646484,
+      "elapsed_s": 183.3203525810004
+    },
+    {
+      "scenario": "warm",
+      "samples": 1410,
+      "max_rss_gib": 3.4942970275878906,
+      "max_observed_hwm_gib": 3.4942970275878906,
+      "max_process_swap_kib": 0,
+      "min_available_gib": 6.73016357421875,
+      "elapsed_s": 352.8645874060003
+    },
+    {
+      "scenario": "conversation",
+      "samples": 1703,
+      "max_rss_gib": 3.3476943969726562,
+      "max_observed_hwm_gib": 3.3476943969726562,
+      "max_process_swap_kib": 0,
+      "min_available_gib": 7.084682464599609,
+      "elapsed_s": 426.2666559629997
+    }
+  ]
+}
