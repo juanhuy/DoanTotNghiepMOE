@@ -2173,3 +2173,9 @@ Kết luận và bước tiếp theo:
 ## 2026-10-23 — Đưa báo cáo định kỳ lần1 lên nhánh cộng tác
 
 - Người dùng yêu cầu push báo cáo; nhánh hiện tại phase1-report-i5. Commit riêng BAO_CAO_DINH_KY_LAN_1.md và nhật ký soạn thảo, giữ deletion BaoCaoTienDo_Lan1.md ngoài commit vì là thay đổi có sẵn. Nội dung báo cáo/checks không đổi từ lượt soạn đã đạt; kiểm git diff --check trước commit, không chạy lại model/benchmark. Push nhánh riêng, không merge main.
+
+## 2026-10-23 — Tích hợp nhánh phase1-report-i5 vào main
+
+- Người dùng yêu cầu merge. Fetch origin trước, origin/main không có commit riêng so với nhánh báo cáo (0/3); chuyển main và merge --ff-only thành công tới45c1e2d, không conflict hoặc thay source khi tích hợp. Tích hợp cả checkpoint engine/workflow, bộ i5 và báo cáo định kỳ. Giữ deletion BaoCaoTienDo_Lan1.md ngoài commit.
+- Kiểm tooling/web trên main sau fast-forward; không đo lại benchmark hoặc chạy lại Rust/CUDA vì engine và checkpoint không thay so với nhánh đã kiểm. Commit nhật ký tích hợp riêng rồi push main theo yêu cầu; không force push và không xóa nhánh cộng tác.
+- Kết quả sau tích hợp: python3 tools/check.py --web PASS40 Python+7 Node/catalog40; git diff --check PASS. Rust/CUDA/model/converter không chạy lại trong bước merge này.
