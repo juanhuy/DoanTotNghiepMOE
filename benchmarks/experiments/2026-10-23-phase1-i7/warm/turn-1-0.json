@@ -1,0 +1,69 @@
+{
+  "cycle": 1,
+  "policy": "victim",
+  "turn": 0,
+  "prompt": "Where is Mars",
+  "warmup": false,
+  "session_id": "benchmark-5513f733ddcb41d187d63e25a7c29431",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Where is Mars"
+    }
+  ],
+  "response": {
+    "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+    "usage": {
+      "completion_tokens": 128,
+      "prompt_tokens": 16,
+      "total_tokens": 144
+    },
+    "metrics": {
+      "attention_ms": 865.7173369999999,
+      "cached_prompt_tokens": 0,
+      "decode_expert_io_ms": 9021.497338,
+      "decode_ms": 26769.505946999998,
+      "decode_tokens_per_second": 4.744204104903647,
+      "expert_bytes_read": 61772677120,
+      "expert_cache_bytes": 1009254400,
+      "expert_cache_evictions": 9793,
+      "expert_cache_hits": 18304,
+      "expert_cache_misses": 0,
+      "expert_compute_ms": 8330.535797999999,
+      "expert_file_bytes_read": 0,
+      "expert_file_loads": 0,
+      "expert_file_read_ms": 0.0,
+      "expert_io_ms": 9573.282379,
+      "expert_vram_download_bytes": 61772677120,
+      "expert_vram_download_ms": 9573.282379,
+      "expert_vram_loads": 9793,
+      "expert_vram_upload_bytes": 61772677120,
+      "expert_vram_upload_ms": 9897.972076,
+      "kv_cache_bytes": 37486592,
+      "lm_head_ms": 154.347698,
+      "prefill_expert_io_ms": 551.785041,
+      "prefill_ms": 2271.7374019999997,
+      "time_to_first_token_ms": 2275.990062,
+      "tokenizer_ms": 0.049026,
+      "total_ms": 29045.526447
+    },
+    "finish_reason": "length",
+    "client_first_content_after_headers_ms": 2271.9559980000668,
+    "client_wall_ms": 29047.809688999678
+  },
+  "process_before": {
+    "VmHWM": 3373892,
+    "VmRSS": 3373892,
+    "VmSwap": 0,
+    "read_bytes": 11915972608,
+    "write_bytes": 4096
+  },
+  "process_after": {
+    "VmHWM": 3435688,
+    "VmRSS": 3435688,
+    "VmSwap": 0,
+    "read_bytes": 11915972608,
+    "write_bytes": 4096
+  },
+  "process_read_bytes_delta": 0
+}

@@ -1,0 +1,1825 @@
+{
+  "protocol": "phase1-v1",
+  "source_commit": "d4adefd9e53627bdc1fd250eabab436c3ac54b0d",
+  "testbed": "i7",
+  "status": "completed",
+  "hardware": {
+    "cpu": "Intel(R) Core(TM) i7-14650HX",
+    "logical_cores": 24,
+    "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+    "vram_total_bytes": 8082096128,
+    "os": "Linux x86_64"
+  },
+  "config": {
+    "threads": 8,
+    "cache_mib": 64,
+    "context": 512,
+    "max_tokens": 128,
+    "cycles": 5,
+    "gpu_requested": "auto",
+    "expert_cache_policy": "victim"
+  },
+  "ram_environment": {
+    "MOE_RAM_LIMIT_BYTES": "5368709120",
+    "MOE_RAM_HEADROOM_BYTES": "1073741824"
+  },
+  "checkpoint": {
+    "config_sha256": "272998dd7ba4846dcc682f0b5a46144f4bcd9dde8e94d2f17bd8e5cf2f23d6ce",
+    "files": [
+      {
+        "path": "config.json",
+        "size": 828,
+        "sha256": "272998dd7ba4846dcc682f0b5a46144f4bcd9dde8e94d2f17bd8e5cf2f23d6ce"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 115,
+        "sha256": "9d849645be2b0eb25d34fda35037c6236c78329837856b4b22f2f5b61e77c0e5"
+      },
+      {
+        "path": "model-00000.safetensors",
+        "size": 1834100784,
+        "sha256": "7e29f9c6a2982b622f33e2c6a94e823e0d4442a239f3d852c566320968a7248e"
+      },
+      {
+        "path": "model-00001.safetensors",
+        "size": 1657854168,
+        "sha256": "c59d9156ca53e07eca14df1afc03100df987f2e60ea831feb04635ec8298f78b"
+      },
+      {
+        "path": "model-00002.safetensors",
+        "size": 1628059584,
+        "sha256": "645ec3d46ebb0c9b082cef794df5839479cbffa9c3f5af592adeb4da01248f7e"
+      },
+      {
+        "path": "model-00003.safetensors",
+        "size": 1821755792,
+        "sha256": "58136982b287c67e40e208796ca1bc95ef96d6f75c1655b4525474761c1d47fb"
+      },
+      {
+        "path": "model-00004.safetensors",
+        "size": 471116928,
+        "sha256": "3cbbff2d6a6ec1d2016a79c0a36a89e9540d2309d1255d4ae334c2c99d8819e3"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 437,
+        "sha256": "43ffdefa4e501eebdaaba8f34999ac1b5507dc836fab4a1d1529466de35101e0"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 3565064,
+        "sha256": "d1e645ebd850d79567e531a3c103ac575d8e9cf45fa941420afc584b293438ea"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 6123,
+        "sha256": "67ac3cdae4e25e84d5d0f4faadb961dd36341cf04e02c7be90a8fd8e697617eb"
+      }
+    ]
+  },
+  "binary_sha256": "21270a0b40692e0e010868669ffe99fc0d1f94341f3063edf3111d5f4996f4f9",
+  "groups": [
+    {
+      "group": "cold Mars",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-02ab404722214166afb265e867b35455",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 899.199338,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11864.092672,
+              "decode_ms": 30359.104847000002,
+              "decode_tokens_per_second": 4.1832590466694795,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 9041.590143000001,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3815.41812,
+              "expert_io_ms": 13840.26576,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 10024.84764,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 10857.543737,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 161.148496,
+              "prefill_expert_io_ms": 1976.173088,
+              "prefill_ms": 4054.622289,
+              "time_to_first_token_ms": 4062.2646930000005,
+              "tokenizer_ms": 1.071575,
+              "total_ms": 34421.400854
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 4054.88620899996,
+            "client_wall_ms": 34423.659574000114
+          },
+          "process_before": {
+            "VmHWM": 2108496,
+            "VmRSS": 2108496,
+            "VmSwap": 0,
+            "read_bytes": 551264256,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3213252,
+            "VmRSS": 3213252,
+            "VmSwap": 0,
+            "read_bytes": 6577762304,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 6026498048
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-3a823ae61aed4ebbb94a5756f0a04a0e",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 864.180473,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11866.198443,
+              "decode_ms": 30815.941348,
+              "decode_tokens_per_second": 4.121243565653479,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8986.384554,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 4034.029596,
+              "expert_io_ms": 14104.397815,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 10070.368219,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 11228.864768,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.483909,
+              "prefill_expert_io_ms": 2238.199372,
+              "prefill_ms": 4158.9391,
+              "time_to_first_token_ms": 4162.803243,
+              "tokenizer_ms": 0.056185,
+              "total_ms": 34978.776821
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 4158.841901999949,
+            "client_wall_ms": 34980.87236600008
+          },
+          "process_before": {
+            "VmHWM": 3210588,
+            "VmRSS": 3194836,
+            "VmSwap": 0,
+            "read_bytes": 6577762304,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3314488,
+            "VmRSS": 3314488,
+            "VmSwap": 0,
+            "read_bytes": 12826640384,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 6248878080
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-3050114fd8504836bbf47131400fe2a2",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 835.224069,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11190.039477999999,
+              "decode_ms": 28555.662923,
+              "decode_tokens_per_second": 4.447454094918194,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8043.969338,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3726.8287459999997,
+              "expert_io_ms": 13106.658302,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 9379.829556,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 10576.14492,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 153.89413599999997,
+              "prefill_expert_io_ms": 1916.618824,
+              "prefill_ms": 3868.636912,
+              "time_to_first_token_ms": 3873.2100140000002,
+              "tokenizer_ms": 0.054563,
+              "total_ms": 32428.916194999998
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3868.671989000177,
+            "client_wall_ms": 32432.009360000164
+          },
+          "process_before": {
+            "VmHWM": 3311580,
+            "VmRSS": 3283788,
+            "VmSwap": 0,
+            "read_bytes": 12826640384,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3314568,
+            "VmRSS": 3314568,
+            "VmSwap": 0,
+            "read_bytes": 18592309248,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5765668864
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-2d20a51c963b414caebb41641f1abd28",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 832.244596,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11148.422202000002,
+              "decode_ms": 28458.695911,
+              "decode_tokens_per_second": 4.4626078579697435,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8131.104551,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3742.2907450000002,
+              "expert_io_ms": 13115.103399000001,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 9372.812654000001,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 10615.243229000002,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 153.84795400000002,
+              "prefill_expert_io_ms": 1966.6811969999999,
+              "prefill_ms": 4104.288482,
+              "time_to_first_token_ms": 4109.75965,
+              "tokenizer_ms": 0.126219,
+              "total_ms": 32568.494883
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 4104.33958800013,
+            "client_wall_ms": 32571.236034999856
+          },
+          "process_before": {
+            "VmHWM": 3311860,
+            "VmRSS": 3283844,
+            "VmSwap": 0,
+            "read_bytes": 18592309248,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3314568,
+            "VmRSS": 3314568,
+            "VmSwap": 0,
+            "read_bytes": 24348209152,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5755899904
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-ca78e2cf6cd5432689083129e02410a3",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 867.649021,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11623.807914,
+              "decode_ms": 29805.175068,
+              "decode_tokens_per_second": 4.261005000314598,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8311.782245,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3623.5054689999997,
+              "expert_io_ms": 13484.56852,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 9861.063051000001,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 10880.470192,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.508756,
+              "prefill_expert_io_ms": 1860.7606059999998,
+              "prefill_ms": 3609.9688419999998,
+              "time_to_first_token_ms": 3615.1767929999996,
+              "tokenizer_ms": 0.063416,
+              "total_ms": 33420.414327000006
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3609.9817300000723,
+            "client_wall_ms": 33422.979148000195
+          },
+          "process_before": {
+            "VmHWM": 3312032,
+            "VmRSS": 3283848,
+            "VmSwap": 0,
+            "read_bytes": 24348209152,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3314588,
+            "VmRSS": 3314588,
+            "VmSwap": 0,
+            "read_bytes": 30120341504,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5772132352
+        }
+      ],
+      "text_sha256": "e1e8df8b1162dd728e25ffa03b0284c7814ddf0a3087fa8dd270a50c55ece30b",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 16,
+        "total_tokens": 144
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 4062.2646930000005,
+          "min": 3615.1767929999996,
+          "max": 4162.803243
+        },
+        "decode_tokens_per_second": {
+          "median": 4.261005000314598,
+          "min": 4.121243565653479,
+          "max": 4.4626078579697435
+        },
+        "total_ms": {
+          "median": 33420.414327000006,
+          "min": 32428.916194999998,
+          "max": 34978.776821
+        },
+        "expert_file_loads": {
+          "median": 980,
+          "min": 980,
+          "max": 980
+        },
+        "expert_file_bytes_read": {
+          "median": 6181683200,
+          "min": 6181683200,
+          "max": 6181683200
+        },
+        "expert_vram_download_bytes": {
+          "median": 61791600640,
+          "min": 61791600640,
+          "max": 61791600640
+        },
+        "expert_vram_upload_bytes": {
+          "median": 66964029440,
+          "min": 66964029440,
+          "max": 66964029440
+        },
+        "expert_io_ms": {
+          "median": 13484.56852,
+          "min": 13106.658302,
+          "max": 14104.397815
+        },
+        "expert_compute_ms": {
+          "median": 8311.782245,
+          "min": 8043.969338,
+          "max": 9041.590143000001
+        },
+        "attention_ms": {
+          "median": 864.180473,
+          "min": 832.244596,
+          "max": 899.199338
+        },
+        "lm_head_ms": {
+          "median": 154.483909,
+          "min": 153.84795400000002,
+          "max": 161.148496
+        },
+        "cached_prompt_tokens": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "group": "warm Mars",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-fd061c198fe74d5faf9ece389edc4f71",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 855.357597,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 8942.167031,
+              "decode_ms": 25887.86913,
+              "decode_tokens_per_second": 4.905772636683597,
+              "expert_bytes_read": 61772677120,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9793,
+              "expert_cache_hits": 18304,
+              "expert_cache_misses": 0,
+              "expert_compute_ms": 7664.040049,
+              "expert_file_bytes_read": 0,
+              "expert_file_loads": 0,
+              "expert_file_read_ms": 0.0,
+              "expert_io_ms": 9477.36968,
+              "expert_vram_download_bytes": 61772677120,
+              "expert_vram_download_ms": 9477.36968,
+              "expert_vram_loads": 9793,
+              "expert_vram_upload_bytes": 61772677120,
+              "expert_vram_upload_ms": 9667.039409,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.049611,
+              "prefill_expert_io_ms": 535.2026490000001,
+              "prefill_ms": 2135.884107,
+              "time_to_first_token_ms": 2141.079297,
+              "tokenizer_ms": 0.056373,
+              "total_ms": 28028.978789
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2136.3460709999345,
+            "client_wall_ms": 28031.492313999934
+          },
+          "process_before": {
+            "VmHWM": 3213012,
+            "VmRSS": 3213012,
+            "VmSwap": 0,
+            "read_bytes": 6268973056,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3290216,
+            "VmRSS": 3290216,
+            "VmSwap": 0,
+            "read_bytes": 6268973056,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-5513f733ddcb41d187d63e25a7c29431",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 865.7173369999999,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 9021.497338,
+              "decode_ms": 26769.505946999998,
+              "decode_tokens_per_second": 4.744204104903647,
+              "expert_bytes_read": 61772677120,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9793,
+              "expert_cache_hits": 18304,
+              "expert_cache_misses": 0,
+              "expert_compute_ms": 8330.535797999999,
+              "expert_file_bytes_read": 0,
+              "expert_file_loads": 0,
+              "expert_file_read_ms": 0.0,
+              "expert_io_ms": 9573.282379,
+              "expert_vram_download_bytes": 61772677120,
+              "expert_vram_download_ms": 9573.282379,
+              "expert_vram_loads": 9793,
+              "expert_vram_upload_bytes": 61772677120,
+              "expert_vram_upload_ms": 9897.972076,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.347698,
+              "prefill_expert_io_ms": 551.785041,
+              "prefill_ms": 2271.7374019999997,
+              "time_to_first_token_ms": 2275.990062,
+              "tokenizer_ms": 0.049026,
+              "total_ms": 29045.526447
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2271.9559980000668,
+            "client_wall_ms": 29047.809688999678
+          },
+          "process_before": {
+            "VmHWM": 3373892,
+            "VmRSS": 3373892,
+            "VmSwap": 0,
+            "read_bytes": 11915972608,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3435688,
+            "VmRSS": 3435688,
+            "VmSwap": 0,
+            "read_bytes": 11915972608,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-be87a394f0a646d4b3f1d4225f72ac1d",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 851.559357,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 9072.003048999999,
+              "decode_ms": 26119.363019,
+              "decode_tokens_per_second": 4.862293154224949,
+              "expert_bytes_read": 61772677120,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9793,
+              "expert_cache_hits": 18304,
+              "expert_cache_misses": 0,
+              "expert_compute_ms": 7562.3956530000005,
+              "expert_file_bytes_read": 0,
+              "expert_file_loads": 0,
+              "expert_file_read_ms": 0.0,
+              "expert_io_ms": 9605.782229999999,
+              "expert_vram_download_bytes": 61772677120,
+              "expert_vram_download_ms": 9605.782229999999,
+              "expert_vram_loads": 9793,
+              "expert_vram_upload_bytes": 61772677120,
+              "expert_vram_upload_ms": 9750.090582,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.12800800000002,
+              "prefill_expert_io_ms": 533.779181,
+              "prefill_ms": 2011.974314,
+              "time_to_first_token_ms": 2016.020691,
+              "tokenizer_ms": 0.063388,
+              "total_ms": 28135.418098
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2012.0879780001815,
+            "client_wall_ms": 28137.847545000113
+          },
+          "process_before": {
+            "VmHWM": 3432744,
+            "VmRSS": 3386540,
+            "VmSwap": 0,
+            "read_bytes": 17449123840,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3436844,
+            "VmRSS": 3436844,
+            "VmSwap": 0,
+            "read_bytes": 17449123840,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-00fbf32443e44e63bff2292480abc607",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 842.679769,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 8896.541745,
+              "decode_ms": 25600.346209000003,
+              "decode_tokens_per_second": 4.960870410235005,
+              "expert_bytes_read": 61772677120,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9793,
+              "expert_cache_hits": 18304,
+              "expert_cache_misses": 0,
+              "expert_compute_ms": 7419.810375,
+              "expert_file_bytes_read": 0,
+              "expert_file_loads": 0,
+              "expert_file_read_ms": 0.0,
+              "expert_io_ms": 9430.442956,
+              "expert_vram_download_bytes": 61772677120,
+              "expert_vram_download_ms": 9430.442956,
+              "expert_vram_loads": 9793,
+              "expert_vram_upload_bytes": 61772677120,
+              "expert_vram_upload_ms": 9660.046009,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 153.903281,
+              "prefill_expert_io_ms": 533.901211,
+              "prefill_ms": 2115.8421230000004,
+              "time_to_first_token_ms": 2120.579875,
+              "tokenizer_ms": 0.049755,
+              "total_ms": 27720.958397000002
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2115.8749960000023,
+            "client_wall_ms": 27723.39092099992
+          },
+          "process_before": {
+            "VmHWM": 3434424,
+            "VmRSS": 3386512,
+            "VmSwap": 0,
+            "read_bytes": 22955888640,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3436820,
+            "VmRSS": 3436820,
+            "VmSwap": 0,
+            "read_bytes": 22955888640,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-c88e9de17fa3492c80286309ec1405bf",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 893.50721,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 9062.725129,
+              "decode_ms": 27804.346555,
+              "decode_tokens_per_second": 4.567631170499918,
+              "expert_bytes_read": 61772677120,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 9793,
+              "expert_cache_hits": 18304,
+              "expert_cache_misses": 0,
+              "expert_compute_ms": 8825.070962,
+              "expert_file_bytes_read": 0,
+              "expert_file_loads": 0,
+              "expert_file_read_ms": 0.0,
+              "expert_io_ms": 9651.022445,
+              "expert_vram_download_bytes": 61772677120,
+              "expert_vram_download_ms": 9651.022445,
+              "expert_vram_loads": 9793,
+              "expert_vram_upload_bytes": 61772677120,
+              "expert_vram_upload_ms": 10399.826761,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.681647,
+              "prefill_expert_io_ms": 588.297316,
+              "prefill_ms": 2358.1924910000002,
+              "time_to_first_token_ms": 2362.706296,
+              "tokenizer_ms": 0.060017,
+              "total_ms": 30167.086396
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2358.2132980000097,
+            "client_wall_ms": 30169.55886200003
+          },
+          "process_before": {
+            "VmHWM": 3434424,
+            "VmRSS": 3386540,
+            "VmSwap": 0,
+            "read_bytes": 28462530560,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3436900,
+            "VmRSS": 3436900,
+            "VmSwap": 0,
+            "read_bytes": 28462530560,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 0
+        }
+      ],
+      "text_sha256": "e1e8df8b1162dd728e25ffa03b0284c7814ddf0a3087fa8dd270a50c55ece30b",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 16,
+        "total_tokens": 144
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 2141.079297,
+          "min": 2016.020691,
+          "max": 2362.706296
+        },
+        "decode_tokens_per_second": {
+          "median": 4.862293154224949,
+          "min": 4.567631170499918,
+          "max": 4.960870410235005
+        },
+        "total_ms": {
+          "median": 28135.418098,
+          "min": 27720.958397000002,
+          "max": 30167.086396
+        },
+        "expert_file_loads": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expert_file_bytes_read": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "expert_vram_download_bytes": {
+          "median": 61772677120,
+          "min": 61772677120,
+          "max": 61772677120
+        },
+        "expert_vram_upload_bytes": {
+          "median": 61772677120,
+          "min": 61772677120,
+          "max": 61772677120
+        },
+        "expert_io_ms": {
+          "median": 9573.282379,
+          "min": 9430.442956,
+          "max": 9651.022445
+        },
+        "expert_compute_ms": {
+          "median": 7664.040049,
+          "min": 7419.810375,
+          "max": 8825.070962
+        },
+        "attention_ms": {
+          "median": 855.357597,
+          "min": 842.679769,
+          "max": 893.50721
+        },
+        "lm_head_ms": {
+          "median": 154.12800800000002,
+          "min": 153.903281,
+          "max": 154.681647
+        },
+        "cached_prompt_tokens": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "group": "conversation Mars",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-9cc9599300574312b910f39366a07e16",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 914.75394,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11237.365617,
+              "decode_ms": 29951.557286,
+              "decode_tokens_per_second": 4.2401801945491,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8975.189861,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3394.857492,
+              "expert_io_ms": 13019.388163,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 9624.530671,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 10844.597712,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 159.46265100000002,
+              "prefill_expert_io_ms": 1782.022546,
+              "prefill_ms": 3635.5158859999997,
+              "time_to_first_token_ms": 3650.789165,
+              "tokenizer_ms": 4.134597,
+              "total_ms": 33602.376683
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3635.665513999811,
+            "client_wall_ms": 33605.52738399974
+          },
+          "process_before": {
+            "VmHWM": 2108484,
+            "VmRSS": 2108484,
+            "VmSwap": 0,
+            "read_bytes": 568627200,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3213092,
+            "VmRSS": 3213092,
+            "VmSwap": 0,
+            "read_bytes": 5492289536,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 4923662336
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-134da8e7284648af9c3b5fcc1e6af42f",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 910.074218,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 12199.075952,
+              "decode_ms": 31979.362658,
+              "decode_tokens_per_second": 3.97131116583493,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 9458.068955,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3505.137988,
+              "expert_io_ms": 14156.965885,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 10651.827897000001,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 11504.412853,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 155.610378,
+              "prefill_expert_io_ms": 1957.8899330000002,
+              "prefill_ms": 3903.71047,
+              "time_to_first_token_ms": 3912.2865779999997,
+              "tokenizer_ms": 0.144622,
+              "total_ms": 35891.681147
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3903.726255000038,
+            "client_wall_ms": 35894.51366799994
+          },
+          "process_before": {
+            "VmHWM": 3255032,
+            "VmRSS": 3232972,
+            "VmSwap": 0,
+            "read_bytes": 5670735872,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317160,
+            "VmRSS": 3317160,
+            "VmSwap": 0,
+            "read_bytes": 11160793088,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5490057216
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-950ce7008fa6419f9739469effa545a6",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 853.4889049999999,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11297.120126,
+              "decode_ms": 29551.523678999998,
+              "decode_tokens_per_second": 4.297578743469297,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8459.773605,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3554.052455,
+              "expert_io_ms": 13232.159266,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 9678.106811,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 10852.362513,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.463146,
+              "prefill_expert_io_ms": 1935.03914,
+              "prefill_ms": 3722.141408,
+              "time_to_first_token_ms": 3726.991145,
+              "tokenizer_ms": 0.07773899999999999,
+              "total_ms": 33278.545745999996
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3722.1909149998282,
+            "client_wall_ms": 33280.59718000032
+          },
+          "process_before": {
+            "VmHWM": 3314636,
+            "VmRSS": 3286460,
+            "VmSwap": 0,
+            "read_bytes": 11341029376,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317068,
+            "VmRSS": 3317068,
+            "VmSwap": 0,
+            "read_bytes": 16868814848,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5527785472
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-12f3ae223ff748b8a3b044003d011ba1",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 871.717606,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 11772.487443999999,
+              "decode_ms": 30440.134014000003,
+              "decode_tokens_per_second": 4.172123550493906,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 8989.741369000001,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3585.0248389999997,
+              "expert_io_ms": 13745.48178,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 10160.456941,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 11100.140207999999,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 154.775666,
+              "prefill_expert_io_ms": 1972.994336,
+              "prefill_ms": 4098.618667000001,
+              "time_to_first_token_ms": 4102.892038,
+              "tokenizer_ms": 0.05885,
+              "total_ms": 34543.057688
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 4098.660194999866,
+            "client_wall_ms": 34545.2697830001
+          },
+          "process_before": {
+            "VmHWM": 3314776,
+            "VmRSS": 3286344,
+            "VmSwap": 0,
+            "read_bytes": 17047736320,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317072,
+            "VmRSS": 3317072,
+            "VmSwap": 0,
+            "read_bytes": 22539456512,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5491720192
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 0,
+          "prompt": "Where is Mars",
+          "warmup": false,
+          "session_id": "benchmark-96bb96034743439082bde71a894c05e2",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            }
+          ],
+          "response": {
+            "text": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 16,
+              "total_tokens": 144
+            },
+            "metrics": {
+              "attention_ms": 959.372802,
+              "cached_prompt_tokens": 0,
+              "decode_expert_io_ms": 14635.102311,
+              "decode_ms": 36917.011685,
+              "decode_tokens_per_second": 3.4401484357305723,
+              "expert_bytes_read": 67973283840,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 10616,
+              "expert_cache_hits": 17324,
+              "expert_cache_misses": 980,
+              "expert_compute_ms": 10149.494313,
+              "expert_file_bytes_read": 6181683200,
+              "expert_file_loads": 980,
+              "expert_file_read_ms": 3809.00995,
+              "expert_io_ms": 16653.901261000003,
+              "expert_vram_download_bytes": 61791600640,
+              "expert_vram_download_ms": 12844.891311,
+              "expert_vram_loads": 9796,
+              "expert_vram_upload_bytes": 66964029440,
+              "expert_vram_upload_ms": 13305.519707,
+              "kv_cache_bytes": 37486592,
+              "lm_head_ms": 157.138105,
+              "prefill_expert_io_ms": 2018.7989499999999,
+              "prefill_ms": 3970.412456,
+              "time_to_first_token_ms": 3976.1542489999997,
+              "tokenizer_ms": 0.06509999999999999,
+              "total_ms": 40893.199496
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3970.345422000264,
+            "client_wall_ms": 40895.56127399964
+          },
+          "process_before": {
+            "VmHWM": 3314776,
+            "VmRSS": 3286352,
+            "VmSwap": 0,
+            "read_bytes": 22713839616,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317088,
+            "VmRSS": 3317088,
+            "VmSwap": 0,
+            "read_bytes": 28230782976,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 5516943360
+        }
+      ],
+      "text_sha256": "e1e8df8b1162dd728e25ffa03b0284c7814ddf0a3087fa8dd270a50c55ece30b",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 16,
+        "total_tokens": 144
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 3912.2865779999997,
+          "min": 3650.789165,
+          "max": 4102.892038
+        },
+        "decode_tokens_per_second": {
+          "median": 4.172123550493906,
+          "min": 3.4401484357305723,
+          "max": 4.297578743469297
+        },
+        "total_ms": {
+          "median": 34543.057688,
+          "min": 33278.545745999996,
+          "max": 40893.199496
+        },
+        "expert_file_loads": {
+          "median": 980,
+          "min": 980,
+          "max": 980
+        },
+        "expert_file_bytes_read": {
+          "median": 6181683200,
+          "min": 6181683200,
+          "max": 6181683200
+        },
+        "expert_vram_download_bytes": {
+          "median": 61791600640,
+          "min": 61791600640,
+          "max": 61791600640
+        },
+        "expert_vram_upload_bytes": {
+          "median": 66964029440,
+          "min": 66964029440,
+          "max": 66964029440
+        },
+        "expert_io_ms": {
+          "median": 13745.48178,
+          "min": 13019.388163,
+          "max": 16653.901261000003
+        },
+        "expert_compute_ms": {
+          "median": 8989.741369000001,
+          "min": 8459.773605,
+          "max": 10149.494313
+        },
+        "attention_ms": {
+          "median": 910.074218,
+          "min": 853.4889049999999,
+          "max": 959.372802
+        },
+        "lm_head_ms": {
+          "median": 155.610378,
+          "min": 154.463146,
+          "max": 159.46265100000002
+        },
+        "cached_prompt_tokens": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "group": "conversation Love",
+      "samples": [
+        {
+          "cycle": 0,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-9cc9599300574312b910f39366a07e16",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "Love is a complex and multifaceted emotion or condition that has been explored and described from various perspectives across cultures, philosophies, and personal experiences. Here are several ways love is understood and experienced:\n\n1. **Romantic Love**: This is often characterized by intense feelings of attraction, affection, and intimacy towards another person. It includes a desire for emotional closeness, physical intimacy, and sometimes a wish for a lifelong partnership.\n\n2. **Platonic Love**: Named after the Greek philosopher Plato, this form of love is non-sexual and based on friendship, loyalty, and mutual respect. It emphasizes the",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 162,
+              "total_tokens": 290
+            },
+            "metrics": {
+              "attention_ms": 1921.9801730000001,
+              "cached_prompt_tokens": 143,
+              "decode_expert_io_ms": 12207.663572,
+              "decode_ms": 34169.983166,
+              "decode_tokens_per_second": 3.716712395877567,
+              "expert_bytes_read": 78318141440,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12416,
+              "expert_cache_hits": 18658,
+              "expert_cache_misses": 30,
+              "expert_compute_ms": 9214.165926,
+              "expert_file_bytes_read": 189235200,
+              "expert_file_loads": 30,
+              "expert_file_read_ms": 370.001223,
+              "expert_io_ms": 12960.804406,
+              "expert_vram_download_bytes": 78128906240,
+              "expert_vram_download_ms": 12590.803183,
+              "expert_vram_loads": 12386,
+              "expert_vram_upload_bytes": 78318141440,
+              "expert_vram_upload_ms": 12950.511966,
+              "kv_cache_bytes": 75759616,
+              "lm_head_ms": 154.678271,
+              "prefill_expert_io_ms": 753.1408339999999,
+              "prefill_ms": 3228.857643,
+              "time_to_first_token_ms": 3233.871545,
+              "tokenizer_ms": 0.322256,
+              "total_ms": 37403.886046
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3229.2715710000266,
+            "client_wall_ms": 37406.37078100008
+          },
+          "process_before": {
+            "VmHWM": 3213092,
+            "VmRSS": 3213092,
+            "VmSwap": 0,
+            "read_bytes": 5492289536,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3257544,
+            "VmRSS": 3257544,
+            "VmSwap": 0,
+            "read_bytes": 5670735872,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 178446336
+        },
+        {
+          "cycle": 1,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-134da8e7284648af9c3b5fcc1e6af42f",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "Love is a complex and multifaceted emotion or condition that has been explored and described from various perspectives across cultures, philosophies, and personal experiences. Here are several ways love is understood and experienced:\n\n1. **Romantic Love**: This is often characterized by intense feelings of attraction, affection, and intimacy towards another person. It includes a desire for emotional closeness, physical intimacy, and sometimes a wish for a lifelong partnership.\n\n2. **Platonic Love**: Named after the Greek philosopher Plato, this form of love is non-sexual and based on friendship, loyalty, and mutual respect. It emphasizes the",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 162,
+              "total_tokens": 290
+            },
+            "metrics": {
+              "attention_ms": 1812.332841,
+              "cached_prompt_tokens": 143,
+              "decode_expert_io_ms": 12948.536764,
+              "decode_ms": 35244.563745,
+              "decode_tokens_per_second": 3.6033925946385694,
+              "expert_bytes_read": 78318141440,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12416,
+              "expert_cache_hits": 18658,
+              "expert_cache_misses": 30,
+              "expert_compute_ms": 9010.636047,
+              "expert_file_bytes_read": 189235200,
+              "expert_file_loads": 30,
+              "expert_file_read_ms": 292.857337,
+              "expert_io_ms": 13718.435969,
+              "expert_vram_download_bytes": 78128906240,
+              "expert_vram_download_ms": 13425.578632,
+              "expert_vram_loads": 12386,
+              "expert_vram_upload_bytes": 78318141440,
+              "expert_vram_upload_ms": 13281.662892,
+              "kv_cache_bytes": 75759616,
+              "lm_head_ms": 155.14552500000002,
+              "prefill_expert_io_ms": 769.8992049999999,
+              "prefill_ms": 2924.1592299999998,
+              "time_to_first_token_ms": 2928.5390319999997,
+              "tokenizer_ms": 0.291408,
+              "total_ms": 38173.139775999996
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2924.3409489999976,
+            "client_wall_ms": 38175.71959600036
+          },
+          "process_before": {
+            "VmHWM": 3317160,
+            "VmRSS": 3317160,
+            "VmSwap": 0,
+            "read_bytes": 11160793088,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317172,
+            "VmRSS": 3317172,
+            "VmSwap": 0,
+            "read_bytes": 11341029376,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 180236288
+        },
+        {
+          "cycle": 2,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-950ce7008fa6419f9739469effa545a6",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "Love is a complex and multifaceted emotion or condition that has been explored and described from various perspectives across cultures, philosophies, and personal experiences. Here are several ways love is understood and experienced:\n\n1. **Romantic Love**: This is often characterized by intense feelings of attraction, affection, and intimacy towards another person. It includes a desire for emotional closeness, physical intimacy, and sometimes a wish for a lifelong partnership.\n\n2. **Platonic Love**: Named after the Greek philosopher Plato, this form of love is non-sexual and based on friendship, loyalty, and mutual respect. It emphasizes the",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 162,
+              "total_tokens": 290
+            },
+            "metrics": {
+              "attention_ms": 1842.105973,
+              "cached_prompt_tokens": 143,
+              "decode_expert_io_ms": 12248.58403,
+              "decode_ms": 34012.300492,
+              "decode_tokens_per_second": 3.7339432547313742,
+              "expert_bytes_read": 78318141440,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12416,
+              "expert_cache_hits": 18658,
+              "expert_cache_misses": 30,
+              "expert_compute_ms": 8602.741575,
+              "expert_file_bytes_read": 189235200,
+              "expert_file_loads": 30,
+              "expert_file_read_ms": 367.859825,
+              "expert_io_ms": 12904.778046000001,
+              "expert_vram_download_bytes": 78128906240,
+              "expert_vram_download_ms": 12536.918221,
+              "expert_vram_loads": 12386,
+              "expert_vram_upload_bytes": 78318141440,
+              "expert_vram_upload_ms": 12696.928924,
+              "kv_cache_bytes": 75759616,
+              "lm_head_ms": 154.434656,
+              "prefill_expert_io_ms": 656.194016,
+              "prefill_ms": 2373.829005,
+              "time_to_first_token_ms": 2378.7078140000003,
+              "tokenizer_ms": 0.280588,
+              "total_ms": 36391.043671
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2373.7582779999684,
+            "client_wall_ms": 36393.49414300022
+          },
+          "process_before": {
+            "VmHWM": 3317068,
+            "VmRSS": 3317068,
+            "VmSwap": 0,
+            "read_bytes": 16868814848,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317068,
+            "VmRSS": 3317068,
+            "VmSwap": 0,
+            "read_bytes": 17047736320,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 178921472
+        },
+        {
+          "cycle": 3,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-12f3ae223ff748b8a3b044003d011ba1",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "Love is a complex and multifaceted emotion or condition that has been explored and described from various perspectives across cultures, philosophies, and personal experiences. Here are several ways love is understood and experienced:\n\n1. **Romantic Love**: This is often characterized by intense feelings of attraction, affection, and intimacy towards another person. It includes a desire for emotional closeness, physical intimacy, and sometimes a wish for a lifelong partnership.\n\n2. **Platonic Love**: Named after the Greek philosopher Plato, this form of love is non-sexual and based on friendship, loyalty, and mutual respect. It emphasizes the",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 162,
+              "total_tokens": 290
+            },
+            "metrics": {
+              "attention_ms": 2060.242499,
+              "cached_prompt_tokens": 143,
+              "decode_expert_io_ms": 14911.343405,
+              "decode_ms": 39409.637150999995,
+              "decode_tokens_per_second": 3.2225620224158154,
+              "expert_bytes_read": 78318141440,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12416,
+              "expert_cache_hits": 18658,
+              "expert_cache_misses": 30,
+              "expert_compute_ms": 9082.67304,
+              "expert_file_bytes_read": 189235200,
+              "expert_file_loads": 30,
+              "expert_file_read_ms": 281.192258,
+              "expert_io_ms": 15547.203462000001,
+              "expert_vram_download_bytes": 78128906240,
+              "expert_vram_download_ms": 15266.011204,
+              "expert_vram_loads": 12386,
+              "expert_vram_upload_bytes": 78318141440,
+              "expert_vram_upload_ms": 14721.942899,
+              "kv_cache_bytes": 75759616,
+              "lm_head_ms": 156.69668000000001,
+              "prefill_expert_io_ms": 635.860057,
+              "prefill_ms": 2384.44178,
+              "time_to_first_token_ms": 2388.851115,
+              "tokenizer_ms": 0.238244,
+              "total_ms": 41798.537001
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 2384.8470299999462,
+            "client_wall_ms": 41801.45193299995
+          },
+          "process_before": {
+            "VmHWM": 3317072,
+            "VmRSS": 3317072,
+            "VmSwap": 0,
+            "read_bytes": 22539456512,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317076,
+            "VmRSS": 3317076,
+            "VmSwap": 0,
+            "read_bytes": 22713839616,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 174383104
+        },
+        {
+          "cycle": 4,
+          "policy": "victim",
+          "turn": 1,
+          "prompt": "What is love ?",
+          "warmup": false,
+          "session_id": "benchmark-96bb96034743439082bde71a894c05e2",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Where is Mars"
+            },
+            {
+              "role": "assistant",
+              "content": "Mars is the fourth planet from the Sun in our solar system and is the second-smallest planet after Mercury. It is often referred to as the \"Red Planet\" due to its reddish appearance, which is caused by iron oxide or rust on its surface. Mars orbits the Sun at an average distance of approximately 228 million kilometers (142 million miles), taking approximately 687 Earth days to complete one orbit.\n\nMars is located in the terrestrial (or inner) region of the solar system and is the last planet in the inner solar system before the asteroid belt. It has two natural satellites, or moons: Phob"
+            },
+            {
+              "role": "user",
+              "content": "What is love ?"
+            }
+          ],
+          "response": {
+            "text": "Love is a complex and multifaceted emotion or condition that has been explored and described from various perspectives across cultures, philosophies, and personal experiences. Here are several ways love is understood and experienced:\n\n1. **Romantic Love**: This is often characterized by intense feelings of attraction, affection, and intimacy towards another person. It includes a desire for emotional closeness, physical intimacy, and sometimes a wish for a lifelong partnership.\n\n2. **Platonic Love**: Named after the Greek philosopher Plato, this form of love is non-sexual and based on friendship, loyalty, and mutual respect. It emphasizes the",
+            "usage": {
+              "completion_tokens": 128,
+              "prompt_tokens": 162,
+              "total_tokens": 290
+            },
+            "metrics": {
+              "attention_ms": 2094.861034,
+              "cached_prompt_tokens": 143,
+              "decode_expert_io_ms": 16070.884928000001,
+              "decode_ms": 41375.462541,
+              "decode_tokens_per_second": 3.069452090696327,
+              "expert_bytes_read": 78318141440,
+              "expert_cache_bytes": 1009254400,
+              "expert_cache_evictions": 12416,
+              "expert_cache_hits": 18658,
+              "expert_cache_misses": 30,
+              "expert_compute_ms": 9892.217237,
+              "expert_file_bytes_read": 189235200,
+              "expert_file_loads": 30,
+              "expert_file_read_ms": 402.974354,
+              "expert_io_ms": 16943.407468,
+              "expert_vram_download_bytes": 78128906240,
+              "expert_vram_download_ms": 16540.433114,
+              "expert_vram_loads": 12386,
+              "expert_vram_upload_bytes": 78318141440,
+              "expert_vram_upload_ms": 15408.258163999999,
+              "kv_cache_bytes": 75759616,
+              "lm_head_ms": 156.863775,
+              "prefill_expert_io_ms": 872.5225399999999,
+              "prefill_ms": 3350.3387359999997,
+              "time_to_first_token_ms": 3356.717299,
+              "tokenizer_ms": 0.26340800000000003,
+              "total_ms": 44732.228921999995
+            },
+            "finish_reason": "length",
+            "client_first_content_after_headers_ms": 3350.3215069999897,
+            "client_wall_ms": 44734.740171999874
+          },
+          "process_before": {
+            "VmHWM": 3317088,
+            "VmRSS": 3317088,
+            "VmSwap": 0,
+            "read_bytes": 28230782976,
+            "write_bytes": 4096
+          },
+          "process_after": {
+            "VmHWM": 3317092,
+            "VmRSS": 3317092,
+            "VmSwap": 0,
+            "read_bytes": 28404920320,
+            "write_bytes": 4096
+          },
+          "process_read_bytes_delta": 174137344
+        }
+      ],
+      "text_sha256": "23d34a1d8e517183e86805e137651d142ad6090d4aa7d002b033d6c7255b048c",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 162,
+        "total_tokens": 290
+      },
+      "metrics": {
+        "time_to_first_token_ms": {
+          "median": 2928.5390319999997,
+          "min": 2378.7078140000003,
+          "max": 3356.717299
+        },
+        "decode_tokens_per_second": {
+          "median": 3.6033925946385694,
+          "min": 3.069452090696327,
+          "max": 3.7339432547313742
+        },
+        "total_ms": {
+          "median": 38173.139775999996,
+          "min": 36391.043671,
+          "max": 44732.228921999995
+        },
+        "expert_file_loads": {
+          "median": 30,
+          "min": 30,
+          "max": 30
+        },
+        "expert_file_bytes_read": {
+          "median": 189235200,
+          "min": 189235200,
+          "max": 189235200
+        },
+        "expert_vram_download_bytes": {
+          "median": 78128906240,
+          "min": 78128906240,
+          "max": 78128906240
+        },
+        "expert_vram_upload_bytes": {
+          "median": 78318141440,
+          "min": 78318141440,
+          "max": 78318141440
+        },
+        "expert_io_ms": {
+          "median": 13718.435969,
+          "min": 12904.778046000001,
+          "max": 16943.407468
+        },
+        "expert_compute_ms": {
+          "median": 9082.67304,
+          "min": 8602.741575,
+          "max": 9892.217237
+        },
+        "attention_ms": {
+          "median": 1921.9801730000001,
+          "min": 1812.332841,
+          "max": 2094.861034
+        },
+        "lm_head_ms": {
+          "median": 155.14552500000002,
+          "min": 154.434656,
+          "max": 156.863775
+        },
+        "cached_prompt_tokens": {
+          "median": 143,
+          "min": 143,
+          "max": 143
+        }
+      }
+    }
+  ],
+  "memory": [
+    {
+      "scenario": "cold",
+      "samples": 676,
+      "max_rss_gib": 3.1610374450683594,
+      "max_observed_hwm_gib": 3.1610374450683594,
+      "max_process_swap_kib": 0,
+      "min_available_gib": 5.462650299072266,
+      "elapsed_s": 169.08787886000005
+    },
+    {
+      "scenario": "warm",
+      "samples": 1255,
+      "max_rss_gib": 3.277667999267578,
+      "max_observed_hwm_gib": 3.277667999267578,
+      "max_process_swap_kib": 0,
+      "min_available_gib": 6.3465728759765625,
+      "elapsed_s": 314.11190054499957
+    },
+    {
+      "scenario": "conversation",
+      "samples": 1511,
+      "max_rss_gib": 3.163501739501953,
+      "max_observed_hwm_gib": 3.163501739501953,
+      "max_process_swap_kib": 0,
+      "min_available_gib": 5.606727600097656,
+      "elapsed_s": 378.2420154749998
+    }
+  ]
+}

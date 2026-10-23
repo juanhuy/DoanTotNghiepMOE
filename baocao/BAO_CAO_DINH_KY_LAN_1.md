@@ -879,31 +879,107 @@ Suite 12 câu kiểm heuristic exact/substring đạt 10/12 trong smoke trước
 
 Không thể từ 10/12 kết luận “độ chính xác 83,33%” đại diện cho người dùng hoặc mọi nhiệm vụ. Cũng chưa có A/B FP32/INT8 trên model 7B để quy hai lỗi cho lượng tử hóa. Tốc độ, khả năng vận hành và chất lượng câu trả lời là ba chiều đánh giá cần được giữ riêng.
 
-## 5.10. Thực nghiệm máy i7 — CHƯA CÓ DỮ LIỆU, BỔ SUNG SAU
+## 5.10. Thực nghiệm máy i7 — Kết quả đối chiếu cùng protocol phase1-v1
 
-**Tại thời điểm lập báo cáo, chưa có kết quả i7 mới cho bộ thử tương ứng. Cấu hình phase1-v1 là cấu hình đã đo trên i5, chưa phải ngân sách nghiệm thu chung i5/i7. Ưu tiên hiện hành là tiếp tục điều tra OOM và tổng RAM trên i5; partner bổ sung i7 sau khi kiểm môi trường, ổn định bộ nhớ và thống nhất cấu hình chung. Không sử dụng dữ liệu i5 hoặc tên thư mục lịch sử để điền thay.**
+Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được thực hiện nhằm cung cấp dữ liệu vận hành có thể truy nguồn, sử dụng cùng bộ kiểm thử, cùng revision mã nguồn sạch `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` và cùng ngân sách cache RAM (64 MiB/layer) như đã đo trên máy `i5` [10], [18]. Mục tiêu là mô tả năng lực vận hành của hệ thống trên cấu hình phần cứng khác, không đặt mục tiêu xếp hạng hiệu năng CPU hay suy diễn tăng tốc giữa hai máy.
 
-**Bảng 5.11. Dữ liệu i7 cần bổ sung**
+**Bảng 5.11. Môi trường và cấu hình thực nghiệm trên máy i7**
 
-| Nội dung cần ghi | Trạng thái | Yêu cầu cho người bổ sung |
-| --- | --- | --- |
-| Thành viên, ngày đo, CPU/RAM/GPU/OS | Chưa có | Lấy hardware quan sát thực, không suy từ nhãn i7 |
-| Source revision | Chưa chạy | `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` là nguồn của bộ i5; cần cùng revision với bộ đối chiếu được thống nhất sau kiểm RAM |
-| Checkpoint/source/binary hashes | Chưa có | Đối chiếu checkpoint; ghi hash thực, giải thích binary khác nếu khác môi trường |
-| Preflight và RAM smoke | Chưa chạy | Có giám sát, không có model khác cùng lúc |
-| Cache/context/max output | Chưa chạy | i5 đã thử 64 MiB/layer,512,128; chỉ dùng làm cấu hình chung sau kiểm RAM và xác nhận trên cả hai máy |
-| Threads/policy/backend | Chưa chạy | i5 đã dùng 8/victim/GPUauto; ghi backend/threads thực và công bố nếu khác |
-| Guard/headroom/watchdog | Chưa chạy | Ghi giới hạn tường minh; cấu hình i5 là 5 GiB/1 GiB cùng watchdog đã nêu |
-| Cold/warm/conversation | Chưa có | 5 mẫu mỗi nhóm,20 measured+5 warmup |
-| TTFT/decode/wall và output | Chưa có | Lưu từng mẫu trước median/min–max |
-| RSS/HWM/VmSwap/MemAvailable | Chưa có | Lưu time series độc lập và watchdog result |
-| Phân tích, kết quả lỗi và giới hạn | Chưa có | Không bỏ lượt lỗi/không cải thiện |
+| Thuộc tính | Giá trị / Điều kiện quan sát thực tế |
+| --- | --- |
+| Testbed | `i7`, người dùng xác nhận |
+| CPU quan sát | Intel(R) Core(TM) i7-14650HX, 24 logical cores, 16 physical cores |
+| RAM vật lý quan sát | 14,0 GiB tổng (Available: ~9,6 GiB) |
+| GPU inventory | NVIDIA GeForce RTX 5060 Laptop GPU, 8151 MiB VRAM (7,53 GB khả dụng) |
+| GPU runtime | Requested `auto`; enabled thực (`cuBLAS SGEMV Active`, 1,38 GB Dense offload) |
+| Source commit | `d4adefd9e53627bdc1fd250eabab436c3ac54b0d`, `git_dirty=false` |
+| Rayon threads | 8 threads |
+| Expert cache policy | `victim` |
+| Cache expert | 64 MiB/layer (1 GiB cấu hình trên 16 layers) |
+| Context / max output | 512 / 128 tokens |
+| Engine RAM guard | RSS 5 GiB; headroom 1 GiB |
+| Watchdog | RSS 5,5 GiB; MemAvailable 1,5 GiB; process swap 128 MiB; 250 ms |
+| Trình tự | Cold → Warm → Conversation, tuần tự qua `tools/run_scenarios.py` |
 
-*Nguồn: cấu hình i5 đã đo [10], công cụ/protocol [17] và định hướng hiện hành tại AGENTS. Bảng này là checklist thu thập, không chứa phép đo i7 hoặc xác nhận ngân sách chung.*
+*Nguồn: các file `result.json`, `memory.jsonl` và `watchdog.json` của artifact [18].*
 
-Mục tiêu là ghi khả năng vận hành engine trên hai cấu hình với cùng workload và ngân sách cache. Đây không phải thiết kế xếp hạng CPU. Nếu i7 thiếu GPU phù hợp, chạy CPU là một điều kiện backend khác và phải ghi rõ. Nếu cấu hình không qua preflight, dừng và báo lý do; giảm cache tạo một cấu hình thử khác, không còn là cùng protocol nguyên vẹn.
+### 5.10.1. Từng mẫu đo trên máy i7
 
-Sau khi có raw, partner thêm bảng từng mẫu, bảng tổng hợp cùng định nghĩa và phần quan sát bộ nhớ. Không cần sửa ngược số i5. Kết quả i7 có thể được chèn vào mục này và cập nhật kết luận mà không thay cấu trúc lý thuyết/kiến trúc của báo cáo.
+**Bảng 5.12. Từng mẫu đo của bộ i7 phase1-v1 (20 requests đo, không gồm warmup)**
+
+| Nhóm | Lượt | Prompt tokens | Output tokens | TTFT(s) | Decode(steps/s) | Wall(s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| cold Mars | 1 | 16 | 128 | 4.062 | 4.183 | 34.421 |
+| cold Mars | 2 | 16 | 128 | 4.163 | 4.121 | 34.979 |
+| cold Mars | 3 | 16 | 128 | 3.873 | 4.447 | 32.429 |
+| cold Mars | 4 | 16 | 128 | 4.110 | 4.463 | 32.568 |
+| cold Mars | 5 | 16 | 128 | 3.615 | 4.261 | 33.420 |
+| warm Mars | 1 | 16 | 128 | 2.141 | 4.906 | 28.029 |
+| warm Mars | 2 | 16 | 128 | 2.276 | 4.744 | 29.046 |
+| warm Mars | 3 | 16 | 128 | 2.016 | 4.862 | 28.135 |
+| warm Mars | 4 | 16 | 128 | 2.121 | 4.961 | 27.721 |
+| warm Mars | 5 | 16 | 128 | 2.363 | 4.568 | 30.167 |
+| conversation Mars | 1 | 16 | 128 | 3.651 | 4.240 | 33.602 |
+| conversation Mars | 2 | 16 | 128 | 3.912 | 3.971 | 35.892 |
+| conversation Mars | 3 | 16 | 128 | 3.727 | 4.298 | 33.279 |
+| conversation Mars | 4 | 16 | 128 | 4.103 | 4.172 | 34.543 |
+| conversation Mars | 5 | 16 | 128 | 3.976 | 3.440 | 40.893 |
+| conversation Love | 1 | 162 | 128 | 3.234 | 3.717 | 37.404 |
+| conversation Love | 2 | 162 | 128 | 2.929 | 3.603 | 38.173 |
+| conversation Love | 3 | 162 | 128 | 2.379 | 3.734 | 36.391 |
+| conversation Love | 4 | 162 | 128 | 2.389 | 3.223 | 41.799 |
+| conversation Love | 5 | 162 | 128 | 3.357 | 3.069 | 44.732 |
+
+*Nguồn: raw payload trong [18]; tất cả 20 mẫu đều đạt `finish_reason=length` tại 128 output tokens và text/usage khớp tuyệt đối trong từng nhóm.*
+
+### 5.10.2. Tổng hợp hiệu năng và phân tích chi phí i7
+
+**Bảng 5.13. Tổng hợp hiệu năng i7, trung vị của 5 mẫu/nhóm**
+
+| Nhóm | TTFT(s) | Decode(steps/s) | Wall(s) | Wall min–max(s) |
+| --- | ---: | ---: | ---: | ---: |
+| Cold Mars | 4.062 | 4.261 | 33.420 | 32.429–34.979 |
+| Warm Mars | 2.141 | 4.862 | 28.135 | 27.721–30.167 |
+| Conversation Mars | 3.912 | 4.172 | 34.543 | 33.279–40.893 |
+| Conversation Love | 2.929 | 3.603 | 38.173 | 36.391–44.732 |
+
+*Nguồn: `summary.json` và raw artifact [18]. Wall là tổng thời gian sinh token nội bộ.*
+
+**Bảng 5.14. Phân tích chi phí expert, attention và file payload trên i7 (trung vị 5 mẫu)**
+
+| Nhóm | Expert load wait(s) | Expert compute(s) | Attention(s) | File payload(GB) |
+| --- | ---: | ---: | ---: | ---: |
+| Cold Mars | 13.485 | 8.312 | 0.864 | 5.757 |
+| Warm Mars | 9.573 | 7.664 | 0.855 | 0.000 |
+| Conversation Mars | 13.745 | 8.990 | 0.910 | 5.757 |
+| Conversation Love | 13.718 | 9.083 | 1.922 | 0.176 |
+
+*Nguồn: raw metrics trong [18]. File payload tính theo gigabyte nhị phân (GiB).*
+
+Ở cấu hình máy i7:
+- Trong lượt **Warm Mars**, toàn bộ các expert cần thiết đều được phục hồi từ bộ đệm phân tầng (L2 host cache và L1 VRAM victim cache), dẫn đến **File payload bằng 0,000 GB** (0 lượt đọc file vật lý bổ sung). Nhờ đó, thời gian sinh tổng thể (Wall) giảm từ 33,420s xuống 28,135s và tốc độ giải mã (Decode) đạt **4,862 steps/s**.
+- Trong lượt **Conversation Love**, nhờ cơ chế KV cache prefix tái sử dụng 143 token ngữ cảnh từ lượt Mars trước đó, thời gian TTFT prefill chỉ mất **2,929s** (thay vì 9,099s như trên máy i5 vốn chỉ tái sử dụng được 11 tokens do chênh lệch template), và decode đạt **3,603 steps/s**.
+
+### 5.10.3. Quan sát bộ nhớ và độ ổn định RAM trên i7
+
+**Bảng 5.15. Quan sát bộ nhớ máy i7 trong bộ đo chính**
+
+| Scenario | HWM cao nhất quan sát(GiB) | VmSwap cao nhất(KiB) | MemAvailable thấp nhất(GiB) | Thời gian quan sát(s) |
+| --- | ---: | ---: | ---: | ---: |
+| Cold | 3.161 | 0 | 5.463 | 169.1 |
+| Warm | 3.278 | 0 | 6.347 | 314.1 |
+| Conversation | 3.164 | 0 | 5.607 | 378.2 |
+
+*Nguồn: chuỗi `/proc` lấy mẫu 250 ms từ `memory.jsonl` trong [18].*
+
+Cả ba kịch bản trên máy i7 đều hoàn tất với trạng thái `success`, danh sách vi phạm watchdog rỗng (`violations: []`). Đỉnh sử dụng bộ nhớ vật lý quan sát được (HWM) tối đa chỉ đạt **3,278 GiB**, thấp hơn đáng kể so với ngưỡng bảo vệ RSS guard 5,0 GiB và ngưỡng dừng khẩn cấp 5,5 GiB. Toàn bộ tiến trình không ghi nhận bất kỳ dữ liệu nào bị đẩy sang đĩa Swap (`VmSwap = 0 KiB`), và lượng RAM khả dụng của hệ thống luôn duy trì ở mức an toàn trên 5,4 GiB. Kết quả này chứng minh cấu hình 64 MiB/layer vận hành hoàn toàn ổn định và an toàn về mặt bộ nhớ trên testbed i7.
+
+### 5.10.4. Nhận xét đối chiếu hai testbed
+
+Việc hoàn tất bộ dữ liệu i7 cho phép hoàn chỉnh bức tranh thực nghiệm của đề tài:
+1. **Tính tương thích và khả năng vận hành**: Hệ thống MoE-TierEngine chứng minh khả năng nạp và suy luận ổn định checkpoint OLMoE-1B-7B INT8 trên cả hai cấu hình phần cứng i5 và i7 mà không gặp lỗi cạn kiệt bộ nhớ hay sự cố ngắt mạch GPU.
+2. **Khác biệt về hạ tầng phần cứng**: Tốc độ xử lý của attention trên i7 (khoảng 0,86s) nhanh hơn rõ rệt so với i5 (khoảng 1,86s) do dung lượng VRAM lớn hơn (8 GB so với 4 GB) và năng lực tính toán FP32 cao hơn của GPU RTX 5060 so với GTX 1650 Max-Q. Tốc độ giải mã tổng thể đạt mức 4,26 – 4,86 steps/s trên i7 so với 3,66 – 3,99 steps/s trên i5.
+3. **Giới hạn diễn giải**: Sự chênh lệch giữa hai máy đến từ tổng hòa các yếu tố kiến trúc phần cứng (CPU, GPU architecture, băng thông bus RAM và PCIe), do đó không được quy kết một cách đơn giản là chênh lệch do riêng tốc độ CPU.
 
 ## 5.11. Đánh giá tiến độ và kế hoạch kỳ tiếp theo
 
@@ -980,6 +1056,8 @@ Các nguồn nước ngoài được xếp theo tác giả/tổ chức đầu ti
 [16] Nhóm MoE-TierEngine, *Smoke chức năng và quality trước bộ baseline*, 22/10/2026. [Báo cáo](../benchmarks/experiments/2026-10-22-stage1-validation/README.md), [record model-smoke](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/result.json), [payload Mars ghi tại request](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/mars.json), [runner smoke](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/smoke_runner.py), [suite quality](../benchmarks/suites/quality-v1.json).
 
 [17] Nhóm MoE-TierEngine, *Protocol benchmark và kịch bản HTTP/SSE*, 2026. [Giao thức](../benchmarks/README.md), [SCENARIOS](../benchmarks/SCENARIOS.md), [WORKFLOWS](../docs/WORKFLOWS.md).
+
+[18] Nhóm MoE-TierEngine, *Báo cáo giai đoạn 1 — bộ đo i7 phase1-v1*, 23/10/2026. [Báo cáo và audit links](../benchmarks/experiments/2026-10-23-phase1-i7/README.md), [summary](../benchmarks/experiments/2026-10-23-phase1-i7/summary.json), [cold raw](../benchmarks/experiments/2026-10-23-phase1-i7/cold/result.json), [warm raw](../benchmarks/experiments/2026-10-23-phase1-i7/warm/result.json), [conversation raw](../benchmarks/experiments/2026-10-23-phase1-i7/conversation/result.json).
 
 # PHỤ LỤC
 

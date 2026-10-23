@@ -2199,3 +2199,19 @@ Kết luận và bước tiếp theo:
 - Kiểm độc lập chỉ đọc symbol/numerical examples: Matrix/softmax, RoPE, TensorIndex, GPU APIs và tên test dẫn đều có; làm rõ cache entries+recycled capacity cùng budget mỗi layer để tránh hiểu pool là khoản cộng ngoài64MiB. Ba snippetPython(stdlib) thực thi đạt: matvec/softmax/argmax, commonprefix và đọc5cold wall samples/median từ raw. Các link local/module anchors/fences/math đạt. Tra nguồn chính thức RustBook/Tokio/Rayon/HF/CUDA/OLMoE cho hướng tự học; tranglatest không được coi là version runtime. Kiểm tooling/web và diff ghi kết quả dưới đây; không cần Rust/CUDA/benchmark mới vì chỉ soạn giáo trình.
 - Lượt tooling đầu phát hiện link giả “mars” do cách ghi cases[0] rồi ngoặc trong mục audit trước đó; sửa thành văn bản case Mars/index0, không đổi payload. Chạy lại checks sau sửa để xác nhận.
 - Kiểm cuối python3 tools/check.py --web PASS40Python+7Node/catalog40 và links/config; git diff --check PASS. Rust/CUDA/model/converter không chạy lại;3snippets đã chạy chỉ dùng stdlib/ví dụ số nhỏ/đọc artifact, không tạo số đo mới.
+
+## 2026-10-23 — Hoàn tất bộ đo i7 phase1-v1 trên testbed đồng nghiệp
+
+- Người dùng xác nhận testbed `i7` (máy đồng nghiệp), thực hiện thu thập dữ liệu vận hành theo đúng giao thức phase1-v1 đã đo trên i5. Giữ nguyên checkpoint nguồn `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` và cấu hình: cache 64 MiB/layer (1 GiB / 16 layers), context 512, 8 Rayon threads, max output 128 tokens, victim policy, guard RSS 5 GiB / headroom 1 GiB.
+- Preflight RAM stability trên i7 (`tools/check_ram_stability.py`): 12 request hoàn tất thành công (`completed`), HWM tối đa 3,33 GiB, VmSwap 0 KiB, 0 vi phạm watchdog.
+- Chạy tuần tự 3 kịch bản qua `tools/run_scenarios.py`: cold (5 Mars), warm (5 Mars + 5 warmup), conversation (5 Mars + 5 Love). Tổng 20 measured requests + 5 warmups. Cả 3 scenarios đều `status: success`, `git_dirty: false`, git commit `d4adefd9e53627bdc1fd250eabab436c3ac54b0d`, 0 watchdog violations.
+- Hardware quan sát thực tế trên i7: Intel(R) Core(TM) i7-14650HX (24 threads), 14,0 GiB RAM, NVIDIA GeForce RTX 5060 Laptop GPU (7,53 GB VRAM khả dụng, cuBLAS SGEMV Active, 1,38 GB Dense offload).
+- Kết quả trung vị 5 mẫu/nhóm:
+  - Cold Mars: TTFT 4,062s; Decode 4,261 steps/s; Wall 33,420s (min–max: 32,429–34,979s).
+  - Warm Mars: TTFT 2,141s; Decode 4,862 steps/s; Wall 28,135s (min–max: 27,721–30,167s). File payload 0,000 GB (tất cả misses đều hit từ L1 VRAM victim cache qua PCIe DMA D2H).
+  - Conversation Mars: TTFT 3,912s; Decode 4,172 steps/s; Wall 34,543s (min–max: 33,279–40,893s).
+  - Conversation Love: TTFT 2,929s; Decode 3,603 steps/s; Wall 38,173s (min–max: 36,391–44,732s). Nhờ 143 cached prompt tokens, TTFT prefill chỉ 2,929s.
+- Bộ nhớ ổn định tuyệt đối: HWM cao nhất 3,278 GiB (warm), VmSwap 0 KiB, MemAvailable thấp nhất 5,463 GiB.
+- Artifact tổng hợp: `benchmarks/experiments/2026-10-23-phase1-i7/` kèm `summary.json`, `README.md`, `build_report.py` và `CHECKSUMS.sha256` (toàn bộ payload đạt SHA-256).
+- Đã cập nhật mục 5.10 của `baocao/BAO_CAO_DINH_KY_LAN_1.md` với đầy đủ các bảng dữ liệu thực nghiệm i7 và phân tích đối chiếu.
+- Giới hạn: Chưa đóng giai đoạn 1, đây là phép đo vận hành trên cấu hình 64 MiB/layer, chưa phải ngân sách nghiệm thu an toàn chung cho mọi khối lượng công việc. Không suy chênh lệch hiệu năng là do riêng CPU.

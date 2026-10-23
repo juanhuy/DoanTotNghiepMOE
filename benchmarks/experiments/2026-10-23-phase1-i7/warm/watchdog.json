@@ -1,0 +1,8 @@
+{
+  "limits_mib": {
+    "stop_rss_mib": 5632,
+    "min_available_mib": 1536,
+    "stop_swap_mib": 128
+  },
+  "violations": []
+}
