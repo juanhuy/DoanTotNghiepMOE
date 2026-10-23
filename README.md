@@ -46,8 +46,9 @@ Server mặc định cache64MiB/layer cố định, không tự tăng theo RAM t
 
 Không cần tài khoản OpenAI API, plugin hoặc MCP để build/test engine. Coding agent là công cụ phát triển, không phải dependency runtime.
 
+- [Học đồ án theo từng module](docs/research/LEARNING_PLAN.md): ví dụ nhỏ, đường đọc code, bài tập và đáp án.
 - [Báo cáo i5 phase1-v1](benchmarks/experiments/2026-10-22-phase1-i5/README.md): bộ đo cuối trên checkpoint sạch,4 nhóm ×5 mẫu.
-- [PLAN.md](docs/PLAN.md): trạng thái i5 đã chốt, i7 còn chờ và backlog.
+- [PLAN.md](docs/PLAN.md): lộ trình và backlog; đọc cùng AGENTS hiện hành về ưu tiên OOM/tổng RAM.
 - [PROGRESS.md](docs/PROGRESS.md): lịch sử, số đo, đính chính và kết quả mới.
 - [BENCHMARKS.md](docs/BENCHMARKS.md): danh mục sinh từ manifest.
 - [Ma trận luận điểm](docs/thesis/EVIDENCE_MATRIX.md): bằng chứng và giới hạn.

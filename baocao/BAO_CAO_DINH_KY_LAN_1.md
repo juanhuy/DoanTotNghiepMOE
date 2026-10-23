@@ -871,6 +871,8 @@ Smoke model thật trước bộ chính ghi 16 request hoàn tất, thêm một 
 
 Các hồi quy parser kiểm UTF-8/CRLF bị chia chunk, generation_error sau nội dung dở, EOF thiếu terminal/DONE, dữ liệu sau terminal, abort và request kế tiếp. Việc không lưu phản hồi bị hủy vào history giúp tránh đưa dữ liệu không hoàn chỉnh vào lượt tiếp theo.
 
+Một hạn chế provenance được phát hiện khi rà lại: trong aggregate `model-smoke/result.json`, metadata messages của case Mars bị bổ sung history sau khi request đã chạy, do script giữ tham chiếu tới list rồi sửa list. File `model-smoke/mars.json` được ghi ngay tại lượt Mars giữ đúng một user message và usage 19 prompt tokens; aggregate về sau chứa ba messages cho case đó. Khi tái dựng request phải ưu tiên payload từng lượt này, không dùng history đã biến đổi trong aggregate. Giữ nguyên cả hai raw và công bố sai lệch metadata; việc này không thay số 16 request hoàn tất hoặc kết quả quality 10/12 [16].
+
 ### 5.9.3. Quality smoke và giới hạn nội dung
 
 Suite 12 câu kiểm heuristic exact/substring đạt 10/12 trong smoke trước checkpoint chính [16]. Hai lỗi gồm câu hỏi thủ đô bằng tiếng Việt trả Hồ Chí Minh và tác vụ retrieval-day. Một số case có giới hạn output khác nhau; evaluator là heuristic, không phải bộ chuẩn đánh giá năng lực ngôn ngữ.
@@ -879,25 +881,25 @@ Không thể từ 10/12 kết luận “độ chính xác 83,33%” đại diệ
 
 ## 5.10. Thực nghiệm máy i7 — CHƯA CÓ DỮ LIỆU, BỔ SUNG SAU
 
-**Tại thời điểm lập báo cáo, chưa có kết quả i7 mới đáp ứng protocol phase1-v1. Partner phụ trách máy i7 bổ sung mục này sau khi kiểm môi trường và chạy thực tế. Không sử dụng dữ liệu i5 hoặc tên thư mục lịch sử để điền thay.**
+**Tại thời điểm lập báo cáo, chưa có kết quả i7 mới cho bộ thử tương ứng. Cấu hình phase1-v1 là cấu hình đã đo trên i5, chưa phải ngân sách nghiệm thu chung i5/i7. Ưu tiên hiện hành là tiếp tục điều tra OOM và tổng RAM trên i5; partner bổ sung i7 sau khi kiểm môi trường, ổn định bộ nhớ và thống nhất cấu hình chung. Không sử dụng dữ liệu i5 hoặc tên thư mục lịch sử để điền thay.**
 
 **Bảng 5.11. Dữ liệu i7 cần bổ sung**
 
 | Nội dung cần ghi | Trạng thái | Yêu cầu cho người bổ sung |
 | --- | --- | --- |
 | Thành viên, ngày đo, CPU/RAM/GPU/OS | Chưa có | Lấy hardware quan sát thực, không suy từ nhãn i7 |
-| Source revision | Chưa chạy | Dùng checkpoint nguồn `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` |
+| Source revision | Chưa chạy | `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` là nguồn của bộ i5; cần cùng revision với bộ đối chiếu được thống nhất sau kiểm RAM |
 | Checkpoint/source/binary hashes | Chưa có | Đối chiếu checkpoint; ghi hash thực, giải thích binary khác nếu khác môi trường |
 | Preflight và RAM smoke | Chưa chạy | Có giám sát, không có model khác cùng lúc |
-| Cache/context/max output | Chưa chạy | Giữ 64 MiB/layer,512,128 theo protocol |
-| Threads/policy/backend | Chưa chạy | Threads 8/victim; GPUauto nếu đáp ứng, ghi backend thực |
-| Guard/headroom/watchdog | Chưa chạy | Giữ 5 GiB/1 GiB và watchdog như i5 |
+| Cache/context/max output | Chưa chạy | i5 đã thử 64 MiB/layer,512,128; chỉ dùng làm cấu hình chung sau kiểm RAM và xác nhận trên cả hai máy |
+| Threads/policy/backend | Chưa chạy | i5 đã dùng 8/victim/GPUauto; ghi backend/threads thực và công bố nếu khác |
+| Guard/headroom/watchdog | Chưa chạy | Ghi giới hạn tường minh; cấu hình i5 là 5 GiB/1 GiB cùng watchdog đã nêu |
 | Cold/warm/conversation | Chưa có | 5 mẫu mỗi nhóm,20 measured+5 warmup |
 | TTFT/decode/wall và output | Chưa có | Lưu từng mẫu trước median/min–max |
 | RSS/HWM/VmSwap/MemAvailable | Chưa có | Lưu time series độc lập và watchdog result |
 | Phân tích, kết quả lỗi và giới hạn | Chưa có | Không bỏ lượt lỗi/không cải thiện |
 
-*Nguồn: protocol [10], [17]; bảng này là checklist thu thập, không chứa phép đo i7.*
+*Nguồn: cấu hình i5 đã đo [10], công cụ/protocol [17] và định hướng hiện hành tại AGENTS. Bảng này là checklist thu thập, không chứa phép đo i7 hoặc xác nhận ngân sách chung.*
 
 Mục tiêu là ghi khả năng vận hành engine trên hai cấu hình với cùng workload và ngân sách cache. Đây không phải thiết kế xếp hạng CPU. Nếu i7 thiếu GPU phù hợp, chạy CPU là một điều kiện backend khác và phải ghi rõ. Nếu cấu hình không qua preflight, dừng và báo lý do; giảm cache tạo một cấu hình thử khác, không còn là cùng protocol nguyên vẹn.
 
@@ -907,15 +909,16 @@ Sau khi có raw, partner thêm bảng từng mẫu, bảng tổng hợp cùng đ
 
 Kỳ 1 đã có nguyên mẫu suy luận INT8 phân tầng và một bộ hiệu năng i5 trên source sạch. Tốc độ quan sát cho thấy demo hoạt động nhưng vẫn có độ trễ đáng kể, nhất là lượt hội thoại có nhiều token prompt cần tính lại. Các thử nghiệm cho thấy tối ưu có thể có ích trong phạm vi cụ thể, đồng thời có phương án thêm song song làm chậm. Đây là kết quả thực tế cần báo cáo, không cần chuyển mọi thử nghiệm thành thành công.
 
-Phần triển khai/kiểm chứng/báo cáo i5 của giai đoạn 1 đã chốt. Theo kế hoạch hai testbed, phần i7 vẫn chờ bổ sung. Báo cáo định kỳ lần 1 ghi đúng trạng thái đó; chưa có cơ sở nhận toàn bộ kiểm chứng hai máy đã hoàn thành.
+**Giai đoạn 1 chưa kết thúc.** Đã có nguyên mẫu và bộ số liệu i5 hữu hạn, nhưng ưu tiên hiện hành vẫn là điều tra OOM và kiểm soát tổng RAM trên i5. Các bản vá cache và các lượt hoàn tất không tự chứng minh total RSS an toàn. Ngân sách cache chung i5/i7 chưa được nghiệm thu; dữ liệu i7 còn chờ bổ sung. Các kết quả đã đo được giữ như bằng chứng có phạm vi, không đồng nghĩa nền tảng bộ nhớ đã được xác nhận đầy đủ.
 
 **Bảng 5.12. Kế hoạch kỳ tiếp theo**
 
 | Công việc | Kết quả cần có | Ưu tiên |
 | --- | --- | --- |
-| Bổ sung bộ i7 | Raw cùng protocol, bảng kết quả riêng, giới hạn môi trường | Trước tiên |
+| Điều tra OOM và kiểm soát tổng RAM i5 | Xác minh các vùng cấp phát, theo dõi tăng RSS và thử có giám sát; không cố gây OOM | Trước tiên |
+| Chốt cấu hình chung rồi bổ sung i7 | Cùng revision/checkpoint/workload/cache tường minh sau kiểm bộ nhớ; raw riêng mỗi máy | Sau bước kiểm RAM |
 | Hoàn thiện báo cáo và dàn LaTeX | Thông tin hành chính, nguồn, hình và đánh số đúng mẫu | Trước khi nộp |
-| Làm rõ memory/VRAM accounting | Phân biệt capacity, RSS, pool/scratch và physical allocation | Sau bộ nền tảng |
+| Làm rõ memory/VRAM accounting | Phân biệt capacity, RSS, pool/scratch và physical allocation | Gắn với điều tra RAM |
 | Đánh giá chất lượng có hệ thống hơn | Tập câu hỏi, tiêu chí, output budget và đối chứng phù hợp | Giai đoạn tiếp |
 | Profile bottleneck trước tối ưu mới | Đo cùng revision/config, trace và giả thuyết kiểm được | Khi mở tối ưu tiếp |
 | Khảo sát INT4/backend mới | Correctness trước, rồi chất lượng/bộ nhớ/hiệu năng | Chưa triển khai trong kỳ 1 |
@@ -930,7 +933,7 @@ Bộ i5 phase1-v1 trên checkpoint nguồn sạch có 20 request đo và 5 warmu
 
 Các khảo sát thuật toán cho thấy victim cache và KV prefix có lợi trong điều kiện đo tương ứng, còn dispatch prefill theo nhóm không được chọn vì chậm hơn đa số cặp thử. Sự cố OOM và quá trình bổ sung budget/guard cho thấy mục tiêu chạy mô hình trên máy hạn chế tài nguyên cần xét tổng bộ nhớ, không chỉ dung lượng cache. Chưa có bằng chứng xác định trần phần cứng, bảo đảm hết leak/OOM hoặc chất lượng chuẩn hóa; những giới hạn này là nội dung cần tiếp tục làm rõ.
 
-Nhóm kiến nghị hoàn thành phần i7 bằng cùng protocol, hoàn thiện thông tin nhóm và hình thức trình bày, sau đó ưu tiên đo lường bottleneck và chất lượng trước khi mở thêm tối ưu. Trong giai đoạn tiếp theo, mọi phương án như INT4 hoặc backend mới cần được đánh giá đồng thời về correctness, chất lượng, bộ nhớ và hiệu năng. Báo cáo kỳ 1 là cơ sở kỹ thuật và thực nghiệm cho các bước đó.
+Nhóm kiến nghị ưu tiên điều tra OOM và kiểm soát tổng RAM trên i5, sau đó chốt cấu hình chung và hoàn thành phần i7 với cùng protocol phù hợp. Cần hoàn thiện thông tin nhóm, hình thức trình bày và tiếp tục đo bottleneck/chất lượng trước khi mở thêm tối ưu. Giai đoạn 1 chưa được đóng chỉ dựa vào các kết quả hữu hạn hiện có. Trong giai đoạn tiếp theo, mọi phương án như INT4 hoặc backend mới cần được đánh giá đồng thời về correctness, chất lượng, bộ nhớ và hiệu năng. Báo cáo kỳ 1 là cơ sở kỹ thuật và thực nghiệm cho các bước đó.
 
 # TÀI LIỆU THAM KHẢO
 
@@ -970,11 +973,11 @@ Các nguồn nước ngoài được xếp theo tác giả/tổ chức đầu ti
 
 [13] Nhóm MoE-TierEngine, *Kiểm RAM i5 sau guard hợp tác*, 22/10/2026. [Báo cáo](../benchmarks/experiments/2026-10-22-ram-guard-i5/README.md), [reset-32](../benchmarks/experiments/2026-10-22-ram-guard-i5/reset-32/result.json), [keep-128](../benchmarks/experiments/2026-10-22-ram-guard-i5/keep-128/result.json), [preflight-256](../benchmarks/experiments/2026-10-22-ram-guard-i5/preflight-256/result.json).
 
-[14] Nhóm MoE-TierEngine, *Nhật ký kiểm chứng và ma trận bằng chứng*, 2026. [PROGRESS](../docs/PROGRESS.md), [EVIDENCE_MATRIX](../docs/thesis/EVIDENCE_MATRIX.md), [PLAN](../docs/PLAN.md).
+[14] Nhóm MoE-TierEngine, *Nhật ký kiểm chứng và ma trận bằng chứng*, 2026. [PROGRESS](../docs/PROGRESS.md), [AGENTS hiện hành](../AGENTS.md), [EVIDENCE_MATRIX](../docs/thesis/EVIDENCE_MATRIX.md), [PLAN](../docs/PLAN.md).
 
 [15] Nhóm MoE-TierEngine, *Log sự cố OOM máy i5*, 22/10/2026. [Kernel log lưu trữ](../docs/reviews/2026-10-22-i5-oom.log).
 
-[16] Nhóm MoE-TierEngine, *Smoke chức năng và quality trước bộ baseline*, 22/10/2026. [Báo cáo](../benchmarks/experiments/2026-10-22-stage1-validation/README.md), [record model-smoke](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/result.json), [suite quality](../benchmarks/suites/quality-v1.json).
+[16] Nhóm MoE-TierEngine, *Smoke chức năng và quality trước bộ baseline*, 22/10/2026. [Báo cáo](../benchmarks/experiments/2026-10-22-stage1-validation/README.md), [record model-smoke](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/result.json), [payload Mars ghi tại request](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/mars.json), [runner smoke](../benchmarks/experiments/2026-10-22-stage1-validation/model-smoke/smoke_runner.py), [suite quality](../benchmarks/suites/quality-v1.json).
 
 [17] Nhóm MoE-TierEngine, *Protocol benchmark và kịch bản HTTP/SSE*, 2026. [Giao thức](../benchmarks/README.md), [SCENARIOS](../benchmarks/SCENARIOS.md), [WORKFLOWS](../docs/WORKFLOWS.md).
 
@@ -982,13 +985,13 @@ Các nguồn nước ngoài được xếp theo tác giả/tổ chức đầu ti
 
 ## PHỤ LỤC A. TÁI LẬP BỘ ĐO PHASE1-V1
 
-Đây là lệnh chạy thực nghiệm, không phải nội dung người dùng cần nhập khi chat. Hoàn tất checks/build, preflight và GPU probe trước; dừng các inference khác. Dùng source sạch `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` và checkpoint có hash khớp raw. Trên i7, tạo branch riêng từ checkpoint này; không reset hoặc ghi đè thay đổi chưa lưu của thành viên.
+Các lệnh dưới đây minh họa tái lập cấu hình i5 đã đo, chưa phải chỉ định ngân sách nghiệm thu chung. Không mở thêm phép đo tốc độ để thay việc kiểm RAM đang được ưu tiên. Khi được thực hiện phép tái lập, hoàn tất checks/build, kiểm bộ nhớ và GPU probe trước; dừng các inference khác. Dùng source sạch `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` và checkpoint có hash khớp raw. Trên i7, tạo branch riêng từ checkpoint này; không reset hoặc ghi đè thay đổi chưa lưu của thành viên.
 
 ```bash
 python3 tools/check.py --rust --release --http --web
 ```
 
-Node/CUDA/converter thiếu môi trường phải báo skipped, không tự coi đã chạy. Lệnh checks không được chạy cùng lúc với bộ timing dưới đây. Sau kiểm RAM, thực hiện tuần tự:
+Lệnh trên có chọn Node tests nhưng không chọn converter và không buộc các CUDA tests phải thực thi trên thiết bị. Converter/CUDA cần lệnh/probe phù hợp riêng nếu thuộc phạm vi kiểm; thiếu môi trường hoặc không chạy phải ghi rõ, không tự coi là đã kiểm. Lệnh checks không được chạy cùng lúc với bộ timing dưới đây. Chỉ sau kiểm RAM và trong phạm vi tái lập được giao mới thực hiện tuần tự:
 
 ```bash
 export MOE_RAM_LIMIT_BYTES=5368709120
@@ -1003,7 +1006,7 @@ for scenario in cold warm conversation; do
 done
 ```
 
-Trên i7 đổi đúng `--testbed i7`, chọn `--model-dir` nếu đường checkpoint khác và kiểm hash nội dung. Không thêm `--allow-dirty` để gọi dữ liệu là baseline sạch. Nếu backend/config phải đổi vì phần cứng, ghi điều kiện mới riêng thay vì sửa metadata cho giống i5.
+Khi đã xác nhận cấu hình chung phù hợp trên cả hai máy, trên i7 đổi đúng `--testbed i7`, chọn `--model-dir` nếu đường checkpoint khác và kiểm hash nội dung. Không thêm `--allow-dirty` để gọi dữ liệu là baseline sạch. Nếu backend/config phải đổi vì phần cứng, ghi điều kiện mới riêng thay vì sửa metadata cho giống i5.
 
 Thực nghiệm trên i5 đã kiểm source/revision sạch trước từng scenario và cùng commit suốt bộ. Khi tái lập, cần duy trì điều kiện này ngoài việc sao chép lệnh. Runner lưu các record ở thư mục mới theo UTC/run ID; không overwrite một run trước, kể cả run lỗi. Xem [17] để preview bằng `--dry-run`.
 
