@@ -47,16 +47,43 @@ Mọi số liệu trong tài liệu này đều là **dữ liệu thực tế** 
 - **Độ ổn định bộ nhớ (Watchdog):** Không có vi phạm (`violations: []`), `VmSwap = 0 KiB` suốt toàn bộ các lượt chạy.
 - **HWM đỉnh quan sát được:** **3.278 GiB** (thấp hơn nhiều so với ngưỡng dừng 5.5 GiB).
 
-### Bảng tổng hợp hiệu năng i7 (Trung vị 5 mẫu/nhóm)
+### 3.1. Bảng tổng hợp hiệu năng i7 (Trung vị 5 mẫu/nhóm - Bảng 5.13 báo cáo)
 
-*Đã được trình bày tại Mục 5.10.2 (Bảng 5.13 và Bảng 5.14) của báo cáo:*
+| Nhóm kịch bản | TTFT (s) | Decode (steps/s) | Wall trung vị (s) | Khoảng Wall min–max (s) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Cold Mars** | **4.062** | **4.261** | **33.420** | 32.429 – 34.979 |
+| **Warm Mars** | **2.141** | **4.862** | **28.135** | 27.721 – 30.167 |
+| **Conversation Mars** | **3.912** | **4.172** | **34.543** | 33.279 – 40.893 |
+| **Conversation Love** | **2.929** | **3.603** | **38.173** | 36.391 – 44.732 |
 
-| Nhóm kịch bản | TTFT (s) | Decode (steps/s) | Wall trung vị (s) | Khoảng Wall min–max (s) | File payload đọc đĩa (GB) |
+### 3.2. Bảng phân tích chi phí I/O và Tính toán i7 (Bảng 5.14 báo cáo)
+
+| Nhóm kịch bản | Chờ nạp Expert (s) | Tính toán Expert (s) | Xử lý Attention (s) | File payload đọc đĩa (GB) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Cold Mars** | 13.485 | 8.312 | 0.864 | 5.757 |
+| **Warm Mars** | 9.573 | 7.664 | 0.855 | **0.000** *(Hit 100% cache phân tầng)* |
+| **Conversation Mars** | 13.745 | 8.990 | 0.910 | 5.757 |
+| **Conversation Love** | 13.718 | 9.083 | 1.922 | **0.176** *(Chỉ đọc bổ sung 30 expert)* |
+
+### 3.3. Bảng quan sát độ ổn định bộ nhớ RAM trên i7 (Bảng 5.15 báo cáo)
+
+| Kịch bản | Đỉnh RAM HWM quan sát (GiB) | Bộ nhớ tráo VmSwap (KiB) | RAM khả dụng thấp nhất (GiB) | Thời gian quan sát (s) | Vi phạm Watchdog |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Cold Mars** | 4.062 | 4.261 | 33.420 | 32.429 – 34.979 | 5.757 |
-| **Warm Mars** | 2.141 | 4.862 | 28.135 | 27.721 – 30.167 | **0.000** *(Hit 100% cache)* |
-| **Conversation Mars** | 3.912 | 4.172 | 34.543 | 33.279 – 40.893 | 5.757 |
-| **Conversation Love** | 2.929 | 3.603 | 38.173 | 36.391 – 44.732 | 0.176 *(Reuse 143 KV tokens)* |
+| **Cold** | 3.161 | 0 | 5.463 | 169.1 | 0 (`[]`) |
+| **Warm** | **3.278** *(Cao nhất)* | 0 | 6.347 | 314.1 | 0 (`[]`) |
+| **Conversation** | 3.164 | 0 | 5.607 | 378.2 | 0 (`[]`) |
+
+### 3.4. Bảng đối chiếu số liệu then chốt giữa Testbed i5 và Testbed i7 (Cho Mục 5.10.4)
+
+| Chỉ số / Đặc tính | Testbed i5 (GTX 1650 Max-Q) | Testbed i7 (RTX 5060 Laptop) | Nhận xét đối chiếu kỹ thuật |
+| :--- | :---: | :---: | :--- |
+| **Checkpoint nguồn** | `0924-Instruct` (`7f1c97f4...`) | `0125-Instruct` (`b89a7c4b...`) | Hai bản checkpoint cách nhau 4 tháng từ AllenAI. |
+| **Prompt tokens Mars** | **19 tokens** | **16 tokens** | Khác biệt do bộ tách từ và chat template mới của bản 0125. |
+| **KV Cache Reuse Love** | **11 tokens** (TTFT: 9.099s) | **143 tokens** (TTFT: **2.929s**) | Bản 0125 template đồng bộ giúp tái sử dụng trọn vẹn lịch sử. |
+| **Thời gian Attention** | ~1.86 s | **~0.86 s** *(Nhanh gấp 2.1x)* | Năng lực FP32 và băng thông VRAM của RTX 5060 vượt trội. |
+| **Tốc độ giải mã (Decode)**| 3.66 – 3.99 steps/s | **4.26 – 4.86 steps/s** | CPU xung nhịp cao hơn kết hợp GPU offload nhanh hơn. |
+| **File payload Warm Mars** | **0.000 GB** | **0.000 GB** | Cả hai máy đều chứng minh hiệu quả hit 100% của cache phân tầng. |
+| **Độ an toàn bộ nhớ RAM** | Đỉnh 3.494 GiB, VmSwap = 0 | Đỉnh 3.278 GiB, VmSwap = 0 | Đều vận hành an toàn dưới ngưỡng guard 5.0 GiB (ngân sách 64 MiB/layer). |
 
 ---
 
