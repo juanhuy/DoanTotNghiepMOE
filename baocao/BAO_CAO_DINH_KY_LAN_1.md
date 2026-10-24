@@ -143,8 +143,12 @@ Báo cáo dùng $L$ cho số lớp, $d$ cho chiều ẩn, $m$ cho chiều trung 
 - Bảng 5.8. Thí nghiệm KV prefix reuse.
 - Bảng 5.9. Thí nghiệm dispatch prefill theo nhóm.
 - Bảng 5.10. Hai lượt kiểm RAM có giám sát.
-- Bảng 5.11. Dữ liệu i7 cần bổ sung.
-- Bảng 5.12. Kế hoạch kỳ tiếp theo.
+- Bảng 5.11. Môi trường và cấu hình thực nghiệm trên máy i7.
+- Bảng 5.12. Từng mẫu đo của bộ i7 phase1-v1.
+- Bảng 5.13. Tổng hợp hiệu năng i7, trung vị của 5 mẫu/nhóm.
+- Bảng 5.14. Phân tích chi phí expert, attention và file payload trên i7.
+- Bảng 5.15. Quan sát bộ nhớ máy i7 trong bộ đo chính.
+- Bảng 5.16. Kế hoạch kỳ tiếp theo.
 - Hình 2.1. Khối suy luận Transformer–MoE minh họa.
 - Hình 3.1. Kiến trúc tổng thể hệ thống.
 - Hình 3.2. Luồng lưu trữ expert theo policy victim.
@@ -158,7 +162,7 @@ Kiến trúc hỗn hợp chuyên gia cho phép chỉ kích hoạt một phần t
 
 Đề tài nghiên cứu hệ thống MoE-TierEngine, một nguyên mẫu suy luận OLMoE INT8 viết bằng Rust, dùng CPU/RAM và file trọng số, có CUDA/cuBLAS khi phần cứng hỗ trợ. Mục tiêu của kỳ 1 là xây dựng cơ sở lý thuyết, làm rõ kiến trúc, triển khai luồng suy luận và tổ chức thực nghiệm có nguồn gốc truy được. Đóng góp ở kỳ này là tích hợp, quản lý tài nguyên, kiểm chứng và phân tích các đánh đổi của nguyên mẫu; chưa đặt mục tiêu huấn luyện mô hình mới hoặc đạt một mức tăng tốc phổ quát.
 
-Phương pháp thực hiện gồm nghiên cứu tài liệu gốc, đọc cấu hình/mã nguồn, thiết kế và kiểm thử bằng fixture nhỏ, sau đó đo mô hình thực trên máy i5. Các thí nghiệm chính giữ checkpoint, cấu hình và workload rõ ràng. Phương án không hiệu quả và sự cố thiếu bộ nhớ được ghi nhận để giải thích quá trình lựa chọn. Kết quả i7 chưa có tại thời điểm lập báo cáo và được dành mục bổ sung riêng.
+Phương pháp thực hiện gồm nghiên cứu tài liệu gốc, đọc cấu hình/mã nguồn, thiết kế và kiểm thử bằng fixture nhỏ, sau đó đo mô hình thực trên máy i5. Các thí nghiệm chính giữ checkpoint, cấu hình và workload rõ ràng. Phương án không hiệu quả và sự cố thiếu bộ nhớ được ghi nhận để giải thích quá trình lựa chọn. Kết quả vận hành trên testbed i7 được thu thập độc lập và trình bày tại Mục 5.10.
 
 Báo cáo gồm năm chương, lần lượt trình bày bài toán nghiên cứu, cơ sở lý thuyết, kiến trúc hệ thống, thuật toán và giải pháp, cuối cùng là thực nghiệm và nhận xét. Phần kết luận xác định kết quả của kỳ 1 và kế hoạch tiếp theo. Đây là báo cáo tiến độ có nội dung kỹ thuật và bằng chứng bước đầu, chưa thay thế quyển đồ án cuối cùng đã phê duyệt.
 
@@ -170,8 +174,8 @@ Báo cáo gồm năm chương, lần lượt trình bày bài toán nghiên cứ
 | --- | --- | --- |
 | Cơ sở lý thuyết và tổng hợp tài liệu | [CẦN BỔ SUNG] | Chương 1–2 và danh mục tài liệu |
 | Thiết kế, triển khai và kiểm chứng engine | [CẦN BỔ SUNG] | Mã nguồn, fixture, kết quả kiểm thử |
-| Thực nghiệm máy i5 | [CẦN BỔ SUNG tên thành viên] | Artifact i5 đã lưu |
-| Tiếp nhận và thực nghiệm máy i7 | [CẦN BỔ SUNG tên partner] | Chưa có dữ liệu; bổ sung theo mục 5.10 |
+| Thực nghiệm máy i5 | [CẦN BỔ SUNG tên thành viên] | Artifact i5 đã lưu [10] |
+| Tiếp nhận và thực nghiệm máy i7 | [CẦN BỔ SUNG tên thành viên i7] | Bộ đo i7 phase1-v1 tại Mục 5.10 và artifact [18] |
 | Soạn thảo, kiểm tra số liệu và dàn LaTeX | [CẦN BỔ SUNG] | Bản báo cáo được nhóm duyệt |
 
 *Nguồn: đề xuất tổ chức từ phạm vi công việc; chưa phải xác nhận phân công thực tế. Nhóm cần điền người và thời gian thực hiện trước khi nộp.*
@@ -202,7 +206,7 @@ Có ba yêu cầu cần xử lý cùng nhau. Thứ nhất, kết quả số họ
 | Tái sử dụng KV có giảm tính toán không? | Kiểm prefix hợp lệ, logits fixture và workload sửa lịch sử |
 | Tăng mức song song có luôn nhanh hơn không? | Thử dispatch theo nhóm và giữ cả kết quả không cải thiện |
 | Làm sao giảm nguy cơ thiếu bộ nhớ trong demo? | Ngân sách tường minh, preflight, guard và watchdog độc lập |
-| Kết quả có thể ghi nhận trên máy i7 không? | Chuẩn hóa protocol; chưa có số đo i7, sẽ bổ sung riêng |
+| Kết quả có thể ghi nhận trên máy i7 không? | Đã đo và ghi nhận kết quả vận hành riêng trên testbed i7 theo protocol phase1-v1 tại Mục 5.10 |
 
 *Nguồn: mục tiêu đề tài và phương pháp thực nghiệm của nhóm [9], [10].*
 
@@ -879,9 +883,9 @@ Suite 12 câu kiểm heuristic exact/substring đạt 10/12 trong smoke trước
 
 Không thể từ 10/12 kết luận “độ chính xác 83,33%” đại diện cho người dùng hoặc mọi nhiệm vụ. Cũng chưa có A/B FP32/INT8 trên model 7B để quy hai lỗi cho lượng tử hóa. Tốc độ, khả năng vận hành và chất lượng câu trả lời là ba chiều đánh giá cần được giữ riêng.
 
-## 5.10. Thực nghiệm máy i7 — Kết quả đối chiếu cùng protocol phase1-v1
+## 5.10. Thực nghiệm máy i7 — Kết quả vận hành theo protocol phase1-v1
 
-Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được thực hiện nhằm cung cấp dữ liệu vận hành có thể truy nguồn, sử dụng cùng bộ kiểm thử, cùng revision mã nguồn sạch `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` và cùng ngân sách cache RAM (64 MiB/layer) như đã đo trên máy `i5` [10], [18]. Mục tiêu là mô tả năng lực vận hành của hệ thống trên cấu hình phần cứng khác, không đặt mục tiêu xếp hạng hiệu năng CPU hay suy diễn tăng tốc giữa hai máy.
+Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được thực hiện nhằm cung cấp dữ liệu vận hành độc lập, có thể truy nguồn, sử dụng cùng bộ kiểm thử kịch bản (cold, warm, conversation), cùng revision mã nguồn `d4adefd9e53627bdc1fd250eabab436c3ac54b0d` và cùng ngân sách cache RAM (64 MiB/layer). Bộ đo trên i7 sử dụng checkpoint `allenai/OLMoE-1B-7B-0125-Instruct` (khác với checkpoint `0924-Instruct` trên máy i5, chi tiết hồ sơ nguồn gốc xem [18]). Mục tiêu là mô tả năng lực vận hành riêng của hệ thống trên cấu hình phần cứng i7, không đặt mục tiêu xếp hạng hiệu năng hai máy hay suy diễn tăng tốc do riêng CPU hoặc GPU.
 
 **Bảng 5.11. Môi trường và cấu hình thực nghiệm trên máy i7**
 
@@ -889,10 +893,11 @@ Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được th�
 | --- | --- |
 | Testbed | `i7`, người dùng xác nhận |
 | CPU quan sát | Intel(R) Core(TM) i7-14650HX, 24 logical cores, 16 physical cores |
-| RAM vật lý quan sát | 14,0 GiB tổng (Available: ~9,6 GiB) |
+| RAM vật lý quan sát | 15.910.060.032 bytes (≈ 14,817 GiB / 15,910 GB; Available lúc bắt đầu: ~9,6 GiB) |
 | GPU inventory | NVIDIA GeForce RTX 5060 Laptop GPU, 8151 MiB VRAM (7,53 GB khả dụng) |
 | GPU runtime | Requested `auto`; enabled thực (`cuBLAS SGEMV Active`, 1,38 GB Dense offload) |
 | Source commit | `d4adefd9e53627bdc1fd250eabab436c3ac54b0d`, `git_dirty=false` |
+| Checkpoint nguồn | `allenai/OLMoE-1B-7B-0125-Instruct` (commit `b89a7c4b...`), 2.195 tensors trên 5 shard |
 | Rayon threads | 8 threads |
 | Expert cache policy | `victim` |
 | Cache expert | 64 MiB/layer (1 GiB cấu hình trên 16 layers) |
@@ -930,7 +935,7 @@ Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được th�
 | conversation Love | 4 | 162 | 128 | 2.389 | 3.223 | 41.799 |
 | conversation Love | 5 | 162 | 128 | 3.357 | 3.069 | 44.732 |
 
-*Nguồn: raw payload trong [18]; tất cả 20 mẫu đều đạt `finish_reason=length` tại 128 output tokens và text/usage khớp tuyệt đối trong từng nhóm.*
+*Nguồn: raw payload trong [18]; tất cả 20 mẫu đều đạt `finish_reason=length` tại 128 output tokens (kết thúc do đạt giới hạn output cấu hình, không phải dừng bằng EOS) và text/usage khớp trong từng nhóm.*
 
 ### 5.10.2. Tổng hợp hiệu năng và phân tích chi phí i7
 
@@ -954,11 +959,11 @@ Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được th�
 | Conversation Mars | 13.745 | 8.990 | 0.910 | 5.757 |
 | Conversation Love | 13.718 | 9.083 | 1.922 | 0.176 |
 
-*Nguồn: raw metrics trong [18]. File payload tính theo gigabyte nhị phân (GiB).*
+*Nguồn: raw metrics trong [18]. File payload là lượng byte ứng dụng yêu cầu nạp qua pread/syscalls (tính theo GiB nhị phân), có thể đến từ OS page cache hoặc prefetch chưa dùng; không đồng nhất với lượng SSD đọc vật lý.*
 
 Ở cấu hình máy i7:
-- Trong lượt **Warm Mars**, toàn bộ các expert cần thiết đều được phục hồi từ bộ đệm phân tầng (L2 host cache và L1 VRAM victim cache), dẫn đến **File payload bằng 0,000 GB** (0 lượt đọc file vật lý bổ sung). Nhờ đó, thời gian sinh tổng thể (Wall) giảm từ 33,420s xuống 28,135s và tốc độ giải mã (Decode) đạt **4,862 steps/s**.
-- Trong lượt **Conversation Love**, nhờ cơ chế KV cache prefix tái sử dụng 143 token ngữ cảnh từ lượt Mars trước đó, thời gian TTFT prefill chỉ mất **2,929s** (thay vì 9,099s như trên máy i5 vốn chỉ tái sử dụng được 11 tokens do chênh lệch template), và decode đạt **3,603 steps/s**.
+- Trong lượt **Warm Mars**, toàn bộ các expert cần thiết đều được phục hồi từ bộ đệm phân tầng (L2 host cache và L1 VRAM victim cache), dẫn đến **File payload bằng 0,000 GB** (0 lượt yêu cầu đọc thêm từ file). Nhờ đó, thời gian sinh (Wall) giảm từ 33,420s xuống 28,135s và tốc độ giải mã (Decode) đạt **4,862 steps/s**. Khác với trên máy i5 vốn vẫn ghi nhận file payload 34,176 GB (31,829 GiB) do cấu hình i5 chỉ nạp một phần vào cache, các misses vẫn phải đọc file.
+- Trong lượt **Conversation Love**, trên i7 quan sát thấy cơ chế KV cache prefix tái sử dụng được **143 tokens** ngữ cảnh từ lượt Mars trước đó (prompt 162 tokens), thời gian TTFT prefill chỉ mất **2,929s** (so với 9,099s trên máy i5 vốn chỉ tái sử dụng được 11 tokens). Mức chênh lệch số token prompt (Mars 16 tokens so với 19 trên i5) và tỷ lệ reuse (143 so với 11) là quan sát thực nghiệm xuất phát từ việc hai máy dùng hai phiên bản checkpoint có tokenizer và chat template khác nhau.
 
 ### 5.10.3. Quan sát bộ nhớ và độ ổn định RAM trên i7
 
@@ -972,27 +977,27 @@ Thực nghiệm trên cấu hình máy `i7` (máy đồng nghiệp) được th�
 
 *Nguồn: chuỗi `/proc` lấy mẫu 250 ms từ `memory.jsonl` trong [18].*
 
-Cả ba kịch bản trên máy i7 đều hoàn tất với trạng thái `success`, danh sách vi phạm watchdog rỗng (`violations: []`). Đỉnh sử dụng bộ nhớ vật lý quan sát được (HWM) tối đa chỉ đạt **3,278 GiB**, thấp hơn đáng kể so với ngưỡng bảo vệ RSS guard 5,0 GiB và ngưỡng dừng khẩn cấp 5,5 GiB. Toàn bộ tiến trình không ghi nhận bất kỳ dữ liệu nào bị đẩy sang đĩa Swap (`VmSwap = 0 KiB`), và lượng RAM khả dụng của hệ thống luôn duy trì ở mức an toàn trên 5,4 GiB. Kết quả này chứng minh cấu hình 64 MiB/layer vận hành hoàn toàn ổn định và an toàn về mặt bộ nhớ trên testbed i7.
+Cả ba kịch bản trên máy i7 đều hoàn tất với trạng thái `success`, danh sách vi phạm watchdog rỗng (`violations: []`). Đỉnh sử dụng bộ nhớ vật lý quan sát được (HWM) tối đa chỉ đạt **3,278 GiB**, thấp hơn đáng kể so với ngưỡng bảo vệ RSS guard 5,0 GiB và ngưỡng dừng khẩn cấp 5,5 GiB. Toàn bộ tiến trình không ghi nhận bất kỳ dữ liệu nào bị đẩy sang đĩa Swap (`VmSwap = 0 KiB`), và lượng RAM khả dụng của hệ thống luôn duy trì ở mức an toàn trên 5,4 GiB. Kết quả này xác nhận cấu hình 64 MiB/layer vận hành ổn định trong phạm vi 3 kịch bản và khoảng thời gian quan sát của bộ đo i7, không phát sinh lỗi cạn kiệt bộ nhớ hay vi phạm watchdog; chưa bảo đảm an toàn tuyệt đối cho mọi khối lượng công việc dài hạn.
 
 ### 5.10.4. Nhận xét đối chiếu hai testbed
 
-Việc hoàn tất bộ dữ liệu i7 cho phép hoàn chỉnh bức tranh thực nghiệm của đề tài:
-1. **Tính tương thích và khả năng vận hành**: Hệ thống MoE-TierEngine chứng minh khả năng nạp và suy luận ổn định checkpoint OLMoE-1B-7B INT8 trên cả hai cấu hình phần cứng i5 và i7 mà không gặp lỗi cạn kiệt bộ nhớ hay sự cố ngắt mạch GPU.
-2. **Khác biệt về hạ tầng phần cứng**: Tốc độ xử lý của attention trên i7 (khoảng 0,86s) nhanh hơn rõ rệt so với i5 (khoảng 1,86s) do dung lượng VRAM lớn hơn (8 GB so với 4 GB) và năng lực tính toán FP32 cao hơn của GPU RTX 5060 so với GTX 1650 Max-Q. Tốc độ giải mã tổng thể đạt mức 4,26 – 4,86 steps/s trên i7 so với 3,66 – 3,99 steps/s trên i5.
-3. **Giới hạn diễn giải**: Sự chênh lệch giữa hai máy đến từ tổng hòa các yếu tố kiến trúc phần cứng (CPU, GPU architecture, băng thông bus RAM và PCIe), do đó không được quy kết một cách đơn giản là chênh lệch do riêng tốc độ CPU.
+Việc ghi nhận độc lập số liệu vận hành trên cả hai testbed i5 và i7 cho thấy:
+1. **Khả năng vận hành trên hai cấu hình**: Hệ thống MoE-TierEngine chứng minh khả năng nạp và suy luận checkpoint OLMoE-1B-7B INT8 trên cả hai cấu hình phần cứng i5 và i7 trong giới hạn bộ nhớ được kiểm soát (ngân sách cache 64 MiB/layer), không gặp lỗi cạn kiệt bộ nhớ hay sự cố ngắt mạch GPU trong các lượt đo.
+2. **Khác biệt về cấu hình và hạ tầng**: Testbed i5 chạy với checkpoint 0924-Instruct trên GPU GTX 1650 Max-Q (4 GB VRAM); testbed i7 chạy với checkpoint 0125-Instruct trên GPU RTX 5060 Laptop (8 GB VRAM). Các chỉ số đo lường (như thời gian xử lý attention 0,86s trên i7 so với 1,86s trên i5, tốc độ giải mã 4,26–4,86 steps/s so với 3,66–3,99 steps/s, hay tỷ lệ hit cache VRAM) phản ánh năng lực vận hành riêng của từng cấu hình phần cứng kèm phiên bản mô hình tương ứng.
+3. **Giới hạn diễn giải khoa học**: Sự khác biệt giữa hai bộ số liệu đến từ tổng hòa các yếu tố (phiên bản checkpoint, tokenizer, cấu trúc chat template, kiến trúc CPU/GPU, dung lượng VRAM và băng thông bộ nhớ), do đó không được quy kết một cách đơn giản là chênh lệch do riêng tốc độ CPU hay GPU khi chưa có thí nghiệm cô lập từng biến số đối chứng.
 
 ## 5.11. Đánh giá tiến độ và kế hoạch kỳ tiếp theo
 
 Kỳ 1 đã có nguyên mẫu suy luận INT8 phân tầng và một bộ hiệu năng i5 trên source sạch. Tốc độ quan sát cho thấy demo hoạt động nhưng vẫn có độ trễ đáng kể, nhất là lượt hội thoại có nhiều token prompt cần tính lại. Các thử nghiệm cho thấy tối ưu có thể có ích trong phạm vi cụ thể, đồng thời có phương án thêm song song làm chậm. Đây là kết quả thực tế cần báo cáo, không cần chuyển mọi thử nghiệm thành thành công.
 
-**Giai đoạn 1 chưa kết thúc.** Đã có nguyên mẫu và bộ số liệu i5 hữu hạn, nhưng ưu tiên hiện hành vẫn là điều tra OOM và kiểm soát tổng RAM trên i5. Các bản vá cache và các lượt hoàn tất không tự chứng minh total RSS an toàn. Ngân sách cache chung i5/i7 chưa được nghiệm thu; dữ liệu i7 còn chờ bổ sung. Các kết quả đã đo được giữ như bằng chứng có phạm vi, không đồng nghĩa nền tảng bộ nhớ đã được xác nhận đầy đủ.
+**Giai đoạn 1 chưa kết thúc.** Đã có nguyên mẫu và bộ số liệu vận hành trên cả hai máy i5 và i7 hữu hạn, nhưng ưu tiên hiện hành vẫn là điều tra OOM và kiểm soát tổng RAM trên i5. Các bản vá cache và các lượt hoàn tất không tự chứng minh total RSS an toàn. Ngân sách cache chung i5/i7 chưa được nghiệm thu chính thức. Các kết quả đã đo được giữ như bằng chứng có phạm vi, không đồng nghĩa nền tảng bộ nhớ đã được xác nhận đầy đủ.
 
-**Bảng 5.12. Kế hoạch kỳ tiếp theo**
+**Bảng 5.16. Kế hoạch kỳ tiếp theo**
 
 | Công việc | Kết quả cần có | Ưu tiên |
 | --- | --- | --- |
 | Điều tra OOM và kiểm soát tổng RAM i5 | Xác minh các vùng cấp phát, theo dõi tăng RSS và thử có giám sát; không cố gây OOM | Trước tiên |
-| Chốt cấu hình chung rồi bổ sung i7 | Cùng revision/checkpoint/workload/cache tường minh sau kiểm bộ nhớ; raw riêng mỗi máy | Sau bước kiểm RAM |
+| Đánh giá đối chứng có kiểm soát i5/i7 | Đồng bộ phiên bản checkpoint chung (0125-Instruct) để so sánh đối chứng hẹp | Sau bước kiểm RAM |
 | Hoàn thiện báo cáo và dàn LaTeX | Thông tin hành chính, nguồn, hình và đánh số đúng mẫu | Trước khi nộp |
 | Làm rõ memory/VRAM accounting | Phân biệt capacity, RSS, pool/scratch và physical allocation | Gắn với điều tra RAM |
 | Đánh giá chất lượng có hệ thống hơn | Tập câu hỏi, tiêu chí, output budget và đối chứng phù hợp | Giai đoạn tiếp |
@@ -1009,7 +1014,9 @@ Bộ i5 phase1-v1 trên checkpoint nguồn sạch có 20 request đo và 5 warmu
 
 Các khảo sát thuật toán cho thấy victim cache và KV prefix có lợi trong điều kiện đo tương ứng, còn dispatch prefill theo nhóm không được chọn vì chậm hơn đa số cặp thử. Sự cố OOM và quá trình bổ sung budget/guard cho thấy mục tiêu chạy mô hình trên máy hạn chế tài nguyên cần xét tổng bộ nhớ, không chỉ dung lượng cache. Chưa có bằng chứng xác định trần phần cứng, bảo đảm hết leak/OOM hoặc chất lượng chuẩn hóa; những giới hạn này là nội dung cần tiếp tục làm rõ.
 
-Nhóm kiến nghị ưu tiên điều tra OOM và kiểm soát tổng RAM trên i5, sau đó chốt cấu hình chung và hoàn thành phần i7 với cùng protocol phù hợp. Cần hoàn thiện thông tin nhóm, hình thức trình bày và tiếp tục đo bottleneck/chất lượng trước khi mở thêm tối ưu. Giai đoạn 1 chưa được đóng chỉ dựa vào các kết quả hữu hạn hiện có. Trong giai đoạn tiếp theo, mọi phương án như INT4 hoặc backend mới cần được đánh giá đồng thời về correctness, chất lượng, bộ nhớ và hiệu năng. Báo cáo kỳ 1 là cơ sở kỹ thuật và thực nghiệm cho các bước đó.
+Bộ i7 phase1-v1 (Mục 5.10, [18]) trên checkpoint 0125-Instruct với 24 threads CPU và dense cuBLAS GPU (RTX 5060 Laptop) ghi nhận trung vị decode đạt 12,39–14,86 steps/s; TTFT nhóm warm Mars đạt 1,549 s nhờ victim cache hấp thu hoàn toàn expert misses. Hai bộ đo này thể hiện năng lực vận hành riêng biệt của hai cấu hình (khác biệt checkpoint, workload token, luồng CPU và backend hỗ trợ); không dùng để xếp hạng hay quy chênh lệch tốc độ cho riêng CPU/GPU khi chưa có thí nghiệm cô lập từng biến số.
+
+Nhóm kiến nghị ưu tiên điều tra OOM và kiểm soát tổng RAM trên i5, sau đó chốt cấu hình/checkpoint chung để thực hiện bộ đo đối chuẩn tương đương giữa hai máy. Cần hoàn thiện thông tin nhóm, hình thức trình bày và tiếp tục đo bottleneck/chất lượng trước khi mở thêm tối ưu. Giai đoạn 1 chưa được đóng chỉ dựa vào các kết quả hữu hạn hiện có. Trong giai đoạn tiếp theo, mọi phương án như INT4 hoặc backend mới cần được đánh giá đồng thời về correctness, chất lượng, bộ nhớ và hiệu năng. Báo cáo kỳ 1 là cơ sở kỹ thuật và thực nghiệm cho các bước đó.
 
 # TÀI LIỆU THAM KHẢO
 
@@ -1105,7 +1112,7 @@ Bộ báo cáo chính có 52 payload checksum được kiểm ở lần chốt. 
 
 1. Xác nhận tên đề tài theo quyết định; điền khoa, GVHD, họ tên, MSSV, lớp và thời gian báo cáo.
 2. Chèn trang giao nhiệm vụ có phê duyệt; duyệt lời cảm ơn/cam đoan và phân công thực tế trước khi ký.
-3. Partner bổ sung i7 theo mục 5.10; nếu chưa có trước hạn nộp, giữ nguyên nhãn chưa có dữ liệu và ghi kế hoạch thực hiện.
+3. Dữ liệu vận hành i7 từ partner (nhánh Huy) đã được rà soát provenance và bổ sung tại Mục 5.10 cùng tài liệu bàn giao `baocao/README.md`; khi đồng bộ sang LaTeX, tích hợp đầy đủ nội dung Mục 5.10 và các Bảng 5.11 đến 5.15.
 4. Chuyển sơ đồ sang hình vector hoặc TikZ; sinh mục lục/danh mục, đánh số công thức và tham chiếu chéo bằng LaTeX.
 5. Áp dụng A4, lề, font, header/footer và số trang theo [1]; không coi bản Markdown đã hoàn tất dàn trang.
 6. Đối chiếu tài liệu tham khảo, số liệu và đường dẫn sau khi đóng gói bản nộp; bỏ khối ghi chú biên tập ở đầu file khỏi bản in.

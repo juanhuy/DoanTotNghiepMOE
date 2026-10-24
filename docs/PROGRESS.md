@@ -2215,3 +2215,29 @@ Kết luận và bước tiếp theo:
 - Artifact tổng hợp: `benchmarks/experiments/2026-10-23-phase1-i7/` kèm `summary.json`, `README.md`, `build_report.py` và `CHECKSUMS.sha256` (toàn bộ payload đạt SHA-256).
 - Đã cập nhật mục 5.10 của `baocao/BAO_CAO_DINH_KY_LAN_1.md` với đầy đủ các bảng dữ liệu thực nghiệm i7 và phân tích đối chiếu.
 - Giới hạn: Chưa đóng giai đoạn 1, đây là phép đo vận hành trên cấu hình 64 MiB/layer, chưa phải ngân sách nghiệm thu an toàn chung cho mọi khối lượng công việc. Không suy chênh lệch hiệu năng là do riêng CPU.
+
+## 2026-10-24 — Rà soát provenance checkpoint 0125-Instruct và chuẩn hóa số liệu i7 cho báo cáo định kỳ lần 1
+
+- Rà soát toàn diện nhánh `Huy` để chuẩn bị bàn giao số liệu thực nghiệm i7 cho đồng nghiệp phụ trách báo cáo định kỳ lần 1 (`baocao/BAO_CAO_DINH_KY_LAN_1.md` và `baocao/README.md`).
+- Xác minh nguồn gốc checkpoint testbed i7 (Model Provenance):
+  - Đường dẫn mô hình runtime trong `server.log`: `/home/nhat-huy/DOANTN/MoE/models/olmoe-1b-7b-int8`.
+  - Đối chiếu 10/10 file checkpoint trên đĩa với trường `checkpoint.files` trong `cold/result.json`: khớp 100% mã băm SHA-256 (`checkpoint_sha256_comparison.json`). Khẳng định mô hình hiện tại trên đĩa chính là mô hình đã đo trong bộ raw 2026-10-23.
+  - Trích xuất metadata tải về từ `.cache/huggingface/download/*.metadata` (`download_metadata.json`): ghi nhận commit hash `b89a7c4bc24fb9e55ce2543c9458ce0ca5c4650e`.
+  - Truy vấn API Hugging Face chính thức (`hf_api_model_info.json`): commit hash trên thuộc về repo `allenai/OLMoE-1B-7B-0125-Instruct` (khác với checkpoint `0924-Instruct` trên máy i5).
+  - Ghi nhận đặc tính kỹ thuật có nguồn dẫn cụ thể: token `bos_token` và `eos_token` trong `tokenizer_config.json` và `special_tokens_map.json` là `|||IP_ADDRESS|||` (ID: 50279), file `tokenizer.json` kích thước 3,565,064 bytes. Cả hai checkpoint đều có 2,195 tensors phân bố trên 5 shard theo `[513, 513, 513, 512, 144]`, cùng byte length từng file nhưng khác nhau về giá trị số học và SHA-256.
+  - Lưu trữ toàn bộ bằng chứng tại thư mục mới: `benchmarks/experiments/2026-10-23-phase1-i7/provenance/`.
+- Chuẩn hóa số liệu và đính chính các hiểu lầm diễn giải:
+  - RAM vật lý i7: chính xác là 15,910,060,032 bytes ≈ 14.817 GiB (15.910 GB), sửa lại nhãn "14.0 GiB" trước đó.
+  - File payload warm i5: chính xác là 34,175,877,120 bytes ≈ 34.176 GB (31.829 GiB), không phải 0.000 GB; phân biệt rõ file payload (bytes yêu cầu qua pread/syscalls) với `process_read_bytes_delta` và lượng SSD đọc vật lý.
+  - Làm rõ điều kiện dừng: toàn bộ 20 mẫu trên i7 đều dừng do `finish_reason=length` tại 128 completion tokens (chủ động giới hạn), không mô tả như đã dừng bằng EOS.
+  - Tái sử dụng KV cache: ghi nhận mức reuse 11 token trên i5 và 143 token trên i7 là quan sát thực nghiệm; đưa ra giả thuyết về cấu trúc template bản 0125-Instruct, không khẳng định khi chưa có đối chiếu chuỗi token prefix độc lập. Không khẳng định template i5 thiếu newline vì file local có newline sau role tags.
+  - Bỏ các tuyên bố tuyệt đối hóa ("giải thích 100%", "không do phần cứng"), không quy trực tiếp chênh lệch decode/attention cho riêng CPU/GPU khi chưa có đo cô lập nguyên nhân; giới hạn kết luận RAM trong các lượt và thời gian đã đo.
+- Đồng bộ cấu trúc và tài liệu báo cáo:
+  - Cập nhật `baocao/README.md` thành bản hướng dẫn bàn giao đầy đủ gồm 4 bảng số liệu (Hiệu năng 3.1, Chi phí 3.2, RAM 3.3, Đối chiếu hai cấu hình 3.4), giải thích provenance, và checklist chỉnh trang.
+  - Cập nhật `baocao/BAO_CAO_DINH_KY_LAN_1.md`: trình bày hai cấu hình i5 và i7 thành các kết quả vận hành riêng biệt; sửa claim "cùng checkpoint/workload"; sửa số bảng trùng thành Bảng 5.16; cập nhật Danh mục bảng và Lời mở đầu; cập nhật Kết luận và Phụ lục C; giữ các mục `[CẦN BỔ SUNG họ tên/MSSV/lớp]` cho thành viên điền chính thức.
+  - Cập nhật `benchmarks/experiments/2026-10-23-phase1-i7/README.md` đồng bộ các chuẩn hóa trên.
+  - Giữ nguyên 100% các file raw benchmark và chữ ký số `CHECKSUMS.sha256`.
+- Kiểm tra tính toàn vẹn và công cụ:
+  - `sha256sum -c CHECKSUMS.sha256` trong thư mục i7: 51/51 files PASS.
+  - `python3 tools/check.py --web`: PASS 40 Python + 7 Node/catalog40.
+  - `git diff --check`: PASS (0 lỗi khoảng trắng).

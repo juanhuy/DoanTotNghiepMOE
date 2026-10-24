@@ -1,0 +1,62 @@
+{
+  "config.json": {
+    "size_bytes": 828,
+    "current_sha256": "272998dd7ba4846dcc682f0b5a46144f4bcd9dde8e94d2f17bd8e5cf2f23d6ce",
+    "raw_sha256": "272998dd7ba4846dcc682f0b5a46144f4bcd9dde8e94d2f17bd8e5cf2f23d6ce",
+    "match": true
+  },
+  "generation_config.json": {
+    "size_bytes": 115,
+    "current_sha256": "9d849645be2b0eb25d34fda35037c6236c78329837856b4b22f2f5b61e77c0e5",
+    "raw_sha256": "9d849645be2b0eb25d34fda35037c6236c78329837856b4b22f2f5b61e77c0e5",
+    "match": true
+  },
+  "model-00000.safetensors": {
+    "size_bytes": 1834100784,
+    "current_sha256": "7e29f9c6a2982b622f33e2c6a94e823e0d4442a239f3d852c566320968a7248e",
+    "raw_sha256": "7e29f9c6a2982b622f33e2c6a94e823e0d4442a239f3d852c566320968a7248e",
+    "match": true
+  },
+  "model-00001.safetensors": {
+    "size_bytes": 1657854168,
+    "current_sha256": "c59d9156ca53e07eca14df1afc03100df987f2e60ea831feb04635ec8298f78b",
+    "raw_sha256": "c59d9156ca53e07eca14df1afc03100df987f2e60ea831feb04635ec8298f78b",
+    "match": true
+  },
+  "model-00002.safetensors": {
+    "size_bytes": 1628059584,
+    "current_sha256": "645ec3d46ebb0c9b082cef794df5839479cbffa9c3f5af592adeb4da01248f7e",
+    "raw_sha256": "645ec3d46ebb0c9b082cef794df5839479cbffa9c3f5af592adeb4da01248f7e",
+    "match": true
+  },
+  "model-00003.safetensors": {
+    "size_bytes": 1821755792,
+    "current_sha256": "58136982b287c67e40e208796ca1bc95ef96d6f75c1655b4525474761c1d47fb",
+    "raw_sha256": "58136982b287c67e40e208796ca1bc95ef96d6f75c1655b4525474761c1d47fb",
+    "match": true
+  },
+  "model-00004.safetensors": {
+    "size_bytes": 471116928,
+    "current_sha256": "3cbbff2d6a6ec1d2016a79c0a36a89e9540d2309d1255d4ae334c2c99d8819e3",
+    "raw_sha256": "3cbbff2d6a6ec1d2016a79c0a36a89e9540d2309d1255d4ae334c2c99d8819e3",
+    "match": true
+  },
+  "special_tokens_map.json": {
+    "size_bytes": 437,
+    "current_sha256": "43ffdefa4e501eebdaaba8f34999ac1b5507dc836fab4a1d1529466de35101e0",
+    "raw_sha256": "43ffdefa4e501eebdaaba8f34999ac1b5507dc836fab4a1d1529466de35101e0",
+    "match": true
+  },
+  "tokenizer.json": {
+    "size_bytes": 3565064,
+    "current_sha256": "d1e645ebd850d79567e531a3c103ac575d8e9cf45fa941420afc584b293438ea",
+    "raw_sha256": "d1e645ebd850d79567e531a3c103ac575d8e9cf45fa941420afc584b293438ea",
+    "match": true
+  },
+  "tokenizer_config.json": {
+    "size_bytes": 6123,
+    "current_sha256": "67ac3cdae4e25e84d5d0f4faadb961dd36341cf04e02c7be90a8fd8e697617eb",
+    "raw_sha256": "67ac3cdae4e25e84d5d0f4faadb961dd36341cf04e02c7be90a8fd8e697617eb",
+    "match": true
+  }
+}
