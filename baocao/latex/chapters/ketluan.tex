@@ -1,0 +1,12 @@
+\chapter*{KẾT LUẬN VÀ KIẾN NGHỊ}
+\addcontentsline{toc}{chapter}{KẾT LUẬN VÀ KIẾN NGHỊ}
+\markboth{KẾT LUẬN VÀ KIẾN NGHỊ}{KẾT LUẬN VÀ KIẾN NGHỊ}
+
+
+Trong kỳ báo cáo đầu tiên, nhóm tìm hiểu suy luận tự hồi quy, attention, MoE/router, lượng tử hóa và phân tầng bộ nhớ; xây dựng nguyên mẫu suy luận để minh họa các khái niệm trên phần cứng thực. Hệ thống tính expert INT8 trên CPU, hỗ trợ dense qua CUDA/cuBLAS và tổ chức lưu trữ expert trên RAM, VRAM và file theo nhu cầu.
+
+Hai bộ benchmark sơ bộ, mỗi bộ gồm 20 yêu cầu đo và 5 warmup, ghi nhận tốc độ, độ trễ và bộ nhớ trong điều kiện cụ thể. Trên i5, trung vị decode của bốn nhóm từ 3,228 đến 3,987 steps/s, HWM cao nhất khoảng 3,494 GiB. Trên i7, trung vị decode từ 3,603 đến 4,862 steps/s, HWM cao nhất khoảng 3,278 GiB. Hai bộ sử dụng các phiên bản model và token workload khác nhau, nên các khoảng này chỉ mô tả từng cấu hình, không dùng làm kết luận so sánh.
+
+Các kết quả ghi nhận lợi ích cụ thể của KV prefix trên workload tiền tố chung và victim cache trong khảo sát policy, đồng thời không ủng hộ biến thể dispatch song song trên cấu hình đã thử. Guard bộ nhớ và xử lý stream phục vụ kiểm soát tài nguyên, tính nhất quán của hội thoại. Các quan sát cho thấy cần xét đồng thời expert cache, KV cache, truy xuất file và truyền dữ liệu; chúng không xác lập một tỷ lệ tăng tốc chung. Sự cố OOM trước đó cùng giới hạn của bộ thử là cơ sở xác định công việc tiếp theo, không bị che đi bởi các lượt chạy thành công.
+
+Kỳ 1 cung cấp nền tảng khái niệm, kiến trúc nguyên mẫu và hồ sơ thực nghiệm ban đầu. Những nội dung còn cần phát triển gồm kiểm soát bộ nhớ dài hạn, chiến lược quản lý expert và phương pháp đánh giá chất lượng có hệ thống. Báo cáo chưa khẳng định hệ thống đã tối ưu, hết OOM hoặc đạt chất lượng tương đương trọng số gốc. Việc nghiệm thu toàn bộ hệ thống được tách khỏi việc hoàn thiện báo cáo định kỳ lần 1.

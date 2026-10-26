@@ -1,0 +1,198 @@
+\chapter{PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG}
+
+
+\section{Yêu cầu chức năng và yêu cầu tài nguyên}
+
+Về chức năng, hệ thống cần đọc được bộ trọng số theo định dạng hỗ trợ, dựng đầu vào từ lịch sử hội thoại và sinh câu trả lời. Giao diện nhận nội dung từng phần qua luồng phản hồi, cho phép dừng, xóa lịch sử và đặt lại bộ đệm. Hệ thống hỗ trợ phiên hội thoại để tái sử dụng KV khi tiền tố đầu vào còn phù hợp, đồng thời cung cấp trạng thái bộ nhớ và các chỉ số hiệu năng \cite{moe_tierengine_arch}.
+
+Yêu cầu không hợp lệ, vượt cửa sổ ngữ cảnh hoặc đến khi mô hình đang bận phải nhận thông báo rõ ràng. Với phản hồi dạng luồng, khi người dùng dừng hoặc mất kết nối, tác vụ suy luận kiểm tra tín hiệu hủy tại các điểm đã bố trí và kết thúc để mô hình có thể nhận yêu cầu tiếp theo. Việc hủy có tính hợp tác, không dừng tức thời một phép tính đang chạy. Đường trả lời không theo luồng hiện chưa có cơ chế hủy theo mất kết nối tương đương.
+
+Về tài nguyên, hệ thống không yêu cầu toàn bộ expert phải thường trú trong RAM. Bộ đệm expert có ngân sách tường minh; bộ đệm tái sử dụng, expert đang tính hoặc đang nạp, KV và trọng số chung của mô hình cần được phân biệt khi tính nhu cầu bộ nhớ. Giới hạn bộ đệm expert chỉ kiểm soát một phần tiến trình; cơ chế kiểm tra và bảo vệ RAM được trình bày ở mục 3.7, không phải giới hạn cứng cho tổng bộ nhớ.
+
+Nguyên mẫu chỉ cho một yêu cầu suy luận OLMoE hoạt động tại một thời điểm. Yêu cầu suy luận mới bị từ chối khi mô hình đang bận; các thao tác theo dõi trạng thái vẫn có thể được phục vụ. Lựa chọn này giúp kiểm soát trạng thái mô hình và phạm vi thực nghiệm, chưa phải thiết kế phục vụ nhiều phiên suy luận đồng thời.
+
+\section{Kiến trúc tổng thể}
+
+Luồng xử lý đi từ giao diện đến lớp HTTP, qua lớp điều phối yêu cầu rồi vào mô hình OLMoE. Lớp điều phối kiểm tra đầu vào, giới hạn số yêu cầu đang suy luận và chuyển công việc tính toán sang tác vụ riêng để tránh chiếm luồng xử lý bất đồng bộ. Mô hình tổ chức xử lý đầu vào, sinh token, định tuyến expert, quản lý KV và ghi nhận số liệu \cite{moe_tierengine_arch}.
+
+Các phép chiếu dùng trọng số chung và lớp chiếu đầu ra có thể chạy trên CPU hoặc GPU qua cuBLAS. Expert INT8 vẫn được tính trên CPU; trọng số dùng cho phép tính được lấy từ bộ đệm RAM hoặc được nạp về RAM từ VRAM, tệp trọng số. Vì vậy, bộ đệm expert trong VRAM và phần tính toán expert là hai thành phần có vai trò khác nhau.
+
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[box/.append style={text width=3.9cm, minimum height=0.85cm, align=center}]
+    \node [box, fill=blue!10] (ui) at (0,0) {Giao diện web};
+    \node [box, fill=blue!5] (http) at (5,0) {HTTP và luồng SSE};
+    \node [box, fill=orange!10] (engine) at (10,0) {Điều phối yêu cầu\\InferenceEngine};
+    \node [box, fill=yellow!15] (model) at (5,-1.65) {Mô hình OLMoE\\OlmoeModel};
+    \node [box, fill=red!10] (guard) at (0,-1.65) {Kiểm tra kế hoạch bộ nhớ\\và bảo vệ RAM};
+    \node [box, fill=gray!10] (dense) at (0,-3.55) {Phép chiếu và LM head\\CPU hoặc GPU/cuBLAS};
+    \node [box, fill=purple!10] (router) at (5,-3.3) {Router chọn top-$k$};
+    \node [box, fill=gray!15] (kv) at (10,-3.3) {Bộ đệm KV và\\tiền tố phiên hội thoại};
+    \node [box, fill=purple!20] (expert) at (5,-4.85) {Expert INT8\\Tính trên CPU (Rayon)};
+    \node [box, fill=cyan!10] (ram) at (5,-6.4) {Bộ đệm expert RAM và\\vùng đệm tái sử dụng};
+    \node [box, fill=green!10] (vram) at (10,-6.4) {Bộ đệm expert VRAM\\khi bật GPU};
+    \node [box, fill=red!10] (file) at (0,-6.4) {Tệp trọng số Safetensors};
+    \draw [arrow] (ui) -- (http);
+    \draw [arrow] (http) -- (engine);
+    \draw [arrow] (engine.south) |- (model.east);
+    \draw [arrow] (model) -- (guard);
+    \draw [arrow] (model.south west) -- (dense.north east);
+    \draw [arrow] (model.south east) -- (kv.north west);
+    \draw [arrow] (model) -- (router);
+    \draw [arrow] (router) -- (expert);
+    \draw [arrow] (ram) -- node[right, font=\footnotesize] {trọng số} (expert);
+    \draw [arrow] (file) -- (ram);
+    \draw [arrow, <->] (ram) -- (vram);
+\end{tikzpicture}
+\caption{Kiến trúc tổng thể hệ thống MoE-TierEngine}
+\label{fig:system_arch}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: nhóm dựng theo mã nguồn \cite{moe_tierengine_arch}. Phần trên thể hiện quan hệ điều phối; các liên kết tệp/RAM/VRAM thể hiện đường cung cấp trọng số. Tác vụ nạp có thể dùng bộ đệm tạm trước khi được giữ trong cache. Hình lược bỏ chi tiết nạp trước và đường trả kết quả; không biểu diễn lịch chạy song song.\par}
+\end{figure}
+
+
+\begin{table}[htbp]
+\centering
+\setlength{\tabcolsep}{6pt}
+\small
+\caption{Phân công trách nhiệm các thành phần}
+\label{tab:bang_3_1}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\rowcolor{tableheader}
+\textbf{Thành phần} & \textbf{Trách nhiệm} \\
+\midrule
+HTTP và giao diện & Nhận hội thoại, truyền nội dung qua SSE, hiển thị kết quả và lỗi; xử lý thao tác dừng, xóa lịch sử và đặt lại bộ đệm \\
+Lớp điều phối yêu cầu & Kiểm tra đầu vào, chỉ cho một yêu cầu OLMoE suy luận, chuyển công việc nặng sang tác vụ riêng \\
+Mô hình OLMoE & Mã hóa văn bản, xử lý đầu vào, sinh token, định tuyến, quản lý KV, ghi số liệu và phối hợp các tầng nhớ \\
+Expert INT8 & Kiểm tra kích thước và hệ số tỉ lệ, nạp dữ liệu trọng số và tính SwiGLU trên CPU \\
+Bộ đọc Safetensors & Tra vị trí, kích thước và kiểu dữ liệu; kiểm phạm vi tệp và đọc trọng số theo nhu cầu \\
+Bộ tính toán CPU & Thực hiện các phép chiếu, chuẩn hóa, softmax, attention và các phép toán liên quan \\
+Bộ tính toán CUDA & Quản lý ngữ cảnh GPU, cuBLAS, bộ nhớ ghim, vùng cấp phát tái sử dụng và bộ đệm expert VRAM \\
+Công cụ thực nghiệm & Ghi cấu hình và mã kiểm tra dữ liệu, gửi bộ yêu cầu thử, lưu kết quả, nhật ký và chuỗi quan sát tài nguyên \\
+\bottomrule
+\end{tabularx}
+\vspace{3pt}\par\noindent\footnotesize\textit{Nguồn: chức năng các thành phần trong mã nguồn \cite{moe_tierengine_arch}. Mô hình nhỏ dùng cho kiểm thử được tách biệt với đường suy luận OLMoE.}
+\end{table}
+
+\subsection{Lựa chọn Rust và ranh giới FFI}
+
+Rust được dùng để quản lý quyền sở hữu và kiểm soát việc chia sẻ dữ liệu trong mã an toàn. Các tác vụ CPU và quá trình phục vụ HTTP được tách biệt để tránh một phép tính dài làm nghẽn luồng tiếp nhận yêu cầu.
+
+Phần GPU gọi CUDA và cuBLAS qua giao diện hàm ngoại (FFI). Tại ranh giới này, hệ thống phải kiểm soát ngữ cảnh GPU của luồng, kích thước vùng nhớ, thời gian sống của con trỏ và thứ tự giải phóng tài nguyên. Cơ chế kiểm tra của Rust không tự bảo đảm các điều kiện bên trong thư viện ngoại \cite{moe_tierengine_arch}.
+
+Ví dụ, vùng RAM được ghim để truyền dữ liệu với GPU giữ riêng con trỏ và kích thước cấp phát; dữ liệu được khởi tạo trước khi đường truyền đọc vùng nhớ. Nếu vùng đệm truyền không đủ lớn, hệ thống dùng đường truyền thay thế. Đây là các điều kiện được rà soát cho phần triển khai liên quan, không phải khẳng định toàn bộ mã GPU đã được kiểm chứng an toàn.
+
+\section{Checkpoint và quá trình nạp dữ liệu}
+
+Bộ trọng số được chuẩn bị theo định dạng mà bộ nạp hỗ trợ, gồm các trọng số chung của mô hình và trọng số expert đã lượng tử hóa. Tệp Safetensors cung cấp thông tin về vị trí, kích thước và kiểu dữ liệu của từng mảng trọng số. Dữ liệu một expert ghép ba ma trận cổng, mở rộng và chiếu về chiều ẩn cùng các hệ số tỉ lệ. Bộ đọc kiểm tra tính hợp lệ của kích thước, phép tính dung lượng và phạm vi tệp trước khi cấp phát hoặc đọc dữ liệu.
+
+Khi khởi tạo, hệ thống đọc cấu hình, bộ mã hóa văn bản, khuôn mẫu hội thoại và trọng số chung trong ngân sách tương ứng. Trọng số expert được nạp theo nhu cầu định tuyến hoặc cơ chế nạp trước. Công cụ thực nghiệm lưu mã kiểm tra của bộ trọng số để nhận diện dữ liệu giữa các lượt đo. Việc tính mã này đọc tệp trước khi đo, có thể làm dữ liệu được giữ trong bộ đệm tệp của hệ điều hành. Vì vậy, trạng thái lạnh trong chương 5 chỉ nói đến bộ đệm của hệ suy luận, không khẳng định bộ đệm hệ điều hành hay SSD đều lạnh.
+
+\section{Thiết kế phân tầng expert}
+
+RAM giữ các expert sẵn cho CPU tính. Khi không tìm thấy expert trong RAM, hệ thống kiểm tra bản trong VRAM và truyền về RAM nếu dùng được. Nếu không có bản phù hợp, hệ thống lấy dữ liệu đã nạp trước hoặc đọc tệp trọng số. Tên L1 cho VRAM và L2 cho RAM trên giao diện là cách đặt tên các tầng lưu trữ của nguyên mẫu, khác bộ đệm L1/L2 phần cứng của CPU. Thứ tự tra cứu thực tế bắt đầu từ RAM.
+
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[box/.append style={text width=3.7cm, minimum height=0.9cm, align=center}, decision/.append style={font=\small, inner sep=1pt}]
+    \node [box, fill=blue!10] (start) at (0,0) {Nhận expert từ Router};
+    \node [decision] (ram) at (0,-1.25) {Có ở RAM?};
+    \node [decision] (vram) at (0,-3.35) {VRAM dùng được?};
+    \node [box, fill=yellow!15] (download) at (4.7,-3.35) {Truyền từ GPU về RAM};
+    \node [box, fill=red!10] (file) at (-4.7,-3.35) {Lấy bản đã nạp trước;\\nếu chưa có thì đọc tệp};
+    \node [box, fill=purple!10] (compute) at (0,-5.25) {Tính expert trên CPU};
+    \node [box, fill=cyan!10, text width=8.7cm, minimum height=1.4cm] (admit) at (0,-7.25) {Sau khi tính: xét lưu lại expert trong RAM.\\Nếu cần chỗ, loại expert cũ và thử giữ expert cũ ở VRAM trước khi tái sử dụng vùng đệm.\\Nếu GPU đang bật, bỏ bản VRAM tương ứng khi giữ expert vừa dùng trong RAM.};
+    \draw [arrow] (start) -- (ram);
+    \draw [arrow] (ram) -- node[right] {Không} (vram);
+    \draw [arrow] (ram.west) -- node[above] {Có} (-7,-1.25) |- (compute.west);
+    \draw [arrow] (vram) -- node[above] {Có} (download);
+    \draw [arrow] (vram) -- node[above, pos=0.2, font=\footnotesize] {Không} (file);
+    \draw [arrow] (download.south) |- (compute.east);
+    \draw [arrow] (file.south) |- (compute.west);
+    \draw [arrow] (compute) -- (admit);
+\end{tikzpicture}
+\caption{Truy xuất và lưu lại expert theo chính sách victim}
+\label{fig:tiering_victim}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: các đường lấy, tính và lưu lại expert trong mã nguồn \cite{moe_tierengine_arch}. Hình lược bỏ lịch nạp trước và chi tiết xử lý lỗi. Truyền từ VRAM thất bại thì có thể dùng bản đã nạp trước hoặc đọc tệp. Nếu expert không vừa ngân sách RAM, hệ thống không giữ trong cache RAM và có thể thử giữ ở VRAM. Mọi đường VRAM phụ thuộc GPU được bật và tài nguyên khả dụng.\par}
+\end{figure}
+
+
+Chính sách victim ưu tiên dùng VRAM giữ expert bị loại khỏi RAM để giảm bản sao trùng giữa hai tầng. Khi GPU đang bật và expert được giữ lại trong RAM sau khi tính, bản tương ứng trong VRAM được bỏ; thao tác này diễn ra sau khi truyền dữ liệu về RAM đã hoàn tất. Chính sách inclusive được giữ làm đối chứng. Hai chính sách thay đổi nơi lưu trữ, không thay trọng số mô hình hoặc thứ tự tổng hợp đầu ra expert.
+
+\section{Quản lý bộ nhớ và session}
+
+\begin{table}[htbp]
+\centering
+\setlength{\tabcolsep}{6pt}
+\small
+\caption{Các vùng bộ nhớ cần phân biệt}
+\label{tab:bang_3_2}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.0cm} >{\RaggedRight\arraybackslash}p{4.5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\rowcolor{tableheader}
+\textbf{Vùng} & \textbf{Vai trò} & \textbf{Giới hạn cần ghi nhận} \\
+\midrule
+Trọng số chung trong RAM & Phục vụ CPU hoặc đường tính thay thế & Không tự được giải phóng khi bật GPU \\
+Trọng số chung trong VRAM & Phục vụ các phép chiếu trên GPU & Cùng dùng VRAM với bộ đệm expert và vùng tính tạm \\
+Bộ đệm expert RAM và vùng tái sử dụng & Giữ dữ liệu expert và vùng đệm đã cấp phát & Cùng tính dung lượng cấp phát vào ngân sách mỗi lớp \\
+Expert đang dùng hoặc đang nạp & Dữ liệu phục vụ tính toán và nạp trước & Cần dự phòng riêng ngoài dữ liệu giữ trong cache \\
+KV và phiên hội thoại & Giữ khóa, giá trị, mã token và trạng thái dùng lại & Dữ liệu hợp lệ khác dung lượng cấp phát và phần quản lý \\
+Vùng tính tạm, bộ nhớ ghim và vùng tái sử dụng GPU & Phục vụ tính toán, truyền dữ liệu và tái sử dụng & Số liệu hệ thống báo có thể chưa bao hết cấp phát thực \\
+Bộ mã hóa, bộ cấp phát và môi trường thực thi & Các thành phần hỗ trợ tiến trình & Không nằm trọn trong ngân sách bộ đệm \\
+\bottomrule
+\end{tabularx}
+\vspace{3pt}\par\noindent\footnotesize\textit{Nguồn: thiết kế và giới hạn accounting hiện hành \cite{moe_tierengine_arch}, \cite{exp_prefill_i5}.}
+\end{table}
+
+Bộ đệm expert và vùng đệm tái sử dụng cùng tính vào ngân sách dung lượng cấp phát của mỗi lớp. Kế hoạch bộ nhớ còn dự phòng dữ liệu expert đang dùng hoặc đang nạp theo mức $(k+2)B_e$, trong đó $k$ là số expert được chọn và $B_e$ là dung lượng dữ liệu của một expert. Mức dự phòng này chưa gồm dữ liệu quản lý và các vùng khác, không phải giới hạn cứng cho tổng cấp phát. Khi xử lý đầu vào, nhóm nạp trước được giới hạn tối đa $k$ expert; expert còn lại được đọc khi cần.
+
+Ngân sách lưu phiên hội thoại tính dung lượng đã cấp phát cho các mảng khóa, giá trị, mã token và một phần dữ liệu quản lý. Phần quản lý bảng băm, bộ cấp phát và KV của yêu cầu đang chạy vẫn cần được xét riêng. Đặt lại bộ đệm xóa các mục đã lưu và vùng đệm tái sử dụng, nhưng giữ cấu hình ngân sách để phiên sau tiếp tục lưu KV. RSS không nhất thiết giảm ngay sau thao tác này, vì bộ cấp phát có thể giữ lại trang nhớ.
+
+\section{HTTP/SSE, hủy yêu cầu và tính nhất quán giao diện}
+
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=1.0cm, auto]
+    \node [box, fill=blue!10] (user) {Client (Web / Runner)};
+    \node [box, fill=orange!10, right=2.5cm of user] (http) {HTTP Facade};
+    \node [box, fill=purple!10, right=2.5cm of http] (worker) {Blocking Worker};
+
+    \node [below=5.0cm of user] (u_end) {};
+    \node [below=5.0cm of http] (h_end) {};
+    \node [below=5.0cm of worker] (w_end) {};
+
+    \draw [dashed] (user) -- (u_end);
+    \draw [dashed] (http) -- (h_end);
+    \draw [dashed] (worker) -- (w_end);
+
+    % Message sequence
+    \draw [arrow] ($(user.south)+(0,-0.4)$) -- node [above, scale=0.8] {POST (messages, session)} ($(http.south)+(0,-0.4)$);
+    \draw [arrow] ($(http.south)+(0,-0.9)$) -- node [above, scale=0.8] {Acquire gate, spawn task} ($(worker.south)+(0,-0.9)$);
+    \draw [arrow] ($(worker.south)+(0,-1.5)$) -- node [above, scale=0.8] {Worker ready (preflight OK)} ($(http.south)+(0,-1.5)$);
+    \draw [arrow] ($(http.south)+(0,-2.0)$) -- node [above, scale=0.8] {SSE Stream Header (200 OK)} ($(user.south)+(0,-2.0)$);
+    \draw [arrow] ($(worker.south)+(0,-2.6)$) -- node [above, scale=0.8] {Delta token chunks} ($(http.south)+(0,-2.6)$);
+    \draw [arrow] ($(http.south)+(0,-3.1)$) -- node [above, scale=0.8] {Content chunk (SSE)} ($(user.south)+(0,-3.1)$);
+    \draw [arrow] ($(worker.south)+(0,-3.7)$) -- node [above, scale=0.8] {Finished / Terminal status} ($(http.south)+(0,-3.7)$);
+    \draw [arrow] ($(http.south)+(0,-4.1)$) -- node [above, scale=0.8] {Terminal result (SSE)} ($(user.south)+(0,-4.1)$);
+    \draw [arrow] ($(http.south)+(0,-4.6)$) -- node [above, scale=0.8] {data: [DONE]} ($(user.south)+(0,-4.6)$);
+\end{tikzpicture}
+\caption{Vòng đời xử lý yêu cầu suy luận streaming qua HTTP/SSE}
+\label{fig:streaming_lifecycle}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: nhóm dựng theo HTTP handler và blocking worker \cite{moe_tierengine_arch}. Endpoint: \nolinkurl{/v1/chat/completions}. Hình mô tả luồng thành công, lược bỏ nhánh lỗi và hủy.\par}
+\end{figure}
+
+
+Công việc suy luận chạy trong tác vụ tính toán riêng, tránh chiếm luồng xử lý bất đồng bộ bằng phép tính dài. Hàng đợi truyền kết quả có giới hạn; nếu phía nhận không đọc trong thời gian cho phép, tác vụ kết thúc với lỗi. Cơ chế giới hạn truy cập từ chối yêu cầu suy luận mới khi mô hình đang bận.
+
+Trước khi SSE bắt đầu, hệ thống có thể trả lỗi bằng mã trạng thái HTTP. Sau khi phần đầu phản hồi đã gửi, lỗi được thông báo trong luồng dữ liệu. Giao diện chỉ lưu câu trả lời hoàn tất khi nhận đủ thông tin kết quả cuối, dấu kết thúc và kết thúc luồng hợp lệ. Nội dung bị dừng hoặc mất kết nối không được ghi thành câu trả lời hoàn chỉnh. Đường trả lời không theo luồng chưa có cơ chế hủy theo mất kết nối tương đương.
+
+\section{Preflight và bảo vệ RAM hợp tác}
+
+Trước khi nạp trọng số lớn, hệ thống ước lượng nhu cầu gồm trọng số chung ở FP32, bộ đệm theo cấu hình, dự phòng phiên hội thoại, yêu cầu đang chạy và phần phụ trợ. Hệ thống từ chối nếu kế hoạch vượt giới hạn tiến trình hoặc không chừa đủ RAM cho hệ thống. Trong khi sinh, cơ chế bảo vệ kiểm tra RSS và RAM có thể cấp phát tại các điểm kiểm tra hủy. Việc đọc thống kê bộ nhớ được giãn cách tối thiểu 25 ms; đây không phải bộ lấy mẫu chạy liên tục đúng mỗi 25 ms.
+
+Các bộ đo vận hành của báo cáo cấu hình ngưỡng RSS 5 GiB và mức RAM cần chừa 1 GiB. Khi phát hiện áp lực bộ nhớ, cơ chế bảo vệ trả lỗi thiếu bộ nhớ. Trước khi mở luồng SSE, lỗi có thể được trả bằng HTTP 503; sau khi luồng đã được chấp nhận, lỗi được gửi qua sự kiện trong luồng. Khi tác vụ dừng sử dụng dữ liệu, hệ thống xóa bộ đệm expert RAM, phiên hội thoại và vùng đệm tái sử dụng theo đường xử lý lỗi. Trọng số chung và bộ đệm VRAM có thể còn được giữ; bộ cấp phát không được bảo đảm trả trang nhớ ngay cho hệ điều hành.
+
+Đây là bảo vệ hợp tác, không phải cơ chế của hệ điều hành ngăn mọi cấp phát vượt ngưỡng. Bộ nhớ có thể tăng giữa các điểm kiểm tra; hoạt động của trình điều khiển và thư viện cũng có thể tạo thêm cấp phát. Việc đọc thống kê Linux và giới hạn nhóm tiến trình cgroup v2 chỉ bao phủ phần hệ thống quan sát được. Khi thực nghiệm, nhóm còn dùng bộ giám sát độc lập, vì trạng thái do máy chủ trả về có thể là bản ghi trước đó khi mô hình đang bận.

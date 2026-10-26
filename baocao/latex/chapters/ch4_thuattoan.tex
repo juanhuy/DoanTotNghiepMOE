@@ -1,0 +1,165 @@
+\chapter{THUẬT TOÁN VÀ CÁC GIẢI PHÁP KHẢO SÁT}
+
+
+Chương này mô tả cách các thành phần ở chương 3 được tổ chức thành thuật toán suy luận. Nội dung phân biệt đường chạy đang sử dụng, phương án đối chứng và phương án thử nghiệm không được bật trong bản chạy chính. Các bước được diễn giải từ mã nguồn \cite{moe_tierengine_arch}; kết quả và giới hạn của từng phép đo được trình bày ở chương 5.
+
+\section{Quy trình suy luận tổng thể}
+
+Đầu vào gồm lịch sử hội thoại, mã phiên nếu có, giới hạn số token sinh và mô hình đã nạp. Đầu ra gồm văn bản trả lời, số token, lý do kết thúc và các chỉ số đo. Giả mã 4.1 trình bày đường xử lý thành công; các điểm kiểm tra hủy và bộ nhớ còn được gọi bên trong các lớp tính toán.
+
+\begin{Verbatim}[samepage=true,breaklines=true,breakanywhere=true,fontsize=\small,frame=single,framesep=3mm]
+Đầu vào: hội thoại, mã phiên, giới hạn sinh, mô hình đã nạp.
+1. Kiểm tra hội thoại và mã phiên; chỉ nhận khi mô hình rảnh.
+2. Dựng văn bản theo khuôn mẫu hội thoại; kiểm tra dự phòng RAM.
+3. Mã hóa thành token; kiểm tra đầu vào không rỗng và tổng
+   số token đầu vào cộng giới hạn sinh không vượt cửa sổ ngữ cảnh.
+4. Với yêu cầu streaming, báo sẵn sàng sau khi kiểm tra đầu vào.
+5. Tìm KV của phiên; dùng lại tiền tố hợp lệ hoặc cấp KV mới.
+6. Xử lý phần token đầu vào chưa có KV hợp lệ.
+7. Lặp đến khi gặp EOS hoặc đạt giới hạn sinh:
+   a. Chọn token có điểm dự đoán lớn nhất.
+   b. Phát phần văn bản giải mã được nếu đang trả lời theo luồng.
+   c. Nếu chưa kết thúc và còn bước sinh, đưa token vừa chọn
+      qua mô hình để cập nhật KV và điểm dự đoán tiếp theo.
+   d. Kiểm tra hủy, thời hạn và RAM tại các điểm hỗ trợ.
+8. Hoàn thiện văn bản; lưu trạng thái phiên nếu đủ ngân sách;
+   trả kết quả và số liệu đã ghi nhận.
+9. Khi lỗi, thông báo theo giao thức và nhả quyền dùng mô hình.
+   Riêng lỗi thiếu RAM kích hoạt dọn các bộ đệm RAM liên quan.
+\end{Verbatim}
+
+\textit{Nguồn: luồng sinh văn bản và điều phối yêu cầu trong mã nguồn \cite{moe_tierengine_arch}.}
+
+Các điều kiện cần giữ khi thay đổi thuật toán gồm chuỗi token đầu vào, vị trí của KV, trọng số định tuyến và thứ tự tổng hợp đầu ra expert. Thay đổi những điều kiện này có thể làm kết quả khác đi, nên cần kiểm chứng số học tương ứng. Việc báo sẵn sàng ở bước 4 chưa có nghĩa suy luận hoàn tất; lỗi vẫn có thể xảy ra trong khi xử lý đầu vào hoặc sinh tiếp.
+
+\section{Chọn top-k và tổng hợp đầu ra expert}
+
+Router tính điểm cho từng expert rồi dùng softmax để tạo các xác suất. Hệ thống chọn $k$ expert có xác suất cao nhất. Khi hai expert bằng điểm, chỉ số expert nhỏ hơn được ưu tiên để có thứ tự xác định. Mã hiện tại phân hoạch danh sách để lấy nhóm đứng đầu, sau đó chỉ sắp xếp nhóm được chọn, thay vì luôn sắp toàn bộ $E$ expert \cite{moe_tierengine_arch}.
+
+Hai cấu hình OLMoE trong báo cáo không chuẩn hóa lại xác suất sau khi chọn top-k. Vì vậy, trọng số tổng hợp là xác suất ban đầu của expert được chọn, như công thức (2.5). Giả mã 4.2 mô tả cách xử lý một token ở giai đoạn sinh tiếp.
+
+\begin{Verbatim}[samepage=true,breaklines=true,breakanywhere=true,fontsize=\small,frame=single,framesep=3mm]
+Đầu vào: biểu diễn token, trọng số Router, k và trạng thái bộ đệm.
+1. Tính xác suất; chọn top-k theo điểm giảm dần,
+   nếu bằng điểm thì ưu tiên chỉ số expert nhỏ hơn.
+2. Xác định expert đã có bản dùng được và expert còn cần nạp.
+3. Lấy trọng số về RAM; có thể phối hợp nạp dữ liệu
+   với việc tính những expert đã sẵn sàng.
+4. Tính đầu ra từng expert trên CPU, lưu theo vị trí top-k.
+5. Sau khi dùng, xét lưu lại expert theo ngân sách và chính sách.
+6. Cộng các đầu ra theo thứ tự top-k với trọng số định tuyến.
+Đầu ra: vector kết quả của khối MoE cho token đó.
+\end{Verbatim}
+
+Thứ tự hoàn tất giữa các tác vụ có thể khác nhau, nhưng bước cộng cuối dùng thứ tự đã xác định để hạn chế thay đổi do thứ tự cộng số thực FP32. Việc tổ chức tải và tính đồng thời tạo cơ hội giảm thời gian chờ; mức chồng lấp thực tế còn phụ thuộc bộ expert, số luồng và băng thông. Báo cáo lần 1 chưa dùng dấu vết thời gian chi tiết để định lượng phần chồng lấp này.
+
+\section{Xử lý đầu vào theo lớp và tái sử dụng expert}
+
+Giai đoạn xử lý đầu vào đưa một tập token qua từng lớp mô hình. Sau khi Router xác định expert cho từng token, hệ thống tập hợp các token dùng chung expert. Một expert được lấy ra để phục vụ các token liên quan rồi mới được xét lưu lại, nhờ đó có thể tái sử dụng dữ liệu trọng số trong cùng lớp \cite{moe_tierengine_arch}.
+
+Trong đường chạy chính hiện tại, các token dùng chung một expert được xử lý lần lượt ở bước phân công tính toán này. Điều đó không có nghĩa mọi phép toán đều chạy một luồng: bản thân hạt nhân CPU vẫn có thể dùng Rayon. Cách tổ chức này cũng không phải phép nhân ma trận expert INT8 trên GPU.
+
+Nhóm từng thử phương án phân công nhiều token dùng chung expert thành một nhóm để tính song song. Mục đích là tăng mức song song, nhưng chi phí điều phối luồng, song song lồng nhau và truy cập bộ nhớ có thể làm lợi ích giảm hoặc đảo chiều. Trong thí nghiệm chín cặp trên i5, phương án theo nhóm chậm hơn ở bảy cặp. Vì vậy, đường chạy chính giữ cách xử lý lần lượt; phương án theo nhóm chỉ còn trong mã kiểm thử để tái lập \cite{exp_prefill_i5}. Kết quả này áp dụng cho cấu hình đã đo, không chứng minh phương án theo nhóm luôn chậm trên mọi phần cứng.
+
+\subsection{Nạp trước expert và dự đoán liên tầng}
+
+Nguyên mẫu có hai tình huống nạp trước khác nhau. Khi xử lý đầu vào theo lớp, Router đã xác định các expert cần dùng; hệ thống nạp trước một nhóm expert còn thiếu, giới hạn tối đa $k$ expert. Các expert còn lại được lấy khi đến lượt xử lý. Đây là nạp trước dựa trên nhu cầu đã biết, không phải dự đoán Router \cite{moe_tierengine_arch}.
+
+Khi sinh tiếp từng token, mã nguồn còn có cơ chế dự đoán expert cho lớp kế tiếp. Hệ thống tích lũy số lần các expert ở hai lớp liên tiếp cùng được chọn. Với mỗi expert ứng viên ở lớp sau, điểm dự đoán cộng các số đếm chuyển tiếp từ expert hiện tại và thêm một phần tư bộ đếm mức sử dụng của ứng viên, làm tròn xuống. Đây là điểm kinh nghiệm dựa trên lịch sử, không phải xác suất đã được chuẩn hóa.
+
+Cơ chế này chỉ chọn tối đa hai ứng viên khi lớp hiện tại không có expert còn thiếu cần nạp. Các ứng viên phải có điểm dương và chưa có bản dùng được trong bộ đệm RAM hoặc VRAM của lớp sau. Khi lớp hiện tại có dữ liệu cần nạp, hệ thống ưu tiên việc đó để hạn chế tranh chấp truy xuất. Nếu dự đoán không được dùng ở lớp tiếp theo, vùng đệm được hoàn trả cho cơ chế tái sử dụng.
+
+Dự đoán chỉ ảnh hưởng thời điểm nạp dữ liệu, không thay kết quả chọn top-k của Router. Chương 5 chưa có phép đối chứng tách riêng tác động của cơ chế này trên mô hình thật; sự hiện diện trong mã nguồn không đủ để kết luận mức tăng tốc.
+
+\section{Tính toán INT8, tái sử dụng vùng đệm và đọc tệp}
+
+Hạt nhân expert nhân trọng số INT8 với đầu vào FP32 rồi áp dụng hệ số tỉ lệ của từng hàng. Hai nhánh cổng và mở rộng tạo biểu diễn trung gian; phép chiếu cuối đưa kết quả về chiều ẩn. Cách tính không cần tạo một bản FP32 đầy đủ của toàn bộ ma trận expert trước mỗi lần dùng \cite{moe_tierengine_arch}.
+
+Các vòng lặp có đường kiểm thử đối chiếu với phép tính tuần tự đơn giản. Kiểm thử này giúp kiểm tra sai số số học của hạt nhân, không thay thế đánh giá chất lượng văn bản sau lượng tử hóa hoặc đo tốc độ toàn hệ thống. Tốc độ còn phụ thuộc thời gian cung cấp trọng số và các phần tính khác.
+
+Sau khi expert rời bộ đệm, hệ thống có thể giữ lại vùng cấp phát chứa trọng số và hệ số tỉ lệ để nạp expert tiếp theo. Tái sử dụng vùng đệm nhằm giảm cấp phát lặp, không có nghĩa mọi yêu cầu đều không cấp phát mới. Vùng đệm còn giữ phải tính vào ngân sách cùng dữ liệu expert đang lưu.
+
+Bộ đọc tệp xác định vị trí tensor rồi đọc theo vị trí đó. Dữ liệu vẫn đi qua hệ điều hành và bộ đệm RAM; đây không phải đường truyền trực tiếp từ NVMe vào VRAM. Lượng dữ liệu ứng dụng đọc và lượng dữ liệu SSD đọc vật lý vì thế cần được phân biệt.
+
+\section{Phối hợp bộ đệm inclusive và victim}
+
+Hai chính sách quyết định cách phối hợp RAM và VRAM, trong khi expert vẫn tính trên CPU. Bảng 4.1 mô tả nguyên tắc của từng chính sách.
+
+\begin{table}[htbp]
+\centering
+\caption{So sánh nguyên tắc inclusive và victim}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Khía cạnh} & \textbf{Inclusive đối chứng} & \textbf{Victim đang sử dụng} \\
+\midrule
+Bản sao giữa RAM và VRAM & Cho phép cùng expert có bản ở cả hai tầng & Ưu tiên VRAM cho expert rời bộ đệm RAM \\
+Khi loại expert khỏi RAM & Bản VRAM phụ thuộc trạng thái đã lưu & Thử đưa expert bị loại lên VRAM trước khi tái sử dụng vùng RAM \\
+Khi giữ lại expert trong RAM sau khi lấy từ VRAM & Có thể tiếp tục giữ bản VRAM & Khi GPU bật, bỏ bản VRAM tương ứng sau khi truyền về hoàn tất \\
+Đánh đổi & Bản sao trùng có thể giảm số expert khác nhau giữ được & Có thể giảm đọc tệp nhưng tăng truyền từ VRAM về RAM \\
+Chỉ số cần xem cùng nhau & Số lần nạp, lượng dữ liệu, thời gian và bộ nhớ & Các chỉ số tương tự, không chỉ tỷ lệ tìm thấy expert \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: hai chính sách trong mã nguồn và thí nghiệm đối chứng \cite{moe_tierengine_arch}, \cite{exp_web_session_i5}.}
+\end{table}
+
+
+
+Giả thuyết của victim là giảm bản sao trùng để hai tầng giữ được nhiều expert khác nhau hơn, từ đó giảm số lần cần đọc tệp. Điều này không bảo đảm mọi loại truyền dữ liệu đều giảm. Một expert trước đây phải đọc tệp có thể trở thành expert lấy từ VRAM, làm số byte truyền về RAM tăng. Chương 5 vì vậy xem đồng thời tổng thời gian sinh, lượng dữ liệu đọc tệp và các đường truyền.
+
+\subsection{Lựa chọn expert bị loại khỏi RAM}
+
+Chính sách phối hợp hai tầng ở trên khác với thuật toán chọn expert bị loại. Trong RAM, mã hiện tại kết hợp mức sử dụng và độ gần của lần truy cập, đồng thời phân biệt nhóm thử thách và nhóm được bảo vệ \cite{moe_tierengine_arch}.
+
+Expert mới vào thuộc nhóm thử thách; expert được dùng lại từ bộ đệm RAM được chuyển sang nhóm bảo vệ. Khi cần chỗ, hệ thống ưu tiên loại trong nhóm thử thách, chọn expert có bộ đếm mức sử dụng thấp nhất; nếu bằng nhau, chọn expert có lần dùng cuối xa hơn. Nếu không còn ứng viên nhóm thử thách, hệ thống áp dụng cách chọn tương tự trên các expert còn lại.
+
+Mã sử dụng mốc tham chiếu 70\% ngân sách khi xét hạ mức bảo vệ của một expert cũ. Đây là quy tắc điều phối trong triển khai, không phải cam kết phân vùng dung lượng cứng 70/30. Bộ đếm mức sử dụng còn được giảm theo các mốc của đồng hồ truy cập để hạn chế lịch sử cũ chi phối mãi. Báo cáo chưa có bộ thí nghiệm độc lập so sánh đầy đủ cơ chế này với LRU hoặc LFU thuần; không nhận kết quả đối chứng inclusive/victim là kết quả so sánh các thuật toán thay thế đó.
+
+\section{Tái sử dụng KV theo tiền tố chung dài nhất}
+
+Gọi $a$ là chuỗi token đã lưu và $b$ là chuỗi đầu vào mới, độ dài tiền tố chung dài nhất là:
+
+\begin{equation}
+\label{eq:4.1}
+r=\max\{j:0\leq j\leq\min(|a|,|b|),\ a_i=b_i\ \forall\ 0\leq i<j\}.
+\end{equation}
+
+Đầu vào đã được kiểm tra không rỗng. Khi có trạng thái phiên phù hợp, số token được tái sử dụng là:
+
+\begin{equation}
+\label{eq:4.2}
+r_{reuse}=\min(r,|b|-1).
+\end{equation}
+
+Giới hạn $|b|-1$ giữ lại ít nhất token cuối để tính điểm dự đoán, vì phiên không lưu điểm dự đoán của mọi vị trí. Nếu không có phiên tương ứng hoặc không có tiền tố chung, số token được tái sử dụng là 0 \cite{moe_tierengine_arch}.
+
+Thuật toán tìm phiên trước khi cấp các mảng KV mới. Nếu dùng lại được tiền tố, hệ thống cắt ngắn độ dài hợp lệ của các mảng khóa và giá trị đến đúng vị trí, rồi tính phần token còn thiếu. Vùng nhớ đã cấp phát có thể vẫn lớn hơn phần dữ liệu hợp lệ. Nếu không dùng lại được, hệ thống cấp bộ KV mới theo giới hạn cấu hình. Cách này hỗ trợ cả đầu vào được sửa hoặc rút ngắn nhưng vẫn giữ phần đầu giống nhau.
+
+Ví dụ, với chuỗi đã lưu là A, B, C, D và đầu vào mới là A, B, X, tiền tố chung dài hai token nên có thể dùng lại KV của A và B. Nếu đầu vào mới là A, B và trùng hoàn toàn phần đầu đã lưu, hệ thống chỉ dùng lại một token để tính lại B và tạo điểm dự đoán mới.
+
+Nội dung hội thoại giống nhau về ý nghĩa chưa bảo đảm chuỗi token giống nhau. Khuôn mẫu hội thoại, ranh giới token và việc mã hóa lại có thể làm thay đổi tiền tố. Bộ i5 ghi nhận dùng lại 11 trong 166 token ở lượt Love; bộ i7 ghi nhận 143 trong 162 token. Đây là các số đo trên hai đầu vào thực tế khác nhau, được phân tích riêng ở chương 5 \cite{exp_phase1_i5}, \cite{exp_phase1_i7}.
+
+\section{Ngân sách bộ nhớ và kiểm tra áp lực RAM}
+
+Kế hoạch bộ nhớ trước khi nạp mô hình được khái quát như sau:
+
+\begin{equation}
+\label{eq:4.3}
+B_{plan}=B_{dense}+B_{cache}+B_{session,reserve}+B_{request,reserve}+B_{overhead}.
+\end{equation}
+
+Các thành phần lần lượt là trọng số chung của mô hình, ngân sách bộ đệm expert, dự phòng phiên, dự phòng yêu cầu và phần phụ trợ. Hệ thống so kế hoạch với giới hạn tiến trình và RAM cần chừa. Các khoản dự phòng là ước lượng cho kiểm tra trước, không phải tổng RSS chính xác \cite{moe_tierengine_arch}.
+
+Khi sinh, hệ thống tiếp tục xét RSS và RAM có thể cấp phát, bao gồm ảnh hưởng của giới hạn cgroup v2 nhìn thấy được. Thống kê RAM chỉ được đọc tại các điểm kiểm tra hỗ trợ, với khoảng cách tối thiểu 25 ms giữa hai lần đọc. Đây là bảo vệ hợp tác: bộ nhớ vẫn có thể tăng giữa các lần kiểm tra.
+
+Công cụ thực nghiệm có bộ giám sát độc lập lấy mẫu định kỳ 250 ms. Hệ thống suy luận có thể từ chối hoặc kết thúc yêu cầu bằng lỗi có kiểm soát; bộ giám sát có thể dừng tiến trình do công cụ thử nghiệm tạo khi vượt ngưỡng cấu hình. Hai lớp này hỗ trợ hạn chế tác động của thiếu bộ nhớ, không chứng minh mọi tình huống vượt RAM đều bị ngăn chặn \cite{exp_ram_guard_i5}.
+
+\section{Tiêu chí lựa chọn giải pháp trong báo cáo lần 1}
+
+Một thay đổi được giữ lại khi đáp ứng các kiểm tra kết quả tương ứng và có cơ sở sử dụng trong phạm vi khảo sát. Cơ sở đó có thể là lợi ích trên bộ yêu cầu đã đo, kiểm soát tài nguyên hoặc hành vi đúng khi xảy ra lỗi; không nhất thiết mọi thay đổi đều tạo ra tăng tốc.
+
+Tái sử dụng tiền tố KV có kiểm thử số học và thí nghiệm theo cặp trên đầu vào phù hợp. Chính sách victim có thí nghiệm đối chứng trong cấu hình khảo sát. Phương án tính nhóm token dùng chung expert không được bật vì số đo theo cặp chưa ủng hộ. Cơ chế nạp trước liên tầng và chính sách chọn expert bị loại hiện chưa có bộ đối chứng riêng đủ để gán mức tăng tốc \cite{moe_tierengine_arch}, \cite{exp_web_session_i5}, \cite{exp_prefill_i5}.
+
+Các điều chỉnh về quyền sở hữu dữ liệu, ngân sách bộ nhớ và phản hồi theo luồng nhằm kiểm soát cấp phát, xử lý lỗi và tránh lưu câu trả lời chưa hoàn tất. Kết quả vận hành của bản sau cùng được đo riêng ở chương 5. Không cộng phần trăm lợi ích của từng thí nghiệm thành một hệ số tăng tốc tổng, vì các phép đo có điều kiện và phần công việc được khảo sát khác nhau.

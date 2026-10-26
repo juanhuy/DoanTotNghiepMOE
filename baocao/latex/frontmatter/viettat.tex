@@ -1,0 +1,53 @@
+\chapter*{DANH MỤC CÁC KÝ HIỆU VÀ CHỮ VIẾT TẮT}
+\addcontentsline{toc}{chapter}{DANH MỤC CÁC KÝ HIỆU VÀ CHỮ VIẾT TẮT}
+\markboth{KÝ HIỆU VÀ CHỮ VIẾT TẮT}{KÝ HIỆU VÀ CHỮ VIẾT TẮT}
+
+\begin{longtable}{@{}>{\RaggedRight\arraybackslash}p{2.2cm} >{\RaggedRight\arraybackslash}p{4.4cm} >{\RaggedRight\arraybackslash}p{8.5cm}@{}}
+\toprule
+\rowcolor{tableheader}
+\textbf{Ký hiệu/Viết tắt} & \textbf{Thuật ngữ tiếng Anh} & \textbf{Ý nghĩa sử dụng trong báo cáo} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+API & Application Programming Interface & Giao diện lập trình ứng dụng \\
+CPU & Central Processing Unit & Bộ xử lý trung tâm \\
+CUDA & Compute Unified Device Architecture & Nền tảng lập trình tính toán song song trên GPU của NVIDIA \\
+D2H & Device to Host & Truyền dữ liệu từ thiết bị (GPU) về bộ nhớ máy chủ (RAM) \\
+EOS & End of Sequence & Token báo hiệu kết thúc chuỗi sinh \\
+FFI & Foreign Function Interface & Giao tiếp gọi hàm giữa các ngôn ngữ lập trình khác nhau \\
+FP32 & 32-bit Floating Point & Định dạng số thực dấu phẩy động độ chính xác đơn (32 bit) \\
+GPU & Graphics Processing Unit & Bộ xử lý đồ họa chuyên dụng \\
+H2D & Host to Device & Truyền dữ liệu từ máy chủ (RAM) sang thiết bị (GPU) \\
+HTTP & Hypertext Transfer Protocol & Giao thức truyền siêu văn bản kết nối giao diện và máy chủ \\
+HWM & High Water Mark & Mức đỉnh bộ nhớ vật lý cao nhất do hệ điều hành ghi nhận \\
+INT8 & 8-bit Integer & Định dạng số nguyên 8 bit dùng để lượng tử hóa trọng số expert \\
+KV & Key--Value & Cặp ma trận Khóa và Giá trị được lưu trong cơ chế Attention \\
+LLM & Large Language Model & Mô hình ngôn ngữ lớn \\
+MoE & Mixture-of-Experts & Kiến trúc hỗn hợp chuyên gia \\
+NVMe & Non-Volatile Memory Express & Chuẩn giao tiếp truy cập nhanh bộ nhớ thể rắn (SSD) \\
+OOM & Out of Memory & Tình trạng thiếu bộ nhớ; yêu cầu có thể bị từ chối hoặc tiến trình bị dừng \\
+RAM & Random Access Memory & Bộ nhớ truy cập ngẫu nhiên chính của máy chủ \\
+RMSNorm & Root Mean Square Layer Normalization & Chuẩn hóa tầng dựa trên căn bậc hai trung bình bình phương \\
+RoPE & Rotary Position Embedding & Cơ chế nhúng vị trí theo phép quay \\
+RSS & Resident Set Size & Lượng bộ nhớ vật lý thực tế đang bị tiến trình chiếm dụng \\
+SSE & Server-Sent Events & Cơ chế truyền luồng dữ liệu sự kiện một chiều từ máy chủ \\
+TTFT & Time to First Token & Thời gian đến token đầu; phân biệt mốc đo trong engine và phía client \\
+VRAM & Video Random Access Memory & Bộ nhớ chuyên dụng trên cạc đồ họa (GPU) \\
+\end{longtable}
+
+\vspace{0.5cm}
+\noindent\textbf{Các ký hiệu đại số quy ước trong báo cáo:}
+\begin{itemize}
+    \item $L$: Số lớp Transformer ($L = 16$).
+    \item $d$: Chiều ẩn của mô hình ($d = 2048$).
+    \item $m$: Chiều trung gian của mỗi mạng chuyên gia ($m = 1024$).
+    \item $E$: Tổng số chuyên gia trên mỗi lớp ($E = 64$).
+    \item $k$: Số chuyên gia kích hoạt cho mỗi token trên mỗi lớp ($k = 8$).
+    \item $T$: Chiều dài ngữ cảnh (tính theo số lượng token).
+    \item $h_{kv}$: Số đầu Key-Value ($h_{kv} = 16$).
+    \item $d_h$: Chiều của mỗi đầu Attention ($d_h = 128$).
+    \item Đơn vị dung lượng: $\text{GB} = 10^9\text{ byte}$; $\text{GiB} = 2^{30}\text{ byte}$; $\text{MiB} = 2^{20}\text{ byte}$.
+\end{itemize}
+

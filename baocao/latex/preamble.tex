@@ -1,0 +1,176 @@
+% ==============================================================================
+% PREAMBLE - CẤU HÌNH ĐỊNH DẠNG THEO QUYẾT ĐỊNH 449/QĐ-HV (PTIT)
+% ==============================================================================
+
+\usepackage{fontspec}
+\IfFileExists{fonts/Times.TTF}{
+  \setmainfont{Times}[
+    Path = fonts/,
+    Extension = .TTF,
+    UprightFont = Times,
+    BoldFont = Timesbd,
+    ItalicFont = Timesi,
+    BoldItalicFont = Timesbi
+  ]
+}{
+  \IfFontExistsTF{Times New Roman}{
+    \setmainfont{Times New Roman}
+  }{
+    \PackageError{moe-report}{Times New Roman is required for the submission PDF}{Install Times New Roman or place the four Times*.TTF files in latex/fonts/.}
+  }
+}
+
+% 1. Thiết lập lề trang chuẩn QĐ 449:
+% Left: 3.0 cm, Right/Top/Bottom: 2.0 cm, Header/Footer: 1.0 cm
+\usepackage[
+    a4paper,
+    left=3.0cm,
+    right=2.0cm,
+    top=2.0cm,
+    bottom=2.0cm,
+    headheight=28pt,
+    headsep=8pt,
+    footskip=1.0cm
+]{geometry}
+
+% 2. Giãn dòng và giãn đoạn văn
+\usepackage{setspace}
+\setstretch{1.15} % Multiple 1.15
+\setlength{\parskip}{3pt} % Spacing before/after: 3pt
+\setlength{\parindent}{1.27cm} % Thụt đầu dòng chuẩn 1/2 inch
+\setlength{\emergencystretch}{2em} % Dự phòng ngắt dòng cho thuật ngữ kỹ thuật dài.
+
+% Dấu kết câu dùng cùng độ rộng dấu cách như giữa các từ.
+\AtBeginDocument{\frenchspacing}
+
+% 3. Căn đều 2 bên
+\usepackage{ragged2e}
+
+% 4. Toán học & Ký hiệu
+\usepackage{amsmath, amssymb, amsfonts, bm}
+\numberwithin{equation}{chapter} % Đánh số công thức theo chương: (chương.thứ_tự)
+
+% 5. Bảng biểu và hình ảnh
+\usepackage{graphicx}
+\usepackage{booktabs, longtable, tabularx, makecell, multirow}
+\usepackage{colortbl} % Tô màu nền hàng bảng
+\definecolor{tableheader}{rgb}{0.94, 0.95, 0.97} % Màu nền xanh-xám rất nhạt, hiện đại
+\definecolor{tablerowalt}{rgb}{0.98, 0.98, 0.99} % Màu xen kẽ dòng (nếu cần)
+
+\usepackage{caption}
+\captionsetup{
+    font=small,
+    labelfont=bf,
+    labelsep=colon,
+    justification=centering
+}
+\captionsetup[table]{name=Bảng, skip=6pt}
+\captionsetup[figure]{name=Hình, skip=6pt}
+
+% Khoảng cách float (bảng, hình) với văn bản xung quanh để trang thoáng, không chằng chịt
+\setlength{\textfloatsep}{16pt plus 2pt minus 2pt}
+\setlength{\floatsep}{14pt plus 2pt minus 2pt}
+\setlength{\intextsep}{14pt plus 2pt minus 2pt}
+\renewcommand{\arraystretch}{1.25} % Giãn cách hàng trong bảng thoáng, đẹp mắt
+
+% 6. Vẽ sơ đồ TikZ
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, backgrounds}
+\tikzset{
+    box/.style={rectangle, rounded corners=3pt, minimum width=2.5cm, minimum height=0.8cm, text centered, draw=black!80, fill=blue!5, font=\small},
+    proc/.style={rectangle, rounded corners=2pt, text centered, draw=black!80, fill=gray!10, font=\small, minimum height=0.7cm},
+    decision/.style={diamond, aspect=2, draw=black!80, fill=orange!10, text centered, font=\small, inner sep=1pt},
+    arrow/.style={thick, ->, >=Stealth}
+}
+
+% 7. Mã nguồn / listings
+\usepackage{listings}
+\usepackage{fvextra}
+\usepackage{xcolor}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.97}
+
+\lstset{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegray},
+    keywordstyle=\color{blue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    frame=single,
+    rulecolor=\color{black!20}
+}
+
+% 8. Header và Footer; áp dụng cả trang mở đầu chương.
+\usepackage{fancyhdr}
+\newcommand{\reportpagefields}{%
+    \fancyhf{}%
+    \fancyhead[L]{\parbox[b]{0.36\textwidth}{\RaggedRight\fontsize{10pt}{12pt}\selectfont\itshape Đồ án tốt nghiệp Đại học}}%
+    \fancyhead[R]{\parbox[b]{0.61\textwidth}{\RaggedLeft\fontsize{10pt}{12pt}\selectfont\itshape\nouppercase{\leftmark}}}%
+    \fancyfoot[L]{\footnotesize\itshape \reportstudentone, \reportstudenttwo{} - \reportclass}%
+    \fancyfoot[R]{\small\thepage}%
+    \renewcommand{\headrulewidth}{0.4pt}%
+    \renewcommand{\footrulewidth}{0.4pt}%
+}
+\fancypagestyle{reportbody}{\reportpagefields}
+\fancypagestyle{plain}{\reportpagefields}
+\pagestyle{reportbody}
+\renewcommand{\chaptermark}[1]{\markboth{Chương \thechapter. #1}{}}
+
+% 9. Định dạng đề mục (titlesec)
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\fontsize{14pt}{18pt}\bfseries\centering}
+  {CHƯƠNG \thechapter}
+  {8pt}
+  {\fontsize{14pt}{18pt}\bfseries}
+
+\titleformat{\section}
+  {\normalfont\fontsize{13pt}{16pt}\bfseries}
+  {\thesection}{1em}{}
+
+\titleformat{\subsection}
+  {\normalfont\fontsize{13pt}{16pt}\bfseries}
+  {\thesubsection}{1em}{}
+
+\titleformat{\subsubsection}
+  {\normalfont\fontsize{13pt}{16pt}\bfseries\itshape}
+  {\thesubsubsection}{1em}{}
+
+\titlespacing*{\chapter}{0pt}{10pt}{20pt}
+\titlespacing*{\section}{0pt}{12pt plus 4pt minus 2pt}{6pt plus 2pt minus 2pt}
+\titlespacing*{\subsection}{0pt}{10pt plus 3pt minus 2pt}{4pt plus 2pt minus 2pt}
+
+% 10. Hyperlink và Trích dẫn
+\usepackage{xurl} % Cho phép ngắt dòng đường dẫn và hash dài mà không tràn lề.
+\usepackage[unicode, hidelinks]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\setlength{\bibsep}{3pt}
+% Không cộng khoảng cách phân khối vào dấu cách sau câu trong tài liệu tham khảo.
+\AddToHook{cmd/bibitem/before}{\renewcommand{\newblock}{\unskip\space}}
+\renewcommand{\contentsname}{MỤC LỤC}
+\renewcommand{\listtablename}{DANH MỤC CÁC BẢNG}
+\renewcommand{\listfigurename}{DANH MỤC CÁC HÌNH VẼ}
+\renewcommand{\bibname}{TÀI LIỆU THAM KHẢO}
+
+% Tránh dòng đơn lẻ của đoạn văn ở đầu hoặc cuối trang.
+\widowpenalty=10000
+\clubpenalty=10000
+
+% Giữ bảng và hình trong đúng mục đang trình bày.
+\usepackage[section]{placeins}
+\usepackage{float}
+
+% Giữ hình và bảng trước tiểu mục kế tiếp.
+\AddToHook{cmd/subsection/before}{\FloatBarrier}

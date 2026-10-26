@@ -1,0 +1,69 @@
+\chapter{TỔNG QUAN ĐỀ TÀI VÀ BÀI TOÁN NGHIÊN CỨU}
+
+
+\section{Bối cảnh và động cơ nghiên cứu}
+
+Mô hình ngôn ngữ lớn cần nhiều bộ nhớ để lưu các trọng số phục vụ tính toán. Với mô hình hỗn hợp chuyên gia (Mixture-of-Experts, MoE), các lớp MoE có nhiều mạng chuyên gia, gọi là expert. Khi xử lý một token, tức một đơn vị văn bản mà mô hình sử dụng, bộ định tuyến Router chỉ chọn một số expert để tính. Vì vậy, số tham số tham gia xử lý mỗi token có thể nhỏ hơn tổng số tham số của mô hình.
+
+OLMoE-1B-7B là một mô hình ngôn ngữ mở sử dụng kiến trúc MoE. Mô hình có phiên bản cơ sở và các phiên bản Instruct được huấn luyện bổ sung để thực hiện chỉ dẫn \cite{olmoe}. Đề tài sử dụng OLMoE để nghiên cứu cách giữ những expert cần thiết trong bộ nhớ và nạp các expert còn thiếu khi chúng được lựa chọn. Cách tổ chức này khai thác đặc điểm chỉ kích hoạt một phần expert của mô hình.
+
+Phần cứng hạn chế được xét theo lượng tài nguyên có thể dành cho mô hình. RAM còn phải phục vụ hệ điều hành và các ứng dụng khác; VRAM là bộ nhớ trên GPU, cũng có thể được dùng cho hiển thị và các tác vụ khác. Ngoài dung lượng, tốc độ tính toán và chi phí chuyển trọng số giữa SSD, RAM và VRAM đều ảnh hưởng thời gian phản hồi. Do đó, bài toán cần xem xét cả nơi lưu dữ liệu và cách phối hợp CPU với GPU.
+
+\section{Phát biểu bài toán}
+
+Bài toán của đề tài là tổ chức suy luận MoE trong lượng bộ nhớ được phép sử dụng. Hệ thống chỉ giữ một phần trọng số expert trong RAM và VRAM; các expert chưa có sẵn được nạp từ file khi cần. Việc lưu trữ, di chuyển dữ liệu và tính toán phải được phối hợp để sinh văn bản theo mô hình đã chọn.
+
+Đầu vào gồm các tệp trọng số đã chuyển đổi sang định dạng được hỗ trợ, cấu hình mô hình, bộ mã hóa văn bản thành token (tokenizer), câu hỏi và lịch sử hội thoại. Hệ thống còn nhận các giới hạn như dung lượng bộ đệm, độ dài ngữ cảnh và số token được phép sinh. Đầu ra gồm văn bản phản hồi, trạng thái kết thúc và số liệu về thời gian, truy xuất dữ liệu, bộ nhớ. Ba yêu cầu chính là:
+
+\begin{enumerate}
+\item \textbf{Thực hiện đúng quá trình suy luận của mô hình.} Bộ đệm (cache) và cơ chế chuyển dữ liệu phải cung cấp đúng trọng số cho expert được Router chọn, giữ đúng vị trí token và kết hợp đúng các đầu ra expert. Ví dụ, lấy một expert từ RAM thay vì từ file phải giữ nguyên nội dung trọng số dùng cho phép tính. Yêu cầu này được kiểm tra bằng các trường hợp đối chiếu với kết quả tham chiếu trong sai số cho phép. Tính đúng của triển khai, chất lượng câu trả lời và ảnh hưởng của lượng tử hóa là những nội dung được đánh giá riêng.
+\item \textbf{Quản lý bộ nhớ và xử lý yêu cầu có kiểm soát.} Hệ thống cần chọn expert để giữ lại hoặc chuyển tầng, đồng thời tính cả bộ nhớ cho những thành phần ngoài expert và dữ liệu trung gian. Bộ đệm key/value (KV cache), dùng để tái sử dụng một phần tính toán của các token đã xử lý, cũng chiếm bộ nhớ. Vì vậy, cache expert được cấp 1 GiB không có nghĩa toàn bộ tiến trình chỉ dùng 1 GiB RAM. Khi phát hiện yêu cầu vượt giới hạn ngữ cảnh hoặc áp lực bộ nhớ vượt ngưỡng kiểm tra, hệ thống cần phản hồi lỗi phù hợp. Khi người dùng dừng phản hồi, tác vụ cần kết thúc có kiểm soát để hệ thống tiếp nhận yêu cầu tiếp theo. Cơ chế kiểm tra của nguyên mẫu được thực hiện tại các thời điểm trong quá trình xử lý; mức độ kiểm soát thực tế được đánh giá ở chương 5.
+\item \textbf{Đánh giá hiệu năng bằng đầu vào và chỉ số xác định rõ.} Mỗi phép thử cần ghi câu hỏi, lịch sử, số token được phép sinh và trạng thái cache. Các chỉ số gồm thời gian đến token đầu, tốc độ sinh tiếp, thời gian cung cấp expert và mức sử dụng bộ nhớ. Ví dụ, tỷ lệ tìm thấy expert trong cache tăng có thể giảm nhu cầu đọc file nhưng vẫn phát sinh chuyển dữ liệu từ VRAM về RAM. Do đó, hiệu quả của một cách triển khai cần được xem cùng độ trễ và thời gian sinh của cả yêu cầu, thay vì chỉ dựa vào một chỉ số thành phần.
+\end{enumerate}
+
+Các yêu cầu trên định hướng thiết kế và kiểm thử. Chương 5 trình bày mức độ đáp ứng của nguyên mẫu trong các điều kiện đã thực nghiệm.
+
+\section{Mục tiêu và câu hỏi nghiên cứu}
+
+Mục tiêu của đề tài là thiết kế và xây dựng hệ thống suy luận cho các mô hình MoE được lựa chọn trên phần cứng hạn chế. Hướng tiếp cận gồm phân tầng bộ nhớ, nạp expert theo nhu cầu và khảo sát cách giảm chi phí truy xuất dữ liệu.
+
+Trong kỳ 1, nhóm triển khai nguyên mẫu cho kiến trúc OLMoE và ghi nhận vận hành với hai phiên bản bộ trọng số, còn gọi là checkpoint, trên hai cấu hình phần cứng. Hai bộ kết quả phục vụ mô tả hệ thống trong từng điều kiện; việc xếp hạng tốc độ giữa hai máy hoặc hai phiên bản mô hình không thuộc mục tiêu của kỳ báo cáo này.
+
+\begin{table}[htbp]
+\centering
+\caption{Câu hỏi nghiên cứu và cách khảo sát trong kỳ 1}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Câu hỏi} & \textbf{Cách khảo sát} \\
+\midrule
+Hệ thống có thể suy luận khi chỉ giữ một phần expert trong bộ nhớ không? & Chạy mô hình thật, ghi kết quả đầu ra và theo dõi bộ nhớ \\
+Những công việc nào chiếm nhiều thời gian? & Đo riêng xử lý đầu vào, sinh token, tải expert và các phần tính toán \\
+Cache RAM và VRAM nên phối hợp như thế nào? & Thử hai chính sách: cho phép lưu bản sao trên hai tầng hoặc ưu tiên dùng VRAM cho expert bị loại khỏi RAM \\
+Tái sử dụng kết quả của phần đầu hội thoại có giúp giảm tính toán không? & Thử các đầu vào có tiền tố token chung, đo thời gian và đối chiếu kết quả \\
+Tăng mức xử lý song song có làm suy luận nhanh hơn không? & Đối chứng xử lý tuần tự và xử lý song song các token đầu vào dùng chung expert \\
+Làm thế nào để kiểm soát nhu cầu bộ nhớ khi suy luận? & Đặt giới hạn bộ đệm, kiểm tra trước khi nạp mô hình và theo dõi bộ nhớ khi chạy \\
+\bottomrule
+\end{tabularx}
+
+
+\end{table}
+
+
+
+\section{Phạm vi kỳ báo cáo lần 1}
+
+Nguyên mẫu chạy trên máy tính cục bộ và xử lý một yêu cầu OLMoE tại một thời điểm. Khi sinh văn bản, hệ thống chọn token có điểm dự đoán cao nhất ở mỗi bước, gọi là giải mã tham lam (greedy decoding). Độ dài ngữ cảnh và số token đầu ra được giới hạn bằng cấu hình.
+
+Trọng số expert được lưu dưới dạng số nguyên 8 bit (INT8); các phép tính với dữ liệu trung gian dùng số thực dấu phẩy động 32 bit (FP32). GPU hỗ trợ một số phép toán và lưu expert khi thiết bị đáp ứng yêu cầu. Giao diện web cho phép gửi hội thoại, nhận nội dung từng phần và dừng phản hồi.
+
+Phạm vi kỳ 1 gồm tìm hiểu lý thuyết, xây dựng nguyên mẫu và thực nghiệm sơ bộ. Nhóm sử dụng các bộ trọng số có sẵn, không huấn luyện hoặc tinh chỉnh mô hình. Triển khai expert INT4 cho OLMoE, phục vụ nhiều người dùng đồng thời và đánh giá chất lượng quy mô lớn nằm ngoài phạm vi thực hiện của kỳ này.
+
+\section{Phương pháp nghiên cứu}
+
+Nhóm kết hợp nghiên cứu tài liệu, xây dựng nguyên mẫu và thực nghiệm. Các trường hợp nhỏ có kết quả tham chiếu được dùng để kiểm tra tính toán. Mô hình thật được dùng để quan sát thời gian phản hồi, tốc độ sinh và mức sử dụng bộ nhớ.
+
+Các thay đổi như chính sách cache hoặc tái sử dụng KV được khảo sát bằng phép đối chứng riêng. Phiên bản hệ thống tích hợp được ghi nhận trên i5 và i7; mỗi bộ có bốn nhóm kết quả, năm mẫu mỗi nhóm, theo checkpoint và cấu hình của máy tương ứng.
+
+Dung lượng lý thuyết được dùng để giải thích thiết kế, còn số liệu đo mô tả hành vi thực tế. Mỗi kết quả đi kèm điều kiện và phạm vi áp dụng. Do số mẫu và câu hỏi còn hạn chế, các kết quả là khảo sát ban đầu, chưa đại diện cho mọi cách sử dụng mô hình.

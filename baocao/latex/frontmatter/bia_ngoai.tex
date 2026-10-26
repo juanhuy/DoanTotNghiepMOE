@@ -1,0 +1,48 @@
+% Bìa duy nhất của báo cáo định kỳ lần 1; thông tin chung ở metadata.tex.
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+    \draw[line width=0.8pt]
+      ([xshift=2.0cm,yshift=-1.5cm]current page.north west)
+      rectangle ([xshift=-1.5cm,yshift=1.5cm]current page.south east);
+    \draw[line width=0.4pt]
+      ([xshift=2.1cm,yshift=-1.6cm]current page.north west)
+      rectangle ([xshift=-1.6cm,yshift=1.6cm]current page.south east);
+\end{tikzpicture}
+\begin{center}
+    {\bfseries\fontsize{13pt}{16pt}\selectfont
+      BỘ KHOA HỌC VÀ CÔNG NGHỆ\\[0.12cm]
+      HỌC VIỆN CÔNG NGHỆ BƯU CHÍNH VIỄN THÔNG\\[0.12cm]
+      CƠ SỞ TẠI THÀNH PHỐ HỒ CHÍ MINH\par}
+    \vspace{0.65cm}
+    \includegraphics[height=3.0cm,keepaspectratio]{images/logo.png}\par
+    \vspace{0.65cm}
+    {\bfseries\fontsize{36pt}{42pt}\selectfont ĐỒ ÁN\par}
+    \vspace{0.15cm}
+    {\bfseries\fontsize{36pt}{42pt}\selectfont TỐT NGHIỆP ĐẠI HỌC\par}
+    \vspace{0.4cm}
+    {\bfseries\fontsize{15pt}{19pt}\selectfont BÁO CÁO ĐỊNH KỲ LẦN 1\par}
+    \vspace{0.9cm}
+    {\bfseries\fontsize{16pt}{21pt}\selectfont
+      \textit{Đề tài:} ``\reporttitlecover''\par}
+\end{center}
+
+\vfill
+\begingroup
+\setlength{\tabcolsep}{0pt}
+\renewcommand{\arraystretch}{1.35}
+\fontsize{13pt}{17pt}\selectfont\bfseries
+\noindent\begin{tabularx}{\textwidth}{@{}>{\RaggedRight\arraybackslash}p{6.3cm} >{\RaggedRight\arraybackslash}X@{}}
+    \multicolumn{2}{@{}l@{}}{Giáo viên hướng dẫn: \reportsupervisorcover}\\[0.25cm]
+    \multicolumn{2}{@{}l@{}}{Nhóm sinh viên thực hiện: \reportgroup}\\[0.12cm]
+    Mã SV: \reportstudentoneid & Họ và tên: \reportstudentonecover\\[0.12cm]
+    Mã SV: \reportstudenttwoid & Họ và tên: \reportstudenttwocover\\[0.18cm]
+    Khóa: \reportcohort & Ngành: \reportmajor
+\end{tabularx}
+\endgroup
+\vfill
+\begin{center}
+    {\bfseries\fontsize{13pt}{16pt}\selectfont
+      TP. HỒ CHÍ MINH, NĂM \reportyear}
+\end{center}
+\end{titlepage}

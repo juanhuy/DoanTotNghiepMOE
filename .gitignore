@@ -14,3 +14,6 @@ references
 .env
 .env.*
 !.env.example
+
+# Fonts installed locally for the submission PDF; not repository payload.
+/baocao/latex/fonts/*.TTF

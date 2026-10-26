@@ -1,0 +1,752 @@
+\chapter{THIẾT KẾ THỰC NGHIỆM VÀ KẾT QUẢ BƯỚC ĐẦU}
+
+
+\section{Mục tiêu và phân loại bằng chứng}
+
+Thực nghiệm kỳ 1 phục vụ hai mục đích: mô tả nguyên mẫu vận hành trong điều kiện cụ thể và kiểm tra các giả thuyết triển khai đã khảo sát. Bộ vận hành i5/i7 và các phép đối chứng thuật toán trả lời những câu hỏi khác nhau; chúng được trình bày tách biệt, không dùng để xếp hạng tốc độ hai máy.
+
+\begin{table}[htbp]
+\centering
+\caption{Phân loại và ý nghĩa của các nhóm thực nghiệm}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Nhóm} & \textbf{Thiết kế đã thực hiện} & \textbf{Câu hỏi được làm rõ} \\
+\midrule
+Vận hành i5 & 20 mẫu và 5 warmup; cold, warm, conversation & Nguyên mẫu trên cấu hình i5/model0924 có độ trễ, tốc độ và bộ nhớ quan sát như thế nào? \\
+Vận hành i7 & 20 mẫu và 5 warmup; cold, warm, conversation & Nguyên mẫu trên cấu hình i7/model0125 có độ trễ, tốc độ và bộ nhớ quan sát như thế nào? \\
+Inclusive/victim & Cùng máy/server, thứ tự AB/BA; 2 mẫu mỗi policy và prompt & Thay cách phối hợp RAM–VRAM có giảm truy xuất file và thời gian phản hồi trong điều kiện đã thử không? \\
+KV prefix & 5 cặp đối chứng, giữ tiền tố chung; max output 1 & Tránh tính lại tiền tố hợp lệ giúp giảm bao nhiêu thời gian prefill trong workload này? \\
+Dispatch prefill & 9 cặp serial/grouped trong cùng tiến trình & Đưa thêm song song vào khâu dispatch có mang lại lợi ích thực tế không? \\
+RAM guard & Hai lượt 12 request và một cấu hình dự kiến bị từ chối & Bộ nhớ diễn biến thế nào trong thời gian quan sát; cấu hình vượt dự toán có được chặn trước không? \\
+Chức năng và chất lượng sơ bộ & Fixture số học, smoke chat/Stop/reset và 12 câu heuristic & Các đường xử lý đã kiểm có hoạt động đúng; những lỗi đầu ra nào cần được ghi nhận? \\
+\bottomrule
+\end{tabularx}
+
+
+\end{table}
+
+
+
+Các nhóm thực nghiệm dùng hồ sơ đã lưu \cite{exp_phase1_i5,exp_web_session_i5,exp_prefill_i5,exp_ram_guard_i5,exp_smoke_validation,exp_phase1_i7}. Các kết quả đo không được tạo mới trong quá trình biên tập báo cáo. Corpus lịch sử và nhật ký kỹ thuật chỉ phục vụ tra cứu bổ sung \cite{moe_progress_matrix}.
+
+Ba kịch bản được thiết kế chi tiết tại mục 5.3.2: hỏi khi bộ đệm ứng dụng được đặt lại, hỏi lại sau một lượt làm ấm và hội thoại hai lượt có lịch sử. Chúng dùng hai chuỗi “Where is Mars” và “What is love ?”. Việc lặp câu hỏi là điều kiện thuận lợi cho bộ đệm; hai câu hỏi chưa đại diện cho mọi tác vụ hoặc tạo thành tập đánh giá chất lượng chuẩn hóa.
+
+Fixture kiểm số học trong trường hợp xác định, smoke kiểm hành vi sử dụng, còn benchmark đo hiệu năng và bộ nhớ. Kết quả của một nhóm không thay thế kết quả nhóm khác: trả lời hợp lý không chứng minh phép tính đầy đủ tương đương mô hình gốc; tốc độ cao không chứng minh chất lượng tốt; không OOM trong một lượt không bảo đảm vận hành dài hạn.
+
+\section{Môi trường và cấu hình thực nghiệm i5}
+
+\begin{table}[htbp]
+\centering
+\caption{Môi trường và cấu hình bộ i5 phase1-v1}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Thuộc tính} & \textbf{Giá trị/điều kiện} \\
+\midrule
+Testbed & i5, người dùng xác nhận \\
+CPU quan sát & Intel Core i5-10500H @2.50GHz, 12 logical CPUs \\
+RAM vật lý quan sát & 16.571.330.560 byte, khoảng 15,43 GiB \\
+GPU inventory & NVIDIA GeForce GTX1650 with Max-Q Design, 4096 MiB \\
+GPU runtime & Requested auto; enabled trong status thực \\
+Hồ sơ nhận diện & Source, checkpoint và binary được ghi trong raw; các record trong bộ i5 nhất quán \\
+Rayon threads & 8 \\
+Expert cache policy & victim \\
+Cache & 64 MiB/layer; 1 GiB cấu hình trên 16 lớp \\
+Context/max output & 512/128 token \\
+Engine RAM guard & RSS 5 GiB; headroom 1 GiB \\
+Watchdog & RSS 5,5 GiB; MemAvailable 1,5 GiB; process swap 128 MiB; 250 ms \\
+Trình tự & Cold, sau đó warm, sau đó conversation, tuần tự \\
+Môi trường & Linux có \nolinkurl{/proc}; tải desktop/nhiệt/tần số không cố định \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: ba \texttt{result.json}, \texttt{memory.jsonl} và \texttt{watchdog.json} của \cite{exp_phase1_i5}. GPU inventory không có nghĩa toàn bộ 4096 MiB đều dành được cho model; không suy số kernel GPU từ một nhãn enabled.}
+\end{table}
+
+
+
+Thông tin phần cứng trong bảng được lấy từ môi trường thực nghiệm. Các thông số chưa được thu thập như model SSD, băng thông RAM và PCIe không được sử dụng để suy nguyên nhân hiệu năng. Hash checkpoint được lưu trong hồ sơ để nhận diện dữ liệu đã chạy.
+
+\section{Đầu vào, lệnh chạy và cách đọc kết quả}
+
+\subsection{Nội dung câu hỏi và lịch sử đầu vào}
+
+Bộ vận hành trên mỗi máy dùng hai câu hỏi tiếng Anh nguyên văn:
+
+\begin{itemize}
+\item \textbf{Câu hỏi thứ nhất:} “Where is Mars”, nghĩa là hỏi vị trí của Sao Hỏa. Chuỗi gửi đi không có dấu hỏi ở cuối.
+\item \textbf{Câu hỏi thứ hai:} “What is love ?”, nghĩa là hỏi về khái niệm tình yêu. Chuỗi gửi đi có một khoảng trắng trước dấu hỏi.
+\end{itemize}
+
+Bản dịch chỉ giải thích ý nghĩa; đầu vào thực nghiệm giữ nguyên chuỗi tiếng Anh. Mỗi câu hỏi được đưa vào khuôn mẫu hội thoại rồi mã hóa thành token, nên số token còn phụ thuộc mô hình và bộ mã hóa của từng máy. Các câu hỏi được chọn để quan sát suy luận đơn lượt và hội thoại chuyển chủ đề, không phải tập câu hỏi chuẩn hóa để đánh giá kiến thức.
+
+Yêu cầu đầu tiên không có lịch sử trước đó. Yêu cầu thứ hai trong kịch bản hội thoại chứa đúng ba thông điệp theo thứ tự: người dùng hỏi “Where is Mars”; trợ lý trả lời bằng toàn bộ văn bản thực tế của lượt đầu; người dùng hỏi “What is love ?”. Cùng một mã phiên được giữ giữa hai yêu cầu để hệ thống tìm phần KV có thể tái sử dụng. Câu trả lời lượt đầu có thể khác giữa hai model, vì vậy không thay bằng một câu trả lời mẫu khi tái dựng đầu vào.
+
+Ví dụ yêu cầu đầu tiên gửi đến \nolinkurl{POST /v1/chat/completions}:
+
+\begin{lstlisting}
+{
+  "model": "olmoe",
+  "messages": [{"role": "user", "content": "Where is Mars"}],
+  "session_id": "phase1-example",
+  "max_tokens": 128,
+  "stream": true
+}
+\end{lstlisting}
+
+Danh sách thông điệp là nội dung thực gửi; mã phiên phục vụ tìm KV; giới hạn sinh là 128 token; lựa chọn streaming yêu cầu trả nội dung dần qua SSE. Ví dụ trên là khuôn dạng yêu cầu, không phải sao chép mã phiên ngẫu nhiên của một lượt đo cũ.
+
+\subsection{Thiết kế chi tiết ba kịch bản vận hành}
+
+Ba kịch bản được thực hiện tuần tự trên từng máy, với bộ trọng số và cấu hình của máy đó. Mỗi kịch bản mở một tiến trình máy chủ riêng, giữ mô hình đã nạp trong suốt năm vòng và thu bộ nhớ liên tục. Mỗi yêu cầu cho phép sinh tối đa 128 token, trong cửa sổ ngữ cảnh 512 token. Giới hạn sinh không bảo đảm câu trả lời kết thúc trọn ý.
+
+\textbf{Kịch bản K1: trả lời một câu hỏi khi bộ đệm ứng dụng được đặt lại (cold).}
+
+Mục tiêu là ghi nhận chi phí phục vụ yêu cầu khi các expert phải được đưa lại vào bộ đệm của hệ suy luận. Một vòng được thực hiện như sau:
+
+\begin{enumerate}
+\item Đặt lại bộ đệm expert trong RAM, VRAM và trạng thái KV phiên của ứng dụng. Trọng số chung của mô hình vẫn được giữ trong tiến trình.
+\item Tạo phiên mới, không có lịch sử hội thoại.
+\item Gửi một thông điệp người dùng chứa đúng câu “Where is Mars”.
+\item Nhận phản hồi đến khi có kết quả cuối, lưu văn bản, số token, lý do dừng và các chỉ số của yêu cầu.
+\item Đặt lại bộ đệm trước vòng kế tiếp; thực hiện tổng cộng năm vòng.
+\end{enumerate}
+
+K1 tạo năm mẫu đo và không có yêu cầu làm ấm. Các số TTFT, tốc độ sinh tiếp, tổng thời gian, lượng đọc tệp và bộ nhớ mô tả trạng thái lạnh của ứng dụng. Việc đặt lại không khởi động lại máy chủ mỗi mẫu và không xóa bộ đệm tệp của hệ điều hành, nên không gọi đây là SSD lạnh hoàn toàn.
+
+\textbf{Kịch bản K2: lặp lại cùng câu hỏi sau một lượt làm ấm (warm).}
+
+Mục tiêu là khảo sát việc dùng lại trọng số expert khi vừa xử lý một đầu vào tương tự, đồng thời không dùng KV của lượt làm ấm cho lượt đo. Một vòng gồm:
+
+\begin{enumerate}
+\item Đặt lại bộ đệm ứng dụng ở đầu vòng.
+\item Tạo phiên mới và gửi “Where is Mars” để làm ấm, cho phép sinh tối đa 128 token. Lượt này được lưu riêng, không tính vào thống kê chính.
+\item Sau khi lượt làm ấm hoàn tất, tạo một phiên mới khác và bỏ lịch sử hội thoại của lượt làm ấm; giữ nguyên bộ đệm expert vừa hình thành.
+\item Gửi lại đúng câu “Where is Mars” với một thông điệp người dùng, rồi đo đến khi phản hồi kết thúc.
+\item Bắt đầu vòng kế tiếp bằng việc đặt lại bộ đệm; thực hiện năm vòng như trên.
+\end{enumerate}
+
+K2 tạo năm lượt làm ấm và năm mẫu đo. Phiên mới ở bước 3 giúp tránh gộp lợi ích KV vào lợi ích dùng lại expert. Lặp cùng một đầu vào là điều kiện thuận lợi cho bộ đệm, chưa đại diện cho các câu hỏi đa dạng trong sử dụng thực tế.
+
+\textbf{Kịch bản K3: hội thoại hai lượt, từ hỏi vị trí Sao Hỏa sang hỏi khái niệm tình yêu (conversation).}
+
+Mục tiêu là ghi nhận thay đổi chi phí khi yêu cầu sau có lịch sử và có thể tái sử dụng một phần KV. Mỗi vòng được tổ chức như sau:
+
+\begin{enumerate}
+\item Đặt lại bộ đệm ứng dụng và tạo phiên hội thoại mới.
+\item Gửi “Where is Mars” khi chưa có lịch sử. Lưu kết quả của lượt này vào nhóm \textbf{K3.1: lượt đầu}.
+\item Giữ cùng mã phiên, không đặt lại bộ đệm. Dựng lịch sử gồm câu hỏi đầu, toàn bộ câu trả lời vừa nhận và câu hỏi tiếp “What is love ?”.
+\item Gửi lịch sử ba thông điệp đó, lưu kết quả vào nhóm \textbf{K3.2: lượt tiếp}.
+\item Kết thúc vòng, đặt lại trước vòng mới; lặp năm lần.
+\end{enumerate}
+
+K3 tạo mười mẫu đo, gồm năm mẫu K3.1 và năm mẫu K3.2, không có lượt làm ấm tách riêng. K3.2 được đọc cùng số token đầu vào và số token KV được tái sử dụng. Giữ cùng phiên không bảo đảm dùng lại toàn bộ đầu vào, vì phần tiền tố token còn phải khớp. Thay đổi cả lịch sử và nội dung câu hỏi làm đây trở thành quan sát hội thoại cụ thể, không phải phép cô lập ảnh hưởng của một yếu tố duy nhất.
+
+Tổng một bộ vận hành là 20 yêu cầu đo và 5 lượt làm ấm: K1 có 5 mẫu, K2 có 5 mẫu, K3.1 có 5 mẫu và K3.2 có 5 mẫu. Các mã K1, K2, K3.1, K3.2 được dùng trong bảng kết quả; tên kịch bản truyền cho công cụ vẫn là cold, warm và conversation. Hai máy áp dụng cùng trình tự này nhưng dùng model và lịch sử thực tế riêng \cite{exp_phase1_i5}, \cite{exp_phase1_i7}.
+
+\subsection{Lệnh tổ chức bộ đo}
+
+Đoạn lệnh dưới đây mô tả cách gọi runner cho cấu hình i5 đã ghi trong báo cáo. Đây là hướng dẫn phương pháp, không phải số đo mới phát sinh khi biên soạn. Trên terminal, thực hiện từ thư mục gốc dự án:
+
+\begin{lstlisting}[language=bash]
+export MOE_RAM_LIMIT_BYTES=5368709120
+export MOE_RAM_HEADROOM_BYTES=1073741824
+
+for scenario in cold warm conversation; do
+  python3 tools/run_scenarios.py "$scenario" \
+    --testbed i5 --gpu auto --threads 8 \
+    --model-dir models/olmoe-1b-7b-int8 \
+    --cache 64 --context 512 --max-tokens 128 --runs 5 \
+    --single-policy --expert-cache-policy victim \
+    --output-root benchmarks/runs/phase1-v1 || break
+done
+\end{lstlisting}
+
+Các lệnh được dựng lại từ cấu hình và công cụ đã lưu, không phải bản chép đầy đủ lịch sử terminal của từng lượt. Chạy lại cùng phương pháp tạo ra một bộ kết quả mới; thời gian có thể thay đổi do phiên bản mã, trọng số, trạng thái bộ đệm, tải nền và điều kiện phần cứng. Muốn kiểm một giá trị đã công bố, cần đối chiếu dữ liệu gốc thay vì yêu cầu lượt chạy mới cho đúng từng số giây.
+
+Hai biến môi trường đặt giới hạn RAM tiến trình 5 GiB và khoảng RAM hệ thống dự phòng 1 GiB. Vòng \texttt{for} gọi lần lượt cold, warm, conversation; \texttt{|| break} dừng vòng nếu một kịch bản thất bại. Các kịch bản không chạy song song.
+
+Ý nghĩa các tham số:
+
+\begin{itemize}
+\item \texttt{--testbed i5}: nhãn máy được ghi vào record. Trên máy i7 dùng nhãn i7; nhãn không tự lựa chọn tối ưu CPU.
+\item \texttt{--gpu auto}: yêu cầu backend GPU khi khả dụng. Runner HTTP này kiểm trạng thái và từ chối phép đo nếu yêu cầu GPU nhưng không bật được; không âm thầm coi fallback CPU là kết quả GPU.
+\item \texttt{--threads 8}: cấu hình tám Rayon threads cho công việc CPU, không phải tám GPU hoặc tám model chạy đồng thời.
+\item \texttt{--model-dir}: thư mục checkpoint đã chuyển đổi mà engine thực sự đọc. Đường trong lệnh là đường mặc định của dự án; cần trỏ tới bản model tương ứng trên từng máy, không suy cùng model từ cùng tên thư mục.
+\item \texttt{--cache 64}: cache expert 64 MiB mỗi lớp; với 16 lớp là 1 GiB ngân sách cache, không phải giới hạn RSS 1 GiB.
+\item \texttt{--context 512} và \texttt{--max-tokens 128}: đặt giới hạn context tổng và output. Lượt K3.2 có lịch sử vẫn phải thỏa kiểm ngân sách ở mục 2.7.1.
+\item \texttt{--runs 5}: năm vòng của kịch bản; conversation có hai request mỗi vòng, nên tham số này không có nghĩa mọi kịch bản đều chỉ tạo năm request.
+\item \nolinkurl{--single-policy --expert-cache-policy victim}: chỉ đo policy victim. Nếu bỏ lựa chọn single-policy, wrapper có chế độ đối chứng inclusive/victim khác với bộ vận hành đang trình bày.
+\item \texttt{--output-root}: nơi lưu run mới, kết quả, log và quan sát bộ nhớ. Runner tạo thư mục riêng cho mỗi run để tránh ghi đè.
+\end{itemize}
+
+Runner tự tổ chức build, khởi tạo server riêng, kiểm cấu hình, gửi request và thu số liệu; không cần chạy \texttt{cargo run} trước. Lệnh \nolinkurl{cargo run --release --locked --bin moe-tier-engine} dùng khi mở server để thao tác web thủ công, không tự thực hiện bộ cold/warm/conversation và tổng hợp năm mẫu. Khi đo, chỉ chạy một bộ inference trên máy để tránh cạnh tranh tài nguyên.
+
+Để xem các lệnh mà wrapper sẽ tạo mà không nạp model hoặc chạy suy luận, thêm \texttt{--dry-run} vào lời gọi runner. Nếu workspace đang có thay đổi chưa commit, bước preview còn cần \texttt{--allow-dirty}; lựa chọn này chỉ phục vụ xem kế hoạch trong ví dụ, không biến một lượt đo có thay đổi chưa lưu thành đối chứng chuẩn. Với bộ i7, giữ nhãn máy và model thực tế của i7; thay đổi checkpoint/tokenizer/backend phải được ghi riêng. Hai bộ đang có được dùng làm kết quả vận hành riêng, không phải phép đối chứng tốc độ phần cứng.
+
+\subsection{File đầu ra và ý nghĩa}
+
+Mỗi kịch bản tạo một nhóm file phục vụ các cách đọc khác nhau:
+
+\begin{itemize}
+\item \texttt{result.json}: cấu hình, thông tin môi trường/model và tập request của kịch bản.
+\item \texttt{turn-0-0.json}: request đầu của vòng đầu; \texttt{turn-0-1.json} là request thứ hai của vòng đầu nếu kịch bản có hai lượt. File từng turn giữ messages, response, usage, metrics và quan sát tiến trình trước/sau.
+\item \texttt{warmup-0-0.json}: request làm ấm ở vòng đầu; không tính vào năm mẫu chính của warm.
+\item \texttt{memory.jsonl}: chuỗi bộ nhớ theo thời gian; mỗi dòng là một mẫu có RSS/HWM/swap và RAM khả dụng.
+\item \texttt{watchdog.json}: ngưỡng giám sát và danh sách vi phạm. Danh sách rỗng nghĩa là watchdog không phát hiện vi phạm trong lượt thử, không phải bảo đảm mọi workload đều an toàn.
+\item \texttt{server.log} và \texttt{build.log}: thông tin khởi tạo và build, hữu ích khi giải thích một lượt lỗi.
+\end{itemize}
+
+\texttt{summary.json} trong bộ hồ sơ được tổng hợp từ các request để thuận tiện đọc; các bảng dùng số đã làm tròn. Khi cần kiểm lại một giá trị, đọc file turn tương ứng thay vì lấy số hiển thị trên ảnh giao diện.
+
+\subsection{Ví dụ đọc một request thực tế}
+
+Ví dụ dưới đây lấy yêu cầu đo đầu tiên của kịch bản K2 trên i5, hỏi “Where is Mars” sau lượt làm ấm. Đây là một mẫu riêng, không phải hàng trung vị của cả nhóm:
+
+\begin{itemize}
+\item \textbf{Đầu vào:} một user message \texttt{Where is Mars}, 19 prompt token, session mới nên \nolinkurl{cached_prompt_tokens=0}.
+\item \textbf{Đầu ra:} 128 completion token, \nolinkurl{finish_reason=length}. Kết quả chạm giới hạn output; không suy câu trả lời đã hoàn chỉnh.
+\item \textbf{Thời gian:} TTFT khoảng 2,039 giây; prefill 2,033 giây; decode 31,911 giây; WALL 33,950 giây. Phép chia 127 / 31,911 cho khoảng 3,980 steps/s, khớp metric decode của mẫu.
+\item \textbf{Expert cache:} 13.842 hit và 4.846 miss, tương ứng khoảng 74,07\%. Dù không dùng lại KV prompt, hệ thống vẫn có thể hit expert đã được warmup; hai metric không mâu thuẫn nhau.
+\item \textbf{Các đường xử lý:} I/O WAIT 10,769 giây, expert compute 9,157 giây, attention 1,890 giây và LM head 0,359 giây. Chúng giúp quan sát phân bố chi phí nhưng không cộng thành WALL.
+\item \textbf{Dữ liệu đọc:} file payload 34.175.877.120 byte, khoảng 34,176 GB; process read-bytes delta bằng 0 trong khoảng quan sát. Hai số đo thuộc hai tầng khác nhau: ứng dụng vẫn yêu cầu đọc file, còn OS có thể phục vụ từ page cache. Không diễn giải payload này thành SSD đã đọc vật lý 34,176 GB.
+\end{itemize}
+
+Các bảng mục 5.4 và 5.10 tổng hợp nhiều mẫu theo cùng các định nghĩa trên. Trung vị TTFT, decode và WALL được tính độc lập, nên không dùng các trung vị đó như ba mốc của cùng một request để suy ngược thời gian từng giai đoạn.
+
+\section{Kết quả hiệu năng của phiên bản hiện tại}
+
+\subsection{Từng mẫu đo}
+
+\begin{table}[htbp]
+\centering
+\caption{Từng mẫu của bộ i5 phase1-v1}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Nhóm} & \textbf{Lượt} & \textbf{Token đầu vào} & \textbf{Token đầu ra} & \textbf{TTFT(s)} & \textbf{Decode (steps/s)} & \textbf{Wall(s)} \\
+\midrule
+K1 & 1 & 19 & 128 & 2.757 & 3.655 & 37.506 \\
+K1 & 2 & 19 & 128 & 2.121 & 3.777 & 35.743 \\
+K1 & 3 & 19 & 128 & 1.791 & 3.783 & 35.364 \\
+K1 & 4 & 19 & 128 & 1.795 & 3.663 & 36.468 \\
+K1 & 5 & 19 & 128 & 2.104 & 3.651 & 36.886 \\
+K2 & 1 & 19 & 128 & 2.039 & 3.980 & 33.950 \\
+K2 & 2 & 19 & 128 & 2.044 & 3.987 & 33.899 \\
+K2 & 3 & 19 & 128 & 2.023 & 3.989 & 33.863 \\
+K2 & 4 & 19 & 128 & 2.005 & 3.995 & 33.791 \\
+K2 & 5 & 19 & 128 & 2.019 & 3.963 & 34.065 \\
+K3.1 & 1 & 19 & 128 & 2.181 & 3.685 & 36.648 \\
+K3.1 & 2 & 19 & 128 & 2.005 & 3.673 & 36.586 \\
+K3.1 & 3 & 19 & 128 & 2.014 & 3.681 & 36.519 \\
+K3.1 & 4 & 19 & 128 & 1.984 & 3.687 & 36.425 \\
+K3.1 & 5 & 19 & 128 & 2.009 & 3.674 & 36.575 \\
+K3.2 & 1 & 166 & 128 & 9.477 & 3.207 & 49.080 \\
+K3.2 & 2 & 166 & 128 & 9.099 & 3.228 & 48.446 \\
+K3.2 & 3 & 166 & 128 & 8.759 & 3.250 & 47.836 \\
+K3.2 & 4 & 166 & 128 & 9.109 & 3.234 & 48.374 \\
+K3.2 & 5 & 166 & 128 & 9.086 & 3.225 & 48.461 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: từng response trong raw \cite{exp_phase1_i5}; số hiển thị làm tròn 3 chữ số thập phân, raw giữ độ chính xác ban đầu. Lượt trong bảng đánh từ 1; cycle trong raw đánh từ 0.}
+\par\smallskip{\footnotesize\RaggedRight K1: bộ đệm lạnh, hỏi “Where is Mars”; K2: sau làm ấm, hỏi lại “Where is Mars” trong phiên mới; K3.1: câu hỏi đầu “Where is Mars”; K3.2: câu hỏi tiếp “What is love ?” kèm lịch sử trong cùng phiên.\par}
+\end{table}
+
+
+
+\subsection{Tổng hợp và mức dao động}
+
+\begin{table}[htbp]
+\centering
+\caption{Tổng hợp hiệu năng i5, trung vị của 5 mẫu/nhóm}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Nhóm} & \textbf{TTFT(s)} & \textbf{Decode (steps/s)} & \textbf{Wall(s)} & \textbf{Wall min–max(s)} \\
+\midrule
+K1 & 2.104 & 3.663 & 36.468 & 35.364–37.506 \\
+K2 & 2.023 & 3.987 & 33.899 & 33.791–34.065 \\
+K3.1 & 2.009 & 3.681 & 36.575 & 36.425–36.648 \\
+K3.2 & 9.099 & 3.228 & 48.446 & 47.836–49.080 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: summary dẫn xuất và raw \cite{exp_phase1_i5}. Min–max mô tả năm mẫu, không phải khoảng tin cậy thống kê. Wall là thời gian generation engine, không gồm load model.}
+\par\smallskip{\footnotesize\RaggedRight K1: bộ đệm lạnh, hỏi “Where is Mars”; K2: sau làm ấm, hỏi lại “Where is Mars” trong phiên mới; K3.1: câu hỏi đầu “Where is Mars”; K3.2: câu hỏi tiếp “What is love ?” kèm lịch sử trong cùng phiên.\par}
+\end{table}
+
+
+
+Kịch bản K2 có tổng thời gian sinh thấp hơn K1 trong các mẫu đo, phù hợp giả thuyết trạng thái cache đã ấm có ích. Tuy nhiên, đây là mô tả các trạng thái của cùng phiên bản trong trình tự thử; không dùng chênh lệch này làm tốc độ tăng do một bản vá code. Kết quả câu hỏi “Where is Mars” ở K1 và lượt đầu hội thoại K3.1 gần nhau trong bộ hiện tại.
+
+Trên i5, lượt tiếp K3.2 hỏi “What is love ?” có TTFT cao hơn và tốc độ sinh tiếp thấp hơn câu hỏi đầu. Đầu vào K3.2 có 166 token, gồm lịch sử, so với 19 token của câu hỏi “Where is Mars”; chỉ 11 token được tái sử dụng KV. Như vậy, cùng session vẫn còn nhiều token cần prefill. Ngoài lượng công việc prefill tăng, routing và attention context cũng khác. Không thể kết luận “cache hit cao nhưng chậm là do SSD yếu” chỉ từ hai tỷ lệ hiển thị.
+
+Cả 20 mẫu kết thúc với \nolinkurl{finish_reason=length} tại 128 completion tokens. Đây là kết thúc hợp lệ do giới hạn thử nghiệm, không bảo đảm mọi câu trả lời đã hoàn chỉnh về nội dung. Output khớp giữa các lần lặp giúp giảm một nguồn sai khác workload, nhưng chưa đánh giá độ đúng kiến thức của câu trả lời.
+
+\subsection{Phân tích chi phí thành phần}
+
+\begin{table}[htbp]
+\centering
+\caption{Chi phí expert, attention và file payload, trung vị 5 mẫu/nhóm}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Nhóm} & \textbf{Expert load wait(s)} & \textbf{Expert compute(s)} & \textbf{Attention(s)} & \textbf{File payload(GiB)} \\
+\midrule
+K1 & 12.075 & 8.852 & 1.864 & 36.705 \\
+K2 & 10.841 & 9.133 & 1.893 & 34.176 \\
+K3.1 & 11.947 & 9.289 & 1.910 & 36.705 \\
+K3.2 & 13.911 & 14.309 & 4.179 & 38.156 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: metrics raw và summary \cite{exp_phase1_i5}. Expert load wait là legacy \texttt{expert\_io\_ms}, gồm file/VRAM đường liên quan, chưa bao upload theo cùng định nghĩa; các timer có overlap. File payload không phải byte vật lý SSD và có thể gồm prefetch chưa dùng.}
+\par\smallskip{\footnotesize\RaggedRight K1: bộ đệm lạnh, hỏi “Where is Mars”; K2: sau làm ấm, hỏi lại “Where is Mars” trong phiên mới; K3.1: câu hỏi đầu “Where is Mars”; K3.2: câu hỏi tiếp “What is love ?” kèm lịch sử trong cùng phiên.\par}
+\end{table}
+
+
+
+File payload lớn hơn kích thước toàn bộ expert một lần vì một expert có thể bị nạp lại nhiều lần theo token/layer và trạng thái cache. OS page cache có thể cung cấp một phần các lần đọc này. Do đó 36,705 GB payload không chứng minh thiết bị SSD đã đọc vật lý 36,705 GB trong một request.
+
+Ở lượt K3.2 hỏi “What is love ?” kèm lịch sử, thời gian tính expert và attention tăng cùng lượng đầu vào dài hơn. Từ bảng này có thể nói cả đường cung cấp expert và đường compute đều đáng khảo sát. Chưa thể định lượng lợi ích của việc thay SSD, nâng RAM hay đổi GPU nếu không có phép đo thay đổi phần cứng hoặc profiler tương ứng. Đặc biệt, chia payload cho legacy I/O timer để suy NVMe bandwidth sẽ trộn các phạm vi đo khác nhau.
+
+\subsection{RAM trong bộ hiệu năng chính}
+
+\begin{table}[htbp]
+\centering
+\caption{Quan sát bộ nhớ trong bộ đo chính}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Scenario} & \textbf{HWM cao nhất quan sát(GiB)} & \textbf{VmSwap cao nhất(KiB)} & \textbf{MemAvailable thấp nhất(GiB)} & \textbf{Thời gian quan sát(s)} \\
+\midrule
+K1 & 3.340 & 0 & 6.845 & 183.3 \\
+K2 & 3.494 & 0 & 6.730 & 352.9 \\
+K3 & 3.348 & 0 & 7.085 & 426.3 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: chuỗi \nolinkurl{/proc} lấy mẫu 250 ms trong \cite{exp_phase1_i5}. Thời gian quan sát khác tổng generation vì có orchestration; không dùng để tính tok/s.}
+\end{table}
+
+
+
+Cả ba scenario có status success và danh sách watchdog violations rỗng. Mức cao nhất quan sát là 3,494 GiB; process swap bằng 0 trong phạm vi lấy mẫu. Kết quả này hỗ trợ khả năng vận hành cấu hình đã chọn trên i5 trong thời gian đo. Nó không chứng minh peak tức thời không thể cao hơn giữa samples hoặc mọi workload tương lai không OOM.
+
+\section{Khảo sát chính sách inclusive/victim}
+
+\textbf{Hai cách triển khai.} Với inclusive, RAM và VRAM có thể giữ bản sao của cùng expert. Với victim, expert rời RAM có thể được đưa lên VRAM; khi cần tính trên CPU, expert được chuyển lại về host. Cách thay đổi này nhằm tận dụng dung lượng hai tầng cho tập expert rộng hơn, đồng thời đánh đổi bằng chi phí truyền dữ liệu. Phép đo bên dưới kiểm tra tác động của chính sách, không thay đổi trọng số hoặc quy tắc Router.
+
+Thí nghiệm này là artifact khảo sát trước bộ chính, dùng cache 128 MiB/layer, threads 8, context 512, max 128, GPUauto và cùng một loaded server/model. Thứ tự bốn vòng là inclusive→victim→victim→inclusive; mỗi vòng gồm câu hỏi đầu và câu hỏi tiếp có lịch sử như mô tả chi tiết bên dưới. Text/usage khớp theo prompt và mỗi policy có hai mẫu/prompt \cite{exp_web_session_i5}. Điều kiện khác bộ 64 MiB ở mục 5.4, nên không ghép trực tiếp để suy tổng tăng tốc.
+
+\textbf{Trình tự một vòng đối chứng.} Công cụ đặt lại bộ đệm ứng dụng và áp dụng chính sách của vòng đó; tạo phiên mới; gửi “Where is Mars”; giữ câu trả lời thực tế làm lịch sử; rồi gửi tiếp “What is love ?” trong cùng phiên. Cả hai yêu cầu cho phép sinh tối đa 128 token và đều được đo. Không có lượt làm ấm riêng. Sau khi hoàn tất hai yêu cầu, công cụ đặt lại trước vòng tiếp theo. Bốn vòng lần lượt dùng inclusive, victim, victim, inclusive, tạo tám mẫu, tương ứng hai mẫu cho mỗi tổ hợp chính sách và vị trí câu hỏi. Máy chủ và model được giữ trong cùng tiến trình suốt phép thử.
+
+\begin{table}[htbp]
+\centering
+\caption{Thí nghiệm inclusive/victim: từng wall mẫu và trung vị}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Policy} & \textbf{Prompt} & \textbf{Wall mẫu 1(s)} & \textbf{Wall mẫu 2(s)} & \textbf{Trung vị(s)} \\
+\midrule
+Inclusive & Câu hỏi đầu & 63.253 & 59.214 & 61.234 \\
+Victim & Câu hỏi đầu & 45.111 & 51.914 & 48.512 \\
+Inclusive & Câu hỏi tiếp & 66.629 & 65.664 & 66.147 \\
+Victim & Câu hỏi tiếp & 54.970 & 59.565 & 57.268 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: raw AB/BA và số liệu chưa làm tròn dùng để tổng hợp trong \cite{exp_web_session_i5}. Các timer thành phần/từng cycle đầy đủ nằm trong artifact; đây là n=2/policy/prompt.}
+\par\smallskip{\footnotesize\RaggedRight Trong Bảng 5.7, câu hỏi đầu là “Where is Mars”; câu hỏi tiếp là “What is love ?” cùng lịch sử gồm câu hỏi và câu trả lời đầu.\par}
+\end{table}
+
+
+
+Theo công thức(2.13), trung vị wall giảm 20,77\% cho Mars và 13,42\% cho Love trong phép thử này. Dữ liệu file loads/payload giảm trong khi D2H tăng, phù hợp cơ chế dùng VRAM cho victim thay vì chỉ nhân bản expert RAM. Kết quả hỗ trợ chọn victim cho cấu hình khảo sát, chưa xác lập một tỷ lệ cải thiện cố định cho mọi lần chat.
+
+Nhiệt/tần số, tải desktop và OS cache chưa được cố định; biến động giữa các samples còn lớn. Đặc biệt, n 2 không đủ cho ước lượng thống kê mạnh. Các nguồn sai khác này được giữ cùng kết luận để người đọc biết phạm vi áp dụng.
+
+\section{Khảo sát tái sử dụng KV prefix}
+
+\textbf{Hai cách triển khai.} Biến thể strict trong phép thử không tái sử dụng KV khi prompt đã thay đổi theo workload được chọn. Biến thể longest common prefix giữ phần KV tương ứng với đoạn token đầu còn khớp, cắt bỏ phần không còn hợp lệ và chỉ tính phần prompt còn thiếu. Mục tiêu là giảm lượng công việc prefill, không thay đổi phép toán của từng token.
+
+Workload sửa câu hỏi cuối nhưng giữ ngữ cảnh chung, target 116 prompt tokens, được dùng để cô lập lợi ích reuse. Cấu hình cache 128 MiB/layer, threads 4, context 512, GPUauto, serial expert dispatch và max\_tokens 1. Seed KV được chuẩn bị ngoài timing; mỗi biến thể có warmup riêng rồi năm cặp xen kẽ. Bản strict cũ reuse 0, bản mới reuse 104 token, còn 12 token cần prefill \cite{exp_prefill_i5}.
+
+\textbf{Dữ liệu đầu vào và các bước thử.} Ngữ cảnh chung là câu “Context note: Mars is a planet in our solar system. ” lặp tám lần, giữ cả khoảng trắng cuối mỗi lần. Đầu vào tạo KV ban đầu nối ngữ cảnh này với “Where is Mars ?”; đầu vào cần đo nối cùng ngữ cảnh với “What is love ?”. Như vậy, đây là sửa câu hỏi cuối trong một thông điệp người dùng dài, không phải hai lượt hội thoại có câu trả lời trợ lý ở giữa.
+
+Trước mỗi mẫu, bài thử phục hồi cùng trạng thái KV chuẩn bị sẵn ở ngoài khoảng đo. Phương án tham chiếu không dùng lại tiền tố trong tình huống sửa đầu vào này; phương án mới giữ phần tiền tố chung hợp lệ. Mỗi phương án có một lượt làm ấm, sau đó đo năm cặp, xen kẽ thứ tự chạy hai phương án. Mỗi mẫu chỉ sinh tối đa một token; kiểm token sinh ra giữa hai phương án rồi đọc thời gian xử lý đầu vào. Bộ đệm expert tiếp tục biến đổi trong cùng tiến trình, nên thứ tự và điều kiện thử phải được giữ khi diễn giải kết quả.
+
+\begin{table}[htbp]
+\centering
+\caption{Thí nghiệm KV prefix reuse}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Cặp} & \textbf{Prefill cũ(ms)} & \textbf{Prefill mới(ms)} \\
+\midrule
+1 & 8827.777 & 2922.145 \\
+2 & 9352.213 & 3006.887 \\
+3 & 9349.372 & 2870.175 \\
+4 & 8846.971 & 2703.790 \\
+5 & 8434.258 & 2629.063 \\
+Trung vị & 8846.971 & 2870.175 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: \texttt{paired-session.json} và provenance/source riêng của \cite{exp_prefill_i5}.}
+\end{table}
+
+
+
+Trung vị prefill giảm 67,56\% trong workload này. Token đầu khớp ở mọi cặp; các hồi quy MHA/GQA kiểm sửa, rút ngắn và thay prompt cùng logits tolerance. Kết quả thể hiện lợi ích tránh tính lại prefix hợp lệ, không phải kernel chạy nhanh hơn 67,56\%. Max\_tokens 1 cũng không đo lợi ích decode 128 token. Không dùng tỷ lệ này làm mức tăng tốc của hội thoại hai lượt K3 ở mục 5.4.
+
+\section{Khảo sát dispatch prefill theo nhóm không được chọn}
+
+\textbf{Hai cách triển khai.} Sau khi gom công việc theo expert trong prefill, biến thể serial xử lý lần lượt các token thuộc nhóm; candidate grouped đưa thêm song song vào phần dispatch của nhóm. Cả hai hướng đều cần bảo toàn kết quả tổng hợp và routing. Phép thử kiểm tra xem mức song song bổ sung có đáng với chi phí tổ chức công việc trên cấu hình khảo sát hay không.
+
+Lượt đo theo tiến trình riêng ban đầu có drift lớn: baseline cuối nhanh hơn baseline đầu. Nhóm không dùng trung vị gộp của lượt đó để nhận tăng tốc, mà đo lại trong cùng process/binary/model, warmup 4 và chín cặp xen kẽ. Workload \texttt{Where is Mars ?}, max\_tokens 1 được dùng để cô lập prefill, với cấu hình khảo sát cache 128 MiB/layer, context 512, threads 4 và GPUauto \cite{exp_prefill_i5}.
+
+\textbf{Trình tự phép thử tính song song.} Một model được nạp một lần và dùng chung trọng số cho hai phương án. Đầu vào là một thông điệp người dùng chứa “Where is Mars ?”, có khoảng trắng trước dấu hỏi. Cả hai phương án cùng giới hạn sinh một token. Công cụ làm ấm bốn lượt, luân phiên cách lần lượt và cách theo nhóm, rồi đo chín cặp. Ở cặp thứ nhất, cách lần lượt chạy trước cách theo nhóm; cặp thứ hai đảo thứ tự, và tiếp tục xen kẽ như vậy. Không đặt lại bộ đệm giữa các mẫu nên trạng thái bộ đệm tiếp tục biến đổi trong cùng tiến trình. Mỗi mẫu ghi thời gian xử lý đầu vào và token sinh ra; các token được đối chiếu để tránh nhận chênh lệch thời gian từ hai đầu ra khác nhau.
+
+\begin{table}[htbp]
+\centering
+\caption{Thí nghiệm dispatch prefill theo nhóm}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Cặp} & \textbf{Serial(ms)} & \textbf{Grouped(ms)} \\
+\midrule
+1 & 2571.892 & 2132.050 \\
+2 & 2184.676 & 2143.930 \\
+3 & 1988.396 & 2176.767 \\
+4 & 2004.289 & 2151.255 \\
+5 & 1945.666 & 2108.076 \\
+6 & 2150.463 & 2248.372 \\
+7 & 2046.680 & 2129.426 \\
+8 & 2050.890 & 2121.548 \\
+9 & 1985.965 & 2181.052 \\
+Trung vị & 2046.680 & 2143.930 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: \texttt{paired-prefill.json}, source và provenance trong \cite{exp_prefill_i5}. Cặp ở đây đánh từ 1, raw đánh từ 0.}
+\end{table}
+
+
+
+Grouped chậm hơn 7/9 cặp; trung vị thay đổi tính theo từng cặp là tăng 4,55\%. Số này khác tỷ lệ lấy hai trung vị chia nhau, nên không thay cách tính mà giữ nguyên tên thống kê. Giả thuyết “thêm song song sẽ nhanh hơn” không được dữ liệu ủng hộ trong điều kiện này. Chưa có profiler để khẳng định riêng overhead scheduling hay bandwidth là nguyên nhân duy nhất. Runtime giữ serial dispatch tương ứng, candidate chỉ tồn tại trong test.
+
+\section{Sự cố thiếu bộ nhớ và kiểm guard}
+
+\subsection{Sự cố và điều chỉnh cấu hình}
+
+Trong đợt kiểm web thủ công, người dùng báo IDE bị terminated khi RAM tăng. Kernel log lưu ngày 22/10 xác nhận OOM giết tiến trình engine với anon-rss 10.416.220 KiB, khoảng 9,93 GiB \cite{oom_log_i5}. Cấu hình và trạng thái history/cache của toàn bộ lượt lỗi chưa được xác minh đầy đủ; startup adaptive trước đó có thể chọn budget lớn theo RAM trống. Không có đủ dữ liệu để quy duy nhất nguyên nhân là leak hoặc chỉ do expert cache.
+
+Nhóm thay mặc định server bằng cache 64 MiB/layer cố định, thêm preflight và RAM guard, rồi kiểm có watchdog. Đây là quyết định chừa tài nguyên cho hệ thống và ứng dụng khác, chấp nhận khả năng cache nhỏ hơn làm tăng churn. Không so RSS 3,5 GiB của lượt mới với 9,93 GiB của sự cố để tuyên bố một tỷ lệ giảm do thuật toán, vì cấu hình và điều kiện khác nhau.
+
+\subsection{Hai lượt kiểm có giám sát}
+
+\textbf{Nội dung và lịch sử của 12 yêu cầu.} Bộ kiểm lặp ba lần một chu kỳ bốn yêu cầu theo thứ tự sau:
+
+\begin{enumerate}
+\item “Where is Mars”: phiên mới, chỉ có một thông điệp người dùng.
+\item “What planet did I just ask about?”: giữ cùng phiên với yêu cầu trước, gửi lịch sử gồm câu hỏi đầu, câu trả lời thực tế và câu hỏi này. Yêu cầu kiểm khả năng tiếp tục dùng nội dung hội thoại.
+\item “Explain a Python dictionary.”: bắt đầu phiên mới, không mang theo lịch sử hai yêu cầu trước.
+\item “What is love ?”: bắt đầu phiên mới, không có lịch sử trước đó.
+\end{enumerate}
+
+Ở lượt giới hạn 32 token, công cụ đặt lại bộ đệm trước yêu cầu thứ nhất và thứ tư của mỗi chu kỳ. Ở lượt giới hạn 128 token, công cụ chỉ đặt lại trước yêu cầu đầu tiên của toàn bộ lượt thử rồi giữ bộ đệm expert giữa các yêu cầu. Giữ bộ đệm không đồng nghĩa giữ cùng phiên cho cả 12 yêu cầu. Cả hai lượt cùng lấy mẫu bộ nhớ định kỳ 250 ms và dùng các ngưỡng giám sát đã nêu trong cấu hình.
+
+Kiểm âm dùng cache 256 MiB mỗi lớp, giới hạn RSS 5 GiB, cửa sổ 512 token và giới hạn sinh một token. Mục tiêu là quan sát việc từ chối theo dự toán trước khi nạp trọng số lớn; không cố tạo thiếu bộ nhớ trong khi sinh. Hồ sơ thực tế không có yêu cầu suy luận hoàn tất trong kiểm âm.
+
+\begin{table}[htbp]
+\centering
+\caption{Hai lượt kiểm RAM có giám sát}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Thuộc tính} & \textbf{Reset-32} & \textbf{Keep-128} \\
+\midrule
+Request hoàn tất & 12 & 12 \\
+Giới hạn output/request & 32 & 128 \\
+Reset & Xen kẽ theo phase của runner & Chỉ reset đầu \\
+Thời gian quan sát(s) & 212.1 & 488.7 \\
+Số sample bộ nhớ & 848 & 1952 \\
+HWM cao nhất quan sát(GiB) & 3.468647 & 3.525585 \\
+Process VmSwap cao nhất(KiB) & 0 & 0 \\
+MemAvailable thấp nhất(GiB) & 6.471 & 6.520 \\
+Watchdog violation & 0 & 0 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: raw/time series và từng request trong \cite{exp_ram_guard_i5}. Cùng binary/checkpoint/Rust source giữa hai lượt; runner lượt sau có thêm tùy chọn keep-cache được lưu riêng. Đây là exploratory dirty tests, không bộ hiệu năng revision sạch.}
+\end{table}
+
+
+
+Cả 24 request hoàn tất. Lượt giữ cache có RSS tiếp tục nhích tăng, nên chưa chứng minh một plateau hoặc loại trừ leak/allocator retention. Thời gian khoảng 3,5 và 8,1 phút là kiểm hữu hạn, không được gọi là vận hành ổn định nhiều giờ. Một số request kết thúc EOS trước 128 token; giới hạn output không đồng nghĩa mọi request sinh đủ 128.
+
+Kiểm âm tính cache 256 MiB/layer dưới guard 5 GiB bị từ chối ở preflight trước weights lớn. Raw giữ status failed, với planned reserve 7.288.299.520 byte; đây là thất bại mong đợi của cấu hình không đủ ngân sách, không phải một request inference bị hỏng. Sampler 250 ms không bắt đủ peak startup rất ngắn, nên không lấy sample max của kiểm này làm peak thực. Bài kiểm có watchdog và không cố gây OOM.
+
+\section{Correctness, chức năng và chất lượng sơ bộ}
+
+\subsection{Kiểm số học và kiểm đường GPU}
+
+Fixture toy MHA/GQA đối chiếu tham chiếu với sai số tuyệt đối $2\times10^{-5}$ theo kiểm hiện có. Hồi quy KV kiểm vị trí causal sau truncate, reset giữ budget, prefix reuse và ownership buffer. Các targeted CUDA tests đã có probe khả dụng và dấu EXECUTED trên host, bao gồm pinned bounds/zero-init, staging quá nhỏ/fallback, victim tier disjoint/pool reset và logits fixture \cite{moe_tierengine_arch}, \cite{exp_ram_guard_i5}, \cite{moe_progress_matrix}.
+
+Bộ kiểm trước đo chính có 76 Rust tests pass mỗi profile debug/release, 5 ignored mỗi profile, fmt/Clippy đạt; Python 40 và Node 7 đạt. HTTP stress fixture trước đó có 30 vòng, 20 hoàn tất và 10 hủy. Kết quả ignored không được coi đã chạy chỉ vì lệnh tổng thành công; các kiểm CUDA/experiment cần đọc log thực thi riêng. Các số đếm trên thuộc các lượt kiểm đã ghi trong nhật ký trước bộ đo; lượt rà soát tài liệu hiện tại không chạy lại toàn bộ kiểm Rust và CUDA.
+
+\subsection{Streaming, Stop/reset và kiểm web}
+
+Smoke model thật trước bộ chính ghi 16 request hoàn tất, thêm một request cố ý hủy; reset/gửi lại sau hủy đạt. Một lượt harness trước đó lỗi Python do alias module, được giữ riêng và không quy thành lỗi engine. Người dùng đã báo thủ công bảy thao tác chat/history/Stop/retry/lỗi context/reset/reload hoạt động. Đây là báo cáo kiểm thủ công, không thay cho browser automation hoặc xác nhận Console không lỗi.
+
+\textbf{Các bước của lượt kiểm chức năng trên model thật.} Sau khi đặt lại bộ đệm, công cụ gửi “Where is Mars” rồi “What is love ?” trong cùng phiên, mỗi yêu cầu cho phép sinh tối đa 32 token. Yêu cầu thứ hai giữ toàn bộ câu trả lời của yêu cầu đầu làm lịch sử.
+
+Tiếp theo, công cụ gửi “Explain the planets in detail.” với giới hạn 128 token và chủ động đóng kết nối sau khi nhận nội dung đầu tiên. Công cụ thử đặt lại bộ đệm, chờ nếu mô hình còn bận, rồi gửi “Where is Mars” với giới hạn 16 token để kiểm khả năng phục vụ trở lại. Đây là kiểm tự động bằng HTTP; thao tác bấm Stop trên trình duyệt thuộc kiểm thủ công riêng.
+
+Sau một lần đặt lại bộ đệm khác, công cụ gửi một ghi chú nghiên cứu dài và cho phép trả lời tối đa 16 token. Đầu vào của trường hợp này là một thông điệp người dùng chứa nguyên văn:
+
+“Read this research note. A small laboratory runs a mixture of experts model on a laptop. Model weights are stored as INT8 files. Dense layers remain on the GPU when memory permits. Expert weights can reside in RAM, in VRAM, or in files. Each token selects a small group of experts. A cache hit avoids a file load but may still require a transfer between host and device. The team compares inclusive and victim cache policies using the same prompts and token budgets. They reset application caches before each independent trial, without clearing the operating system page cache. For warm trials they first run an unmeasured request, then start a new chat with the same prompt. They record time to first token, decode throughput, total wall time, payload bytes and process memory. Background activity and temperature can affect results, so policy order is alternated. A faster isolated operation does not guarantee a faster complete request. Summarize the experimental controls and explain two limitations of this measurement.”
+
+Đầu vào dài đã lưu có 212 token trong lượt này. Trường hợp đó kiểm đường xử lý đầu vào dài nhưng vẫn nằm trong cửa sổ ngữ cảnh, không phải phép cố tình gửi yêu cầu vượt cửa sổ. Lỗi quá cửa sổ được kiểm riêng bằng fixture và thao tác web.
+
+Các hồi quy parser kiểm UTF-8/CRLF bị chia chunk, generation\_error sau nội dung dở, EOF thiếu terminal/DONE, dữ liệu sau terminal, abort và request kế tiếp. Việc không lưu phản hồi bị hủy vào history giúp tránh đưa dữ liệu không hoàn chỉnh vào lượt tiếp theo.
+
+Một hạn chế provenance được phát hiện khi rà lại: trong aggregate \nolinkurl{model-smoke/result.json}, danh sách thông điệp của trường hợp hỏi “Where is Mars” bị bổ sung history sau khi request đã chạy, do script giữ tham chiếu tới list rồi sửa list. File \nolinkurl{model-smoke/mars.json} được ghi ngay tại lượt hỏi “Where is Mars” giữ đúng một user message và usage 19 prompt tokens; aggregate về sau chứa ba messages cho case đó. Khi tái dựng request phải ưu tiên payload từng lượt này, không dùng history đã biến đổi trong aggregate. Giữ nguyên cả hai raw và công bố sai lệch metadata; việc này không thay số 16 request hoàn tất hoặc kết quả quality 10/12 \cite{exp_smoke_validation}.
+
+\subsection{Quality smoke và giới hạn nội dung}
+
+Suite 12 câu kiểm heuristic exact/substring đạt 10/12 trong smoke trước checkpoint chính \cite{exp_smoke_validation}. Hai lỗi gồm câu hỏi thủ đô bằng tiếng Việt trả Hồ Chí Minh và tác vụ retrieval-day. Một số case có giới hạn output khác nhau; evaluator là heuristic, không phải bộ chuẩn đánh giá năng lực ngôn ngữ.
+
+\textbf{Danh sách đầu vào và tiêu chí kiểm sơ bộ.} Mỗi trường hợp dưới đây bắt đầu bằng phiên riêng; bộ đệm expert có thể tiếp tục ấm từ trường hợp trước. Giới hạn nêu trong danh sách là số token được phép sinh, không phải số token chắc chắn sinh ra. Lịch sử được ghi đầy đủ để phân biệt câu hỏi độc lập và câu hỏi có ngữ cảnh:
+
+\begin{enumerate}
+\item Đầu vào: người dùng nói “What is 2 + 2? Answer briefly.” Giới hạn 16 token; tiêu chí: câu trả lời phải chứa đủ “4”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “What is 7 times 8? Answer with the number.” Giới hạn 16 token; tiêu chí: câu trả lời phải chứa đủ “56”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “What is the capital of France? Answer briefly.” Giới hạn 24 token; tiêu chí: câu trả lời phải chứa đủ “Paris”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “Thủ đô của Việt Nam là gì? Trả lời bằng một câu ngắn.” Giới hạn 32 token; tiêu chí: câu trả lời phải chứa đủ “Hà Nội”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “Hãy chỉ viết đúng hai từ: Việt Nam”. Giới hạn 16 token; tiêu chí: câu trả lời phải chứa đủ “Việt Nam”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “Reply with exactly: OK”. Giới hạn 16 token; tiêu chí: câu trả lời sau khi bỏ khoảng trắng đầu/cuối phải đúng “OK”.
+\item Đầu vào: người dùng nói “Write a short Python function named add that returns the sum of a and b. Return only code.” Giới hạn 64 token; tiêu chí: câu trả lời phải chứa đủ “def add”, “return”, “a + b”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “Write a short Python function is\_even(n) that returns whether n is even. Return only code.” Giới hạn 64 token; tiêu chí: câu trả lời phải chứa đủ “def is\_even”, “\% 2”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “My name is Linh.”; trợ lý nói “Hello Linh!”; người dùng nói “What is my name? Answer briefly.” Giới hạn 24 token; tiêu chí: câu trả lời phải chứa đủ “Linh”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “Monday Minh prepared data. Tuesday Lan tested the interface. Wednesday Huy wrote the report. Who tested the interface and on which day?”. Giới hạn 32 token; tiêu chí: câu trả lời phải chứa đủ “Lan”, “Tuesday”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “Translate 'hello' into Vietnamese. Answer briefly.” Giới hạn 24 token; tiêu chí: câu trả lời phải chứa đủ “xin chào”, không phân biệt hoa thường.
+\item Đầu vào: người dùng nói “What is the opposite of hot? Answer with one word.” Giới hạn 16 token; tiêu chí: câu trả lời phải chứa đủ “cold”, không phân biệt hoa thường.
+\end{enumerate}
+
+Các tiêu chí trên là quy tắc đối chiếu văn bản của bộ kiểm, không đánh giá đầy đủ ý nghĩa hoặc khả năng thực thi mã Python. Đạt tiêu chí chứa từ không đồng nghĩa câu trả lời hoàn toàn đúng; trượt tiêu chí cũng cần đọc lại nguyên văn trước khi suy nguyên nhân.
+
+Không thể từ 10/12 kết luận “độ chính xác 83,33\%” đại diện cho người dùng hoặc mọi nhiệm vụ. Cũng chưa có A/B FP32/INT8 trên model 7B để quy hai lỗi cho lượng tử hóa. Tốc độ, khả năng vận hành và chất lượng câu trả lời là ba chiều đánh giá cần được giữ riêng.
+
+\section{Thực nghiệm sơ bộ cấu hình i7 và OLMoE-0125-Instruct}
+
+Bộ thực nghiệm i7 gồm 20 yêu cầu đo và 5 lượt warmup, lưu kết quả từng yêu cầu, nhật ký và chuỗi quan sát bộ nhớ \cite{exp_phase1_i7}. Thành viên vận hành xác nhận model nguồn là OLMoE-1B-7B-0125-Instruct; revision nguồn chuyển đổi chưa có bằng chứng metadata kèm bộ đo. Hash checkpoint thực chạy được lưu trong các record để nhận diện artifact, không thay thế việc xác minh repo nguồn.
+
+Trình tự gửi yêu cầu trên i7 đúng theo K1, K2 và K3 đã mô tả tại mục 5.3.2: câu “Where is Mars” được đo sau đặt lại hoặc sau làm ấm; trong hội thoại, câu “What is love ?” được gửi sau câu trả lời đầu với cùng phiên và lịch sử thực tế. Mỗi nhóm kết quả có năm mẫu. Việc mô tả chung quy trình không có nghĩa hai máy dùng cùng checkpoint hoặc cùng chuỗi token.
+
+Bộ i5 sử dụng metadata phù hợp OLMoE-1B-7B-0924-Instruct. Hai phiên bản có cùng các kích thước kiến trúc chính: 16 lớp, hidden size 2048, 64 expert mỗi lớp, top-8. Chúng có checkpoint và tokenizer/template khác nhau. Cùng câu hỏi văn bản không bảo đảm cùng chuỗi token hoặc lịch sử sinh. Vì vậy, báo cáo mô tả khả năng vận hành riêng từng cấu hình; các số liệu không được dùng để kết luận model hoặc phần cứng nào nhanh hơn.
+
+\begin{table}[htbp]
+\centering
+\caption{Môi trường và cấu hình thực nghiệm trên máy i7}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Thuộc tính} & \textbf{Giá trị / Điều kiện quan sát thực tế} \\
+\midrule
+Testbed & \texttt{i7}, người dùng xác nhận \\
+CPU quan sát & Intel(R) Core(TM) i7-14650HX, 24 luồng logic quan sát trong raw \\
+RAM vật lý quan sát & 14,817 GiB tổng (15.910.060.032 bytes) \\
+GPU inventory & NVIDIA GeForce RTX 5060 Laptop GPU, 8151 MiB VRAM theo inventory; runtime báo tổng khoảng 7,53 GiB \\
+GPU runtime & Requested \texttt{auto}; enabled thực (\texttt{cuBLAS SGEMV Active}, khoảng 1,38 GiB dense allocation) \\
+Rayon threads & 8 threads \\
+Expert cache policy & \texttt{victim} \\
+Cache expert & 64 MiB/layer (1 GiB cấu hình trên 16 layers) \\
+Context / max output & 512 / 128 tokens \\
+Engine RAM guard & RSS 5 GiB; headroom 1 GiB \\
+Watchdog & RSS 5,5 GiB; MemAvailable 1,5 GiB; process swap 128 MiB; 250 ms \\
+Trình tự & Cold → Warm → Conversation, tuần tự qua \nolinkurl{tools/run_scenarios.py} \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: các file \texttt{result.json}, \texttt{memory.jsonl} và \texttt{watchdog.json} của artifact \cite{exp_phase1_i7}.}
+\end{table}
+
+
+
+\subsection{Từng mẫu đo trên máy i7}
+
+\begin{table}[htbp]
+\centering
+\caption{Từng mẫu đo của bộ i7 phase1-v1 (20 requests đo, không gồm warmup)}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Nhóm} & \textbf{Lượt} & \textbf{Token đầu vào} & \textbf{Token đầu ra} & \textbf{TTFT(s)} & \textbf{Decode (steps/s)} & \textbf{Wall(s)} \\
+\midrule
+K1 & 1 & 16 & 128 & 4.062 & 4.183 & 34.421 \\
+K1 & 2 & 16 & 128 & 4.163 & 4.121 & 34.979 \\
+K1 & 3 & 16 & 128 & 3.873 & 4.447 & 32.429 \\
+K1 & 4 & 16 & 128 & 4.110 & 4.463 & 32.568 \\
+K1 & 5 & 16 & 128 & 3.615 & 4.261 & 33.420 \\
+K2 & 1 & 16 & 128 & 2.141 & 4.906 & 28.029 \\
+K2 & 2 & 16 & 128 & 2.276 & 4.744 & 29.046 \\
+K2 & 3 & 16 & 128 & 2.016 & 4.862 & 28.135 \\
+K2 & 4 & 16 & 128 & 2.121 & 4.961 & 27.721 \\
+K2 & 5 & 16 & 128 & 2.363 & 4.568 & 30.167 \\
+K3.1 & 1 & 16 & 128 & 3.651 & 4.240 & 33.602 \\
+K3.1 & 2 & 16 & 128 & 3.912 & 3.971 & 35.892 \\
+K3.1 & 3 & 16 & 128 & 3.727 & 4.298 & 33.279 \\
+K3.1 & 4 & 16 & 128 & 4.103 & 4.172 & 34.543 \\
+K3.1 & 5 & 16 & 128 & 3.976 & 3.440 & 40.893 \\
+K3.2 & 1 & 162 & 128 & 3.234 & 3.717 & 37.404 \\
+K3.2 & 2 & 162 & 128 & 2.929 & 3.603 & 38.173 \\
+K3.2 & 3 & 162 & 128 & 2.379 & 3.734 & 36.391 \\
+K3.2 & 4 & 162 & 128 & 2.389 & 3.223 & 41.799 \\
+K3.2 & 5 & 162 & 128 & 3.357 & 3.069 & 44.732 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: raw payload trong \cite{exp_phase1_i7}; tất cả 20 mẫu đều đạt \nolinkurl{finish_reason=length} tại 128 output tokens và text/usage khớp tuyệt đối trong từng nhóm.}
+\par\smallskip{\footnotesize\RaggedRight K1: bộ đệm lạnh, hỏi “Where is Mars”; K2: sau làm ấm, hỏi lại “Where is Mars” trong phiên mới; K3.1: câu hỏi đầu “Where is Mars”; K3.2: câu hỏi tiếp “What is love ?” kèm lịch sử trong cùng phiên.\par}
+\end{table}
+
+
+
+\subsection{Tổng hợp hiệu năng và phân tích chi phí i7}
+
+\begin{table}[htbp]
+\centering
+\caption{Tổng hợp hiệu năng i7, trung vị của 5 mẫu/nhóm}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Nhóm} & \textbf{TTFT(s)} & \textbf{Decode (steps/s)} & \textbf{Wall(s)} & \textbf{Wall min–max(s)} \\
+\midrule
+K1 & 4.062 & 4.261 & 33.420 & 32.429–34.979 \\
+K2 & 2.141 & 4.862 & 28.135 & 27.721–30.167 \\
+K3.1 & 3.912 & 4.172 & 34.543 & 33.279–40.893 \\
+K3.2 & 2.929 & 3.603 & 38.173 & 36.391–44.732 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: \texttt{summary.json} và raw artifact \cite{exp_phase1_i7}. Wall là tổng thời gian sinh token nội bộ.}
+\par\smallskip{\footnotesize\RaggedRight K1: bộ đệm lạnh, hỏi “Where is Mars”; K2: sau làm ấm, hỏi lại “Where is Mars” trong phiên mới; K3.1: câu hỏi đầu “Where is Mars”; K3.2: câu hỏi tiếp “What is love ?” kèm lịch sử trong cùng phiên.\par}
+\end{table}
+
+
+
+\begin{table}[htbp]
+\centering
+\caption{Phân tích chi phí expert, attention và file payload trên i7 (trung vị 5 mẫu)}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Nhóm} & \textbf{Expert load wait(s)} & \textbf{Expert compute(s)} & \textbf{Attention(s)} & \textbf{File payload(GiB)} \\
+\midrule
+K1 & 13.485 & 8.312 & 0.864 & 5.757 \\
+K2 & 9.573 & 7.664 & 0.855 & 0.000 \\
+K3.1 & 13.745 & 8.990 & 0.910 & 5.757 \\
+K3.2 & 13.718 & 9.083 & 1.922 & 0.176 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: raw metrics trong \cite{exp_phase1_i7}. File payload tính theo gigabyte nhị phân (GiB).}
+\par\smallskip{\footnotesize\RaggedRight K1: bộ đệm lạnh, hỏi “Where is Mars”; K2: sau làm ấm, hỏi lại “Where is Mars” trong phiên mới; K3.1: câu hỏi đầu “Where is Mars”; K3.2: câu hỏi tiếp “What is love ?” kèm lịch sử trong cùng phiên.\par}
+\end{table}
+
+
+
+Trên i7, mẫu đo K2 hỏi “Where is Mars” sau lượt làm ấm có lượng dữ liệu đọc tệp bằng 0 trong phạm vi các request đo, nhưng expert load wait vẫn có giá trị. Điều này phù hợp với việc còn truy xuất hoặc di chuyển expert giữa các tầng bộ nhớ; không đồng nghĩa mọi chi phí I/O đã biến mất. Bộ đếm ứng dụng không đại diện cho toàn bộ hoạt động vật lý của SSD.
+
+Lượt K3.2 hỏi “What is love ?” kèm lịch sử có 162 token đầu vào và tái sử dụng 143 token KV; phần prompt cần tính lại là 19 token. Đây là hành vi quan sát trong các lượt đã lưu. Nguyên nhân khác biệt với i5 chưa được tách bằng thí nghiệm đối chứng token prefix, nên không quy kết cho riêng tokenizer, template hoặc phần cứng.
+
+\subsection{Quan sát bộ nhớ và độ ổn định RAM trên i7}
+
+\begin{table}[htbp]
+\centering
+\caption{Quan sát bộ nhớ máy i7 trong bộ đo chính}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X }
+\toprule
+\textbf{Scenario} & \textbf{HWM cao nhất quan sát(GiB)} & \textbf{VmSwap cao nhất(KiB)} & \textbf{MemAvailable thấp nhất(GiB)} & \textbf{Thời gian quan sát(s)} \\
+\midrule
+K1 & 3.161 & 0 & 5.463 & 169.1 \\
+K2 & 3.278 & 0 & 6.347 & 314.1 \\
+K3 & 3.164 & 0 & 5.607 & 378.2 \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: chuỗi \nolinkurl{/proc} lấy mẫu 250 ms từ \texttt{memory.jsonl} trong \cite{exp_phase1_i7}.}
+\end{table}
+
+
+
+Ba kịch bản hoàn tất với status success và danh sách vi phạm watchdog rỗng. HWM cao nhất quan sát khoảng 3,278 GiB; các mẫu không ghi nhận process swap. Các kết quả này mô tả những lượt chạy và thời gian trong bảng, chưa chứng minh vận hành dài hạn hoặc mọi workload đều tránh OOM. Cache 64 MiB/layer là cấu hình đã thử, không phải mức tối ưu hay bảo đảm an toàn chung.
+
+\subsection{Phạm vi rút ra từ hai bộ thực nghiệm}
+
+Hai bộ hồ sơ cung cấp ví dụ vận hành của nguyên mẫu trên hai cấu hình với hai phiên bản checkpoint thuộc cùng kiến trúc OLMoE. Mỗi bộ có kết quả đầu ra và số liệu theo dõi riêng. Chưa có đánh giá độc lập xác nhận tập câu hỏi đại diện cho tác vụ sử dụng thực tế, chưa kiểm chuẩn chất lượng đầy đủ và chưa tách ảnh hưởng model, tokenizer, backend, phần cứng hoặc tải nền.
+
+Đóng góp của thực nghiệm kỳ 1 là minh họa các khái niệm prefill, decode, expert cache, KV reuse và chi phí di chuyển dữ liệu bằng quan sát thực tế. Các thử nghiệm policy hoặc tối ưu trước đó có điều kiện và cỡ mẫu riêng; không được gộp thành mức tăng tốc chung của hệ thống.
+
+\section{Tổng hợp các đợt triển khai và kế hoạch kỳ tiếp theo}
+
+\subsection{Kết quả theo từng nhóm thay đổi}
+
+Các đợt dưới đây được tổng hợp theo vấn đề kỹ thuật. Chúng không tạo thành một chuỗi benchmark trước–sau có cùng điều kiện xuyên suốt; mỗi tỷ lệ chỉ thuộc phép thử ở mục tương ứng.
+
+\begin{enumerate}
+\item \textbf{Xây dựng luồng suy luận và phân tầng.} Triển khai đường OLMoE với expert INT8 tính trên CPU, dense có hỗ trợ CUDA/cuBLAS, RAM cache và VRAM cache, expert được lấy từ file khi cần. Kết quả là nguyên mẫu phối hợp được các tầng lưu trữ và thiết bị tính toán. Chưa có đối chứng để gán một phần trăm tăng tốc riêng cho toàn bộ nền tảng này.
+\item \textbf{Khảo sát giảm lượng tính toán prefill.} Bổ sung longest common prefix để giữ KV còn hợp lệ khi prompt thay đổi. Năm cặp thử ghi nhận trung vị prefill giảm từ 8846,971 ms xuống 2870,175 ms, tương ứng 67,56\% trong workload tái sử dụng 104/116 token. Đây là lợi ích của tránh tính lại, không phải tốc độ decode hoặc toàn bộ hội thoại tăng tương ứng (mục 5.6).
+\item \textbf{Thử mức song song trong dispatch.} So sánh serial với candidate grouped bằng chín cặp xen kẽ. Candidate chậm hơn ở 7/9 cặp, trung vị thay đổi từng cặp tăng 4,55\%; runtime giữ serial. Kết quả giúp loại một phương án chưa có lợi trên cấu hình khảo sát, thay vì đưa thêm song song vào hệ thống chỉ dựa trên giả định (mục 5.7).
+\item \textbf{Khảo sát chính sách cache giữa RAM và VRAM.} So sánh inclusive với victim cùng server theo AB/BA. Trung vị wall giảm 20,77\% cho Mars và 13,42\% cho Love trong khảo sát nhỏ; payload file giảm còn truyền D2H tăng. Dữ liệu hỗ trợ lựa chọn victim trong điều kiện đã thử, chưa chứng minh lợi ích cố định trên mọi cấu hình (mục 5.5).
+\item \textbf{Bổ sung kiểm soát tài nguyên và hành vi sử dụng.} Bổ sung dự toán bộ nhớ, guard hợp tác, giám sát độc lập; hoàn thiện streaming, hủy và quy tắc chỉ lưu phản hồi thành công. Hai lượt kiểm RAM với tổng 24 request hoàn tất, cấu hình cache 256 MiB/layer bị chặn theo dự toán. Những thay đổi này phục vụ quản lý tài nguyên và tính nhất quán, không được trình bày thành cải thiện token/s khi chưa có phép đo riêng (mục 5.8–5.9).
+\item \textbf{Ghi nhận vận hành của phiên bản tích hợp.} Hai bộ i5/i7 mô tả TTFT, decode, chi phí thành phần và bộ nhớ của từng cấu hình/model. Chúng cung cấp mốc vận hành để giải thích nguyên mẫu ở kỳ 1; không dùng thay thí nghiệm đối chứng từng cải tiến hoặc chứng minh trần phần cứng (mục 5.2–5.4 và 5.10).
+\end{enumerate}
+
+Các giá trị trên không được cộng với nhau thành tổng phần trăm tăng tốc. Lợi ích gồm ba dạng: giảm công việc cần tính, thay cách cung cấp expert và cải thiện kiểm soát tài nguyên/hành vi. Một phương án bị loại sau thực nghiệm vẫn cung cấp thông tin để lựa chọn thiết kế.
+
+\subsection{Phạm vi hoàn thành của kỳ 1}
+
+Kỳ 1 tập trung làm rõ Transformer, MoE/router, lượng tử hóa, phân tầng VRAM–RAM–SSD, cache/offload/prefetch và các chỉ số hiệu năng. Nguyên mẫu cùng các benchmark sơ bộ giúp liên hệ lý thuyết với luồng suy luận thực tế. Đây là phạm vi báo cáo định kỳ, chưa phải nghiệm thu toàn bộ hệ thống hoặc bộ đánh giá chuẩn hóa.
+
+\subsection{Hướng phát triển}
+
+\begin{table}[htbp]
+\centering
+\caption{Kế hoạch kỳ tiếp theo}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Công việc} & \textbf{Nội dung cần làm rõ} & \textbf{Phạm vi} \\
+\midrule
+Quản lý tổng bộ nhớ & Phân biệt cache capacity, RSS, pool và cấp phát GPU; điều tra sự cố OOM đã ghi nhận & Hoàn thiện hệ thống \\
+Chiến lược expert & Khảo sát LRU, frequency, predictive prefetch và adaptive; phân biệt lý thuyết với phần đã triển khai & Theo đề cương \\
+Phương pháp đánh giá & Xác định tác vụ, dữ liệu và tiêu chí chất lượng; kiểm token workload khi cần đối chứng & Kỳ tiếp theo \\
+Tối ưu có giả thuyết & Chỉ đánh giá phương án mới khi xác định được mục tiêu và điều kiện thử & Kỳ tiếp theo \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: nhóm tổng hợp từ kiến trúc, hồ sơ thực nghiệm và giới hạn quan sát. Các hướng này thuộc phạm vi nghiên cứu của kỳ tiếp theo.}
+\end{table}
+

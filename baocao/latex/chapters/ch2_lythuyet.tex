@@ -1,0 +1,436 @@
+\chapter{CƠ SỞ LÝ THUYẾT VÀ CÔNG NGHỆ LIÊN QUAN}
+
+
+Chương này trình bày các kiến thức cần để hiểu luồng suy luận và cách quản lý bộ nhớ của nguyên mẫu. Các khái niệm được giới thiệu theo thứ tự: sinh token, Transformer, MoE, lượng tử hóa, bộ đệm KV, phân tầng bộ nhớ và chỉ số đánh giá. Công thức lý thuyết được phân biệt với lựa chọn triển khai và số liệu thực nghiệm của nhóm.
+
+\section{Mô hình sinh tự hồi quy}
+
+Mô hình sinh tự hồi quy dự đoán token tiếp theo từ các token đã có, rồi dùng token vừa sinh làm một phần đầu vào cho bước kế tiếp \cite{vaswani_attention}. Token là đơn vị do bộ mã hóa văn bản (tokenizer) xác định, có thể là một từ, một phần từ, dấu câu hoặc đơn vị văn bản khác. Vì vậy, số token không đồng nhất với số từ mà người đọc nhìn thấy.
+
+Với chuỗi $x_1,\ldots,x_n$, xác suất của cả chuỗi được phân tích thành tích các xác suất có điều kiện:
+
+\begin{equation}
+\label{eq:2.1}
+p(x_1,\ldots,x_n)=\prod_{t=1}^{n}p(x_t\mid x_1,\ldots,x_{t-1}).
+\end{equation}
+
+Ở đây $x_t$ là token tại vị trí $t$; $p(x_t\mid x_1,\ldots,x_{t-1})$ là xác suất của token đó khi đã biết phần trước. Tại vị trí đầu, điều kiện là tiền tố khởi tạo của mô hình hoặc chuỗi rỗng theo quy ước biểu diễn. Công thức mô tả nguyên lý sinh tuần tự, không quy định bắt buộc phải chọn token bằng phương pháp nào.
+
+Trong nguyên mẫu, khuôn mẫu hội thoại (chat template) sắp xếp vai trò và nội dung các thông điệp thành văn bản đầu vào. Bộ mã hóa chuyển văn bản thành các mã token; phép nhúng (embedding) ánh xạ mỗi mã sang một vector số. Sau các lớp tính toán, mô hình tạo các điểm dự đoán, gọi là logits, cho những token có thể xuất hiện tiếp theo. Giải mã tham lam chọn token có điểm lớn nhất. Quá trình lặp đến khi gặp token kết thúc chuỗi (EOS) hoặc đạt giới hạn số token sinh \cite{moe_tierengine_arch}. Giới hạn 128 token chỉ là cấu hình của một phép thử, không bảo đảm câu trả lời luôn kết thúc trọn ý tại đó.
+
+\section{Transformer và attention}
+
+Transformer sử dụng attention để kết hợp thông tin giữa các vị trí trong chuỗi \cite{vaswani_attention}. Với một đầu attention, gọi $X$ là ma trận biểu diễn các token; các phép chiếu tuyến tính tạo $Q=XW_Q$, $K=XW_K$ và $V=XW_V$. Query $Q$ dùng để tính mức liên hệ với key $K$, còn value $V$ chứa dữ liệu được kết hợp theo các mức liên hệ đó.
+
+Attention có dạng:
+
+\begin{equation}
+\label{eq:2.2}
+\operatorname{Attention}(Q,K,V)=\operatorname{softmax}\left(\frac{QK^\mathsf{T}}{\sqrt{d_h}}+M\right)V.
+\end{equation}
+
+Trong công thức, $d_h$ là chiều của query/key trong một đầu; $K^\mathsf{T}$ là ma trận chuyển vị của $K$. Tích $QK^\mathsf{T}$ tạo điểm liên hệ giữa các vị trí. Softmax chuyển các điểm thành trọng số không âm có tổng bằng 1 trên từng hàng. Kết quả cuối là tổng có trọng số của các vector value \cite[mục 3.2.1]{vaswani_attention}.
+
+Mặt nạ nhân quả (causal mask) $M$ bảo đảm token hiện tại chỉ sử dụng chính nó và các token đứng trước. Với dạng cộng trong công thức (2.2), các vị trí được phép có giá trị 0, còn vị trí tương lai bị đặt thành âm vô cùng trước softmax. Cơ chế chú ý đa đầu (multi-head attention) thực hiện nhiều đầu chú ý, ghép các kết quả rồi chiếu về chiều biểu diễn của mô hình \cite[mục 3.2.2]{vaswani_attention}.
+
+Ngoài attention, một lớp Transformer có khối biến đổi theo từng token, thường gọi là feed-forward. Kết nối tắt (residual connection) cộng đầu vào của một khối với đầu ra của khối đó, tạo đường truyền trực tiếp cho biểu diễn. Kiến trúc OLMoE sử dụng các phép chuẩn hóa và khối MoE theo cấu hình của mô hình; sơ đồ khối không thay thế các chi tiết tính toán này \cite{olmoe}.
+
+\subsection{RMSNorm và biểu diễn vị trí}
+
+Phép chuẩn hóa RMSNorm điều chỉnh độ lớn của vector theo căn trung bình bình phương các phần tử \cite{rmsnorm}. Dạng dùng trong nguyên mẫu là:
+
+\begin{equation}
+\label{eq:2.3}
+\operatorname{RMSNorm}(x)_i=\gamma_i\frac{x_i}{\sqrt{\frac{1}{d}\sum_{j=1}^{d}x_j^2+\epsilon}}.
+\end{equation}
+
+$x_i$ là phần tử thứ $i$ của vector có chiều $d$; $\gamma_i$ là hệ số đã học. Giá trị nhỏ $\epsilon$ giúp ổn định phép chia trong triển khai \cite{moe_tierengine_arch}. Phép chuẩn hóa này dùng trung bình bình phương, không trừ trung bình các phần tử như bước định tâm của LayerNorm.
+
+Attention còn cần thông tin thứ tự token. Rotary Position Embedding (RoPE) đưa thông tin vị trí vào query và key bằng phép quay các cặp tọa độ \cite[mục 3.2]{roformer}. Với một cặp $(a,b)$ tại vị trí $t$, nguyên lý có thể viết:
+
+\begin{equation}
+\label{eq:2.4}
+\begin{bmatrix}q'_a\\q'_b\end{bmatrix}
+=\begin{bmatrix}\cos(t\theta_j)&-\sin(t\theta_j)\\\sin(t\theta_j)&\cos(t\theta_j)\end{bmatrix}
+\begin{bmatrix}q_a\\q_b\end{bmatrix}.
+\end{equation}
+
+$\theta_j$ là tần số quay của cặp thứ $j$; $q_a,q_b$ là hai tọa độ trước phép quay và dấu phẩy trên biểu thị kết quả sau quay. Cách ghép tọa độ phụ thuộc quy ước mô hình, không mặc định luôn là hai phần tử kề nhau trong bộ nhớ. Cùng nguyên lý được áp dụng cho key. Nhờ góc quay phụ thuộc vị trí, tích vô hướng query-key mang thông tin về khoảng cách vị trí \cite{roformer}. Khi tái sử dụng KV, nguyên mẫu giữ đúng vị trí của các token trong tiền tố còn hợp lệ \cite{moe_tierengine_arch}.
+
+\section{Kiến trúc Mixture-of-Experts}
+
+Một lớp MoE gồm tập các mạng chuyên gia (expert) và bộ định tuyến (Router). Mỗi expert là một mạng con có trọng số riêng. Thay vì cho mọi token đi qua toàn bộ expert, Router chọn một tập con rồi kết hợp đầu ra. Switch Transformer là ví dụ định tuyến một expert cho mỗi token ở lớp MoE \cite{switch_transformers}; OLMoE sử dụng 64 expert mỗi lớp và kích hoạt 8 expert cho mỗi token \cite[mục 1]{olmoe}. Do đó, dùng chung khái niệm MoE không có nghĩa các mô hình dùng cùng thuật toán hoặc số expert được chọn.
+
+Trong các công thức MoE dưới đây, $x$ là vector cột biểu diễn token; $E$ là số expert trong lớp và $k$ là số expert được chọn. Router tính $r=W_rx$, trong đó $W_r$ là ma trận trọng số định tuyến. Xác suất và đầu ra MoE là:
+
+\begin{equation}
+\label{eq:2.5}
+p_e=\frac{\exp(r_e)}{\sum_{j=1}^{E}\exp(r_j)},\quad S=\operatorname{TopK}(p,k),\quad y=\sum_{e\in S}\alpha_e f_e(x).
+\end{equation}
+
+$p_e$ là xác suất của expert $e$; $S$ chứa chỉ số $k$ expert có xác suất lớn nhất; $f_e(x)$ là đầu ra expert đó; $\alpha_e$ là trọng số kết hợp. Nếu chuẩn hóa lại top-k thì $\alpha_e=p_e/\sum_{j\in S}p_j$; nếu không thì $\alpha_e=p_e$. Hai cấu hình OLMoE sử dụng trong đề tài không chuẩn hóa lại xác suất sau khi chọn top-k, nên nguyên mẫu dùng trường hợp thứ hai \cite{olmoe_0924_config}, \cite{olmoe_0125_config}.
+
+Ví dụ minh họa, một lớp có bốn expert với xác suất 0,5; 0,3; 0,15; 0,05 và chọn hai expert. Nếu không chuẩn hóa lại, đầu ra là $0,5f_1(x)+0,3f_2(x)$. Đây là ví dụ số nhỏ để giải thích phép chọn và tổng hợp, không phải cấu hình OLMoE thực nghiệm.
+
+Expert trong OLMoE dùng khối SwiGLU \cite{olmoe}, \cite{swiglu}. Với quy ước vector cột, phép tính không có hệ số dịch (bias) được viết:
+
+\begin{equation}
+\label{eq:2.6}
+f_e(x)=W_{d,e}\left[\operatorname{SiLU}(W_{g,e}x)\odot(W_{u,e}x)\right],\quad \operatorname{SiLU}(z)=\frac{z}{1+e^{-z}}.
+\end{equation}
+
+$W_g$ và $W_u$ có kích thước $m\times d$, biến đổi vector chiều $d$ sang chiều trung gian $m$. Ký hiệu $\odot$ là nhân từng phần tử; nhánh qua SiLU đóng vai trò cổng điều chỉnh nhánh còn lại. $W_d$ có kích thước $d\times m$, đưa kết quả trở về chiều $d$. Đây là dạng SwiGLU với Swish có hệ số bằng 1, được viết lại theo quy ước vector cột \cite[mục 2]{swiglu}. Router lựa chọn expert từ biểu diễn số của token, không dựa trên danh sách chủ đề do nhóm gán thủ công.
+
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.35cm, auto, box/.append style={minimum height=0.65cm}, proc/.append style={minimum height=0.65cm}]
+    \node [box, fill=blue!10] (emb) {Đầu vào lớp (embedding ở lớp đầu)};
+    \node [box, below=of emb] (attn) {RMSNorm \& Causal Multi-Head Attention};
+    \node [box, fill=gray!15, below=of attn] (res1) {Residual Connection (+)};
+    \node [box, below=of res1] (norm2) {RMSNorm \& Router (Top-$k$)};
+    \node [proc, fill=orange!15, below=of norm2] (select) {Kích hoạt $k=8$ trên $E=64$ Expert};
+    \node [box, fill=purple!10, below=of select] (swiglu) {SwiGLU CPU (trọng số INT8)};
+    \node [box, fill=gray!15, below=of swiglu] (res2) {Tổng có trọng số $\sum g_i E_i(x)$ \& Residual (+)};
+    \node [box, fill=green!10, below=of res2] (out) {Lớp tiếp theo / RMSNorm cuối \& LM Head};
+
+    \draw [arrow] (emb) -- (attn);
+    \draw [arrow] (attn) -- (res1);
+    \draw [arrow] (emb.west) to [out=180, in=180] (res1.west);
+    \draw [arrow] (res1) -- (norm2);
+    \draw [arrow] (norm2) -- (select);
+    \draw [arrow] (select) -- (swiglu);
+    \draw [arrow] (swiglu) -- (res2);
+    \draw [arrow] (res1.east) to [out=0, in=0] (res2.east);
+    \draw [arrow] (res2) -- (out);
+\end{tikzpicture}
+\caption{Khối suy luận Transformer-MoE minh họa}
+\label{fig:moe_block}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: nhóm dựng từ kiến trúc Transformer và OLMoE \cite{vaswani_attention,olmoe}. Hình lược bỏ các norm phụ của Q/K và chi tiết tensor; INT8 chỉ định dạng trọng số expert.\par}
+\end{figure}
+
+
+\subsection{Cấu hình OLMoE sử dụng}
+
+\begin{table}[htbp]
+\centering
+\caption{Các thông số kiến trúc chung của hai phiên bản OLMoE sử dụng}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{7.6cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Thông số} & \textbf{Giá trị} \\
+\midrule
+Số lớp $L$ & 16 \\
+Chiều ẩn $d$ & 2048 \\
+Chiều trung gian expert $m$ & 1024 \\
+Expert mỗi lớp $E$ & 64 \\
+Expert được chọn/token/lớp $k$ & 8 \\
+Đầu attention / đầu KV & 16 /16 \\
+Chiều mỗi đầu $d_h$ & 128 \\
+Kích thước từ vựng & 50304 \\
+Vị trí tối đa trong cấu hình gốc & 4096 \\
+Cửa sổ ngữ cảnh dùng trong thực nghiệm & 512 \\
+Chuẩn hóa lại xác suất top-k & Không \\
+\bottomrule
+\end{tabularx}
+
+
+\end{table}
+
+
+
+Các kích thước mô hình được đối chiếu với cấu hình công bố của OLMoE-1B-7B-0924-Instruct và OLMoE-1B-7B-0125-Instruct \cite{olmoe_0924_config}, \cite{olmoe_0125_config}. Chiều mỗi đầu bằng 2048 / 16 = 128. Cửa sổ ngữ cảnh 512 token là lựa chọn của nguyên mẫu trong bộ thực nghiệm \cite{exp_phase1_i5}, \cite{exp_phase1_i7}, tách biệt với giới hạn vị trí 4096 của cấu hình gốc. Hai phiên bản có các kích thước trên giống nhau, nhưng khác bộ trọng số đã huấn luyện (checkpoint) và cấu hình xử lý văn bản.
+
+\section{Lượng tử hóa trọng số expert INT8}
+
+Lượng tử hóa biểu diễn các giá trị bằng một tập số rời rạc có ít bit hơn, nhằm giảm dung lượng lưu và chi phí truyền dữ liệu, đổi lại phát sinh sai số xấp xỉ \cite{quantization_survey}. Số lượng trọng số được giữ nguyên; INT8 không có nghĩa gom tám trọng số thành một. Ví dụ, một triệu trọng số cần khoảng 4 MB ở FP32, 2 MB ở BF16/FP16 và 1 MB ở INT8, chưa tính hệ số và dữ liệu phụ.
+
+Hai cấu hình OLMoE gốc công bố kiểu BF16 \cite{olmoe_0924_config}, \cite{olmoe_0125_config}. Trong bước chuẩn bị của đề tài, trọng số expert được chuyển sang INT8 với hệ số tỉ lệ riêng cho mỗi hàng. Cách chọn hệ số tỉ lệ và chặn giá trị ở công thức (2.7) mô tả quy tắc của bộ chuyển đổi được dùng trong dự án \cite{moe_tierengine_arch}; tài liệu \cite{quantization_survey} cung cấp cơ sở lượng tử hóa, không phải nguồn cho từng hằng số của triển khai này.
+
+Với hàng $i$ của ma trận $W$:
+
+\begin{equation}
+\label{eq:2.7}
+s_i=\frac{\max(\max_j|W_{ij}|,10^{-12})}{127},\quad q_{ij}=\operatorname{clip}\left(\operatorname{round}(W_{ij}/s_i),-128,127\right).
+\end{equation}
+
+$s_i$ là hệ số tỉ lệ (scale); $q_{ij}$ là số nguyên 8 bit. Hàm round làm tròn, còn hàm clip giới hạn kết quả trong khoảng chỉ định. Ngưỡng $10^{-12}$ tránh hệ số tỉ lệ bằng 0 ở hàng có độ lớn quá nhỏ. Trọng số xấp xỉ là $\widehat W_{ij}=s_iq_{ij}$. Ví dụ minh họa, nếu hệ số tỉ lệ bằng 0,01 thì giá trị 0,1234 được làm tròn thành 12 và khôi phục xấp xỉ thành 0,12.
+
+Khi nhân với vector đầu vào $x$ dùng FP32, mỗi hàng kết quả có dạng:
+
+\begin{equation}
+\label{eq:2.8}
+y_i=s_i\sum_jq_{ij}x_j.
+\end{equation}
+
+Nguyên mẫu lưu trọng số expert bằng INT8, lưu hệ số tỉ lệ bằng FP32 và áp dụng hệ số này khi tính trên CPU. Nó không cần tạo một bản sao FP32 đầy đủ của ma trận expert trước mỗi phép tính \cite{moe_tierengine_arch}. Attention và KV vẫn dùng FP32. Dung lượng và tốc độ được đánh giá riêng với chất lượng đầu ra; giảm số bit không tự chứng minh câu trả lời giữ nguyên chất lượng.
+
+\section{Prefill, decode và KV cache}
+
+Quá trình suy luận gồm hai giai đoạn. Giai đoạn xử lý đầu vào (prefill) tính các token trong chuỗi đầu vào và chuẩn bị trạng thái để dự đoán token đầu tiên. Giai đoạn sinh tiếp (decode) đưa token vừa chọn qua mô hình để tính điểm dự đoán cho bước tiếp theo. Cách lưu KV giúp tránh tính lại key/value của toàn bộ tiền tố ở mỗi bước \cite{hf_kv_cache}.
+
+Bộ đệm khóa và giá trị (KV cache) lưu key và value của từng lớp cho các vị trí đã xử lý. Nó chứa dữ liệu phụ thuộc nội dung hội thoại, khác expert cache vốn giữ trọng số của mô hình. Nếu chỉ thêm token vào cuối một tiền tố không đổi với cơ chế chú ý nhân quả, key/value của các token cũ có thể được dùng lại \cite{hf_kv_cache}. Nếu sửa lịch sử hoặc khuôn mẫu hội thoại làm thay đổi chuỗi token, nguyên mẫu chỉ giữ phần tiền tố còn khớp và đúng vị trí \cite{moe_tierengine_arch}.
+
+Với một chuỗi, $L$ lớp, $T$ vị trí đã lưu, $h_{kv}$ đầu KV, chiều đầu $d_h$ và $b$ byte mỗi phần tử, dung lượng tensor KV là:
+
+\begin{equation}
+\label{eq:2.9}
+B_{KV}=2LTh_{kv}d_hb,\quad b=4\ \text{byte với FP32}.
+\end{equation}
+
+Hệ số 2 tương ứng với cả key và value. Công thức được nhóm tính từ kích thước tensor KV theo lớp \cite{hf_kv_cache} và cấu hình của mô hình. Nó giả sử chiều key/value mỗi đầu bằng nhau như OLMoE đang dùng. Với $L=16$, $T=512$, $h_{kv}=16$, $d_h=128$, dung lượng dữ liệu bằng 134.217.728 byte, tức 128 MiB. Đây là dung lượng tensor, chưa gồm phần dung lượng cấp phát dư, dữ liệu quản lý và trạng thái phiên hội thoại.
+
+Lịch sử trên trình duyệt là văn bản, còn bộ đệm KV phía bộ máy suy luận là các mảng số nhiều chiều (tensor). Phía giao diện vẫn gửi lại lịch sử để hệ thống dựng đúng đầu vào. Hai yêu cầu thuộc cùng phiên hội thoại không bảo đảm dùng lại toàn bộ KV, vì tiền tố token phải còn khớp. Nguyên mẫu không lưu điểm dự đoán của mọi vị trí trong phiên, nên vẫn phải tính lại ít nhất token cuối của chuỗi đầu vào để tạo điểm dự đoán mới \cite{moe_tierengine_arch}.
+
+\section{Phân tầng bộ nhớ và vai trò GPU}
+
+Phân tầng tổ chức dữ liệu ở những nơi có dung lượng, tốc độ truy cập và vai trò khác nhau. Với GPU rời trong các cấu hình của đề tài, RAM là bộ nhớ chính phục vụ CPU (host), VRAM là bộ nhớ thiết bị phục vụ GPU, còn SSD lưu các tệp trọng số lâu dài. Dữ liệu có thể phải được chuyển giữa RAM và VRAM trước khi tính \cite{cuda_memory}. Có bản sao trong VRAM không đồng nghĩa dữ liệu đó sẵn cho CPU truy cập theo cách nguyên mẫu đang dùng.
+
+cuBLAS cung cấp các phép đại số tuyến tính trên GPU \cite{nvidia_cublas}. Trong nguyên mẫu, các phép chiếu dùng trọng số chung của mô hình và lớp chiếu đầu ra (LM head) có thể dùng CUDA/cuBLAS; expert SwiGLU vẫn tính trên CPU. VRAM còn giữ một phần expert làm cache. Khi CPU cần expert chỉ có ở VRAM, nguyên mẫu phải truyền dữ liệu về RAM \cite{moe_tierengine_arch}. Đó là lựa chọn triển khai của đề tài, không phải yêu cầu chung rằng mọi hệ thống MoE đều phải tính expert trên CPU.
+
+\subsection{Tính toán dung lượng cho thiết kế}
+
+Theo quy ước ở mục 2.3, hai ma trận cổng và mở rộng (gate/up) có $m$ hàng, còn ma trận chiếu về chiều ẩn (down) có $d$ hàng. Tổng cộng có $3dm$ trọng số INT8 và $2m+d$ hệ số tỉ lệ FP32. Với một byte cho INT8 và bốn byte cho FP32, dung lượng trọng số và hệ số tỉ lệ của một expert là:
+
+\begin{equation}
+\label{eq:2.10}
+B_e=3dm+4(2m+d)=6\,307\,840\ \text{byte}=6.015625\ \text{MiB}.
+\end{equation}
+
+\begin{table}[htbp]
+\centering
+\caption{Tính toán dung lượng phục vụ thiết kế}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{5.5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Đại lượng} & \textbf{Phép tính} & \textbf{Giá trị lý thuyết} \\
+\midrule
+Trọng số và hệ số tỉ lệ của toàn bộ expert & $LEB_e$ & 6.015625 GiB \\
+Dữ liệu của 8 expert được chọn ở mỗi lớp, trên 16 lớp & $LkB_e$ & 770 MiB \\
+Cache RAM cấu hình 64 MiB/lớp & $16\times64$ & 1024 MiB \\
+Số expert nguyên vẹn vừa ngân sách 64 MiB của một lớp & $\lfloor64/6.015625\rfloor$ & 10 expert \\
+KV FP32 đủ 512 vị trí & $2\times16\times512\times16\times128\times4$ & 128 MiB \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: nhóm tính từ kích thước mô hình \cite{olmoe_0924_config}, \cite{olmoe_0125_config}, cách bố trí dữ liệu expert trong nguyên mẫu \cite{moe_tierengine_arch} và công thức (2.9). Đây là dung lượng dữ liệu lý thuyết, không phải RSS hoặc tổng cấp phát VRAM.}
+\end{table}
+
+
+
+Con số 770 MiB là tổng dung lượng dữ liệu của các expert được chọn ở mọi lớp; nó không yêu cầu tất cả cùng nằm trong RAM, vì mô hình có thể xử lý lần lượt từng lớp. Giá trị 10 expert giả sử chỉ xét trọng số và hệ số tỉ lệ, chưa tính phần quản lý và dung lượng cấp phát thực tế. Tương tự, ngân sách cache 1 GiB chỉ dành cho một phần tiến trình; tổng bộ nhớ còn có trọng số chung của mô hình, KV, bộ đệm tính toán, bộ mã hóa văn bản và môi trường thực thi.
+
+\subsection{Lưu đệm, chuyển tải và nạp trước}
+
+Ba cơ chế giải quyết những quyết định khác nhau trong đường cung cấp expert:
+
+\begin{itemize}
+\item \textbf{Lưu đệm (caching):} giữ expert đã nạp để có thể dùng lại, tránh lặp việc đọc hoặc truyền dữ liệu. Khi cache đầy, chính sách thay thế chọn expert bị loại. Nguyên lý tận dụng lịch sử truy cập được dùng rộng rãi trong quản lý bộ nhớ \cite{ostep_policies}.
+\item \textbf{Chuyển tải dữ liệu (offloading):} bố trí một phần dữ liệu ngoài bộ nhớ tính toán chính và chuyển vào khi cần. Nghiên cứu suy luận MoE có thể đặt expert ở RAM rồi đưa lên GPU \cite{moe_offloading}. Nguyên mẫu của nhóm dùng hướng lưu trữ riêng: expert được cung cấp từ RAM, VRAM hoặc tệp trọng số để tính trên CPU \cite{moe_tierengine_arch}.
+\item \textbf{Nạp trước (prefetching):} bắt đầu nạp trước thời điểm phép tính cần dữ liệu để giảm thời gian chờ. Có thể nạp khi đã biết expert được chọn, hoặc dự đoán expert của bước/lớp sau. Nạp dự đoán có thể sai, làm tăng lượng dữ liệu truyền và chiếm cache; nghiên cứu \cite{moe_offloading} khảo sát cơ chế dự đoán expert trong bối cảnh offloading.
+\end{itemize}
+
+Có thể thực hiện đồng thời một phần truyền dữ liệu và tính toán nếu triển khai, thiết bị và quan hệ phụ thuộc cho phép. Lợi ích thực tế còn phụ thuộc việc dự đoán đúng, băng thông và thời điểm cần expert; không thể kết luận rằng có cơ chế nạp trước thì toàn bộ thời gian tải đã được loại bỏ.
+
+\subsection{Các hướng quản lý expert}
+
+LRU và chính sách dựa trên tần suất sử dụng thông tin lịch sử để quyết định dữ liệu nào nên được giữ. Hai nguyên lý này được mô tả trong lý thuyết thay thế bộ nhớ \cite{ostep_policies}; khi áp dụng vào expert, đơn vị được quản lý là một expert thay vì một trang nhớ:
+
+\begin{itemize}
+\item \textbf{LRU (Least Recently Used):} ưu tiên loại expert lâu nhất chưa được sử dụng. Cách này dựa trên giả định dữ liệu vừa dùng có khả năng được dùng lại trong thời gian gần.
+\item \textbf{Quản lý theo tần suất (frequency-based):} ưu tiên giữ expert được dùng thường xuyên; một trường hợp đơn giản là LFU, loại dữ liệu có số lần truy cập thấp nhất. Cần cân nhắc cửa sổ thống kê hoặc giảm trọng số lịch sử để các expert từng phổ biến không chiếm cache quá lâu.
+\item \textbf{Nạp trước có dự đoán (predictive prefetch):} dùng thông tin hiện có để dự đoán expert sắp cần và nạp sớm. Đây là quyết định nạp dữ liệu, có thể kết hợp với LRU hoặc frequency-based, thay vì thay thế hoàn toàn chính sách giữ hoặc loại expert \cite{moe_offloading}.
+\item \textbf{Bộ đệm thích ứng (adaptive cache):} điều chỉnh ngân sách hoặc cách quản lý theo trạng thái quan sát, như áp lực RAM hoặc sự thay đổi tập expert được dùng. Trong báo cáo, đây là hướng thiết kế thích ứng được khảo sát, không chỉ một thuật toán chuẩn duy nhất.
+\end{itemize}
+
+Hai chính sách phối hợp tầng nhớ trong nguyên mẫu là inclusive và victim. Chính sách inclusive cho phép giữ bản sao expert trên cả RAM và VRAM; chính sách victim ưu tiên dùng VRAM cho expert bị loại khỏi RAM \cite{moe_tierengine_arch}. Lựa chọn này quyết định nơi giữ dữ liệu giữa hai tầng, khác với việc chọn expert dựa trên lần truy cập gần nhất hoặc tần suất sử dụng. Báo cáo lần 1 có thực nghiệm đối chứng hai chính sách này; chưa có bộ đối chứng đầy đủ cho tất cả các hướng quản lý nêu trên.
+
+\section{Chỉ số và mô hình phân tích hiệu năng}
+
+Các chỉ số dưới đây được xác định theo cách ghi nhận của bộ máy suy luận và công cụ thực nghiệm \cite{moe_tierengine_arch}, \cite{exp_phase1_i5}. Mỗi phép đo gắn với một yêu cầu cụ thể: bộ trọng số, bộ mã hóa văn bản, nội dung hội thoại, trạng thái bộ đệm, cửa sổ ngữ cảnh và giới hạn số token sinh. Kết quả gồm văn bản trả lời, số token thực tế, lý do kết thúc, thời gian xử lý, lượng dữ liệu truy xuất và bộ nhớ sử dụng. Khi đầu vào hoặc trạng thái bộ đệm thay đổi, kết quả có thể thay đổi dù mã nguồn giữ nguyên.
+
+Bảng 2.5 cung cấp tên trường tương ứng để tra cứu khi đọc tệp kết quả.
+
+\subsection{Đầu vào, token và mốc đo}
+
+Đầu vào của mô hình không chỉ gồm câu hỏi người dùng nhập trên giao diện. Với hội thoại, hệ thống sắp xếp các thông điệp của hệ thống, người dùng và trợ lý theo khuôn mẫu hội thoại, sau đó mã hóa thành chuỗi token. Số token đầu vào bao gồm cả câu hỏi, lịch sử và các thành phần của khuôn mẫu này.
+
+Giới hạn số token sinh quy định độ dài tối đa của phần trả lời, còn số token đầu ra là lượng thực tế mô hình đã sinh. Mô hình có thể kết thúc sớm khi gặp token kết thúc chuỗi (EOS). Nếu dừng vì đạt giới hạn độ dài, câu trả lời có thể chưa hoàn chỉnh. Lý do dừng được lưu cùng kết quả để phân biệt hai trường hợp này.
+
+Với cửa sổ ngữ cảnh 512 token và giới hạn sinh 128 token, số token đầu vào cộng giới hạn sinh phải không vượt 512. Chẳng hạn, câu hỏi về Mars trên i5 có 19 token đầu vào, nên tổng ngân sách là 19 + 128 = 147 token. Lượt hỏi về Love chứa cả lịch sử và có 166 token đầu vào, tương ứng ngân sách 294 token. Phép cộng này dùng để kiểm tra yêu cầu có nằm trong cửa sổ ngữ cảnh, không dùng để tính thời gian chạy.
+
+Cần phân biệt hai phạm vi đo thời gian. Phạm vi bên trong bộ máy suy luận bắt đầu trong hàm sinh văn bản, sau khi đã dựng chuỗi đầu vào, và kết thúc ở mốc tổng hợp thời gian sinh. Phạm vi phía ứng dụng gửi yêu cầu bao gồm việc gửi yêu cầu HTTP và nhận luồng phản hồi. Các bảng kết quả chính sử dụng số đo bên trong bộ máy suy luận; thời gian tải mô hình khi khởi động máy chủ không nằm trong các giá trị này.
+
+\subsection{Độ trễ và tốc độ sinh}
+
+\begin{table}[htbp]
+\centering
+\caption{Ý nghĩa các chỉ số thời gian và tốc độ}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.4cm} >{\RaggedRight\arraybackslash}p{5cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Chỉ số} & \textbf{Khoảng công việc được đo} & \textbf{Cách đọc} \\
+\midrule
+Thời gian đến token đầu tiên (TTFT) & Từ mốc bắt đầu sinh đến khi xử lý đầu vào xong, ngay trước khi chọn token đầu & Phản ánh thời gian chuẩn bị để bắt đầu trả lời \\
+Thời gian xử lý đầu vào (prefill) & Xử lý các token đầu vào chưa có KV hợp lệ & Phụ thuộc số token cần tính lại và chi phí expert, attention \\
+Thời gian sinh tiếp (decode) & Vòng sinh token sau giai đoạn xử lý đầu vào & Bao gồm các bước tính tiếp theo và xử lý, phát nội dung trong vòng sinh \\
+Tốc độ sinh tiếp & Số bước tính của mô hình sau token đầu chia cho thời gian sinh tiếp & Giá trị cao hơn thể hiện vòng sinh nhanh hơn khi các điều kiện tương đương \\
+Tổng thời gian sinh (WALL) & Khoảng thời gian sinh do bộ máy suy luận ghi nhận & Không bao gồm khởi động máy chủ hoặc toàn bộ quá trình giao tiếp HTTP \\
+\bottomrule
+\end{tabularx}
+
+
+\end{table}
+
+
+
+Các trường thời gian trong tệp kết quả sử dụng đơn vị mili giây; khi trình bày bằng giây, nhóm chia giá trị cho 1000. Trong triển khai hiện tại, mốc TTFT được chốt sau khi xử lý đầu vào và trước khi chọn, phát token đầu. Vì vậy, số đo này không hoàn toàn trùng thời điểm người dùng nhìn thấy ký tự đầu tiên. Một token cũng có thể chưa tạo đủ dữ liệu để phát thành một ký tự UTF-8 hoàn chỉnh.
+
+Phía ứng dụng gửi yêu cầu ghi nhận thêm tổng thời gian từ trước khi gửi HTTP đến khi nhận xong luồng phản hồi. Một chỉ số khác chỉ đo từ sau khi nhận phần đầu phản hồi HTTP đến khi nhận nội dung đầu tiên. Chỉ số thứ hai không phải TTFT đầy đủ tính từ lúc gửi yêu cầu. Hai số đo phía ứng dụng được giữ riêng, không dùng thay các số đo bên trong bộ máy suy luận ở bảng chính.
+
+Tốc độ sinh tiếp được tính theo:
+
+\begin{equation}
+\label{eq:2.11}
+R_{decode}=\frac{N_{steps}}{t_{decode}},
+\end{equation}
+
+trong đó $t_{decode}$ là thời gian sinh tiếp tính bằng giây và $N_{steps}$ là số bước tính của mô hình sau giai đoạn xử lý đầu vào. Token đầu được chọn từ các điểm dự đoán đã có; nếu sinh đủ 128 token và không gặp EOS sớm thì có 127 bước tính tiếp theo. Giao diện hiển thị nhãn DECODE với đơn vị tok/s, còn báo cáo dùng steps/s để mô tả đúng bộ đếm hiện có. Số mảnh dữ liệu truyền qua luồng sự kiện SSE không được xem là số token, vì một mảnh có thể chỉ chứa một phần ký tự hoặc chứa nhiều ký tự.
+
+Ví dụ, một yêu cầu có 127 bước tính tiếp theo và thời gian sinh tiếp khoảng 31,911 giây sẽ có tốc độ 127 / 31,911 = 3,980 steps/s. Nếu lấy số token đầu ra chia cho tổng thời gian sinh, kết quả sẽ là tốc độ trung bình của cả yêu cầu. Đây là một đại lượng khác, không dùng thay tốc độ sinh tiếp trong các bảng hiện tại.
+
+\subsection{Tỷ lệ tìm thấy expert và tái sử dụng KV}
+
+Bộ đệm expert lưu trọng số, còn bộ đệm KV lưu khóa và giá trị đã tính cho nội dung hội thoại. Hai loại bộ đệm phục vụ các mục đích khác nhau và có bộ đếm riêng.
+
+Một lần truy cập được ghi nhận là tìm thấy (hit) khi expert cần dùng đã có trong bộ đệm theo quy ước của hệ thống; trường hợp không tìm thấy được ghi nhận là miss. Tỷ lệ tìm thấy expert được tính bằng:
+
+\begin{equation}
+\label{eq:2.12}
+H=\frac{N_{hit}}{N_{hit}+N_{miss}}.
+\end{equation}
+
+Ở đây $N_{hit}$ và $N_{miss}$ lần lượt là số lần tìm thấy và không tìm thấy expert. Khi biểu diễn theo phần trăm, nhân $H$ với 100. Bộ đếm có tính đến việc nhiều token dùng chung expert, không phải tỷ lệ yêu cầu HTTP thành công. Expert được tìm thấy có thể nằm trong RAM hoặc VRAM. Trường hợp chỉ có trong VRAM vẫn cần truyền về RAM trước khi CPU tính, nên tỷ lệ tìm thấy cao chưa bảo đảm thời gian chờ thấp.
+
+Mức tái sử dụng KV được thể hiện bằng số token đầu vào đã có trạng thái KV hợp lệ. Số token cần xử lý lại bằng số token đầu vào trừ số token được tái sử dụng. Ví dụ, lượt hỏi về Love trên i5 có 166 token và dùng lại 11 token, còn 155 token cần xử lý; trên i7 có 162 token và dùng lại 143 token, còn 19 token cần xử lý. Các con số mô tả hai đầu vào thực tế khác nhau, không phải đối chứng tốc độ giữa hai mô hình.
+
+\subsection{Thời gian tính toán và truyền dữ liệu}
+
+Hệ thống cộng dồn thời gian của các nhóm công việc trong cả giai đoạn xử lý đầu vào và sinh tiếp:
+
+\begin{itemize}
+\item \textbf{Thời gian cung cấp hoặc chờ expert (I/O WAIT):} ghi nhận tại đường cung cấp expert. Khoảng này có thể liên quan đến đọc tệp, lấy expert đã nạp trước, chờ tác vụ hoặc truyền từ VRAM về RAM; không chỉ đo thời gian thiết bị SSD bận.
+\item \textbf{Thời gian tính expert (EXPERT COMPUTE):} thời gian CPU tính đầu ra của expert, gồm các phép chiếu cổng và mở rộng, hàm kích hoạt và phép chiếu về chiều ẩn tại các đoạn được đo.
+\item \textbf{Thời gian attention (ATTENTION):} thời gian chuẩn bị và tính cơ chế chú ý theo các mốc đo trong hệ thống. Chỉ số không chỉ gồm phép nhân $QK^\mathsf{T}$ và không phản ánh phần trăm sử dụng GPU.
+\item \textbf{Thời gian chiếu đầu ra (LM HEAD):} thời gian biến đổi biểu diễn cuối thành điểm dự đoán trên tập từ vựng.
+\end{itemize}
+
+Để làm rõ đường cung cấp expert, hệ thống còn ghi riêng thời gian và lượng dữ liệu của ba thao tác: đọc tệp trọng số, truyền từ GPU về RAM và truyền từ RAM lên GPU. Thời gian dùng đơn vị mili giây; lượng dữ liệu dùng đơn vị byte. Tên trường tương ứng được liệt kê trong Bảng 2.5.
+
+Lượng dữ liệu đọc tệp là số byte ứng dụng yêu cầu đọc từ tệp trọng số. Hệ điều hành có thể đáp ứng yêu cầu bằng bộ đệm tệp trong RAM (page cache), nên con số này không đồng nghĩa số byte SSD thực sự đọc. Nhóm còn sử dụng mức tăng của bộ đếm đọc thiết bị do hệ điều hành quy cho tiến trình trong khoảng trước và sau yêu cầu. Chỉ số bổ sung này cũng không mô tả toàn bộ hoạt động của thiết bị.
+
+Các bộ đếm thời gian thành phần có phạm vi và mức chồng lấp khác nhau. Vì vậy, không cộng trực tiếp thời gian chờ expert, tính expert, attention và chiếu đầu ra để suy ra tổng thời gian sinh. Chúng giúp xác định khâu cần khảo sát; muốn kết luận riêng về SSD, CPU hoặc GPU cần phép đo phù hợp hơn.
+
+\subsection{Các chỉ số bộ nhớ}
+
+\begin{table}[htbp]
+\centering
+\caption{Phân biệt bộ nhớ cấu hình và bộ nhớ quan sát}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Chỉ số} & \textbf{Nội dung phản ánh} & \textbf{Cách đọc} \\
+\midrule
+Ngân sách bộ đệm expert & Dung lượng được cấu hình theo MiB mỗi lớp & Giới hạn một phần hệ thống, không phải tổng RAM tiến trình \\
+Bộ nhớ thường trú (RSS) & Bộ nhớ tiến trình đang giữ trong RAM tại thời điểm lấy mẫu & Bao gồm nhiều vùng ngoài bộ đệm expert; cần theo dõi khi chạy lâu \\
+Đỉnh bộ nhớ thường trú (HWM) & RSS cao nhất hệ điều hành đã ghi nhận cho tiến trình & Mỗi mẫu phản ánh đỉnh đã ghi nhận đến thời điểm đó \\
+Bộ nhớ hoán đổi của tiến trình (VmSwap) & Phần bộ nhớ tiến trình được đưa sang vùng hoán đổi & Giá trị 0 nghĩa là không ghi nhận phần này tại mốc lấy mẫu \\
+RAM có thể cấp phát (MemAvailable) & Ước lượng RAM hệ thống còn có thể cấp phát & Khác RAM trống thuần và dung lượng RAM vật lý tổng \\
+Dung lượng VRAM được thống kê & Lượng VRAM do bộ máy suy luận báo cáo & Có thể chưa gồm toàn bộ cấp phát của trình điều khiển, thư viện và ứng dụng khác \\
+\bottomrule
+\end{tabularx}
+
+
+\end{table}
+
+
+
+RSS, HWM, VmSwap và MemAvailable được hiểu theo thống kê Linux \cite{linux_proc}. Bộ đếm VmSwap ghi phần hoán đổi của bộ nhớ ẩn danh riêng của tiến trình, không gồm toàn bộ vùng hoán đổi của hệ thống hoặc mọi dạng bộ nhớ chia sẻ.
+
+Với 16 lớp và ngân sách bộ đệm 64 MiB mỗi lớp, dung lượng cấu hình là 1024 MiB, tức 1 GiB. RSS có thể lớn hơn vì còn trọng số chung của mô hình, KV, dữ liệu đang tính, bộ đệm tính toán và môi trường thực thi. Số expert nằm trong VRAM là số lượng đang được lưu, không phải số expert đang tính đồng thời; các expert của nguyên mẫu vẫn tính trên CPU.
+
+Chuỗi quan sát RAM được lấy mẫu định kỳ 250 ms. Đỉnh báo cáo là HWM cao nhất trong các mẫu thu được; RAM có thể cấp phát thấp nhất là giá trị nhỏ nhất trong chuỗi lấy mẫu. Kết quả chỉ có ý nghĩa trong phạm vi tiến trình và thời gian đã quan sát. Báo cáo quy ước GB = $10^9$ byte, GiB = $2^{30}$ byte và MiB = $2^{20}$ byte; các đơn vị này không thay thế lẫn nhau.
+
+\subsection{Tổng hợp nhiều lượt và tính mức thay đổi}
+
+Mỗi nhóm thực nghiệm vận hành có năm mẫu. Trung vị là giá trị đứng giữa sau khi sắp xếp năm giá trị tăng dần. So với việc chọn riêng một mẫu, trung vị giảm ảnh hưởng của một lượt quá chậm hoặc quá nhanh. Khoảng từ nhỏ nhất đến lớn nhất chỉ mô tả dao động đã quan sát, không phải khoảng tin cậy thống kê. Trung vị của từng chỉ số được tính riêng nên các giá trị TTFT, tốc độ sinh tiếp và tổng thời gian sinh có thể đến từ các yêu cầu khác nhau.
+
+Khi hai phương án được đo trong điều kiện đối chứng phù hợp, phần trăm giảm thời gian và hệ số tăng tốc được tính như sau:
+
+\begin{equation}
+\label{eq:2.13}
+\Delta_t=100\frac{t_{before}-t_{after}}{t_{before}},\quad S=\frac{t_{before}}{t_{after}}.
+\end{equation}
+
+Trong đó $t_{before}$ và $t_{after}$ lần lượt là thời gian trước và sau thay đổi. Ví dụ, giảm từ 10 giây xuống 8 giây tương ứng giảm 20\%, còn hệ số tăng tốc bằng 1,25 lần. Với thí nghiệm theo cặp, trung vị tỷ lệ thay đổi của từng cặp có thể khác tỷ lệ tính từ hai trung vị; báo cáo ghi rõ cách tính ở từng phép thử.
+
+Mô hình gần đúng $t\approx B/\beta$ ước lượng thời gian truyền từ lượng dữ liệu $B$ và băng thông $\beta$. Chỉ sử dụng khi hai đại lượng thuộc cùng đường truyền và điều kiện đo; không lấy thời gian tổng hợp của bộ máy suy luận để suy băng thông NVMe thực tế.
+
+\subsection{Đối chiếu thuật ngữ với tệp kết quả}
+
+Bảng 2.5 đối chiếu các đại lượng đã trình bày với tên trường do công cụ ghi vào yêu cầu hoặc tệp kết quả JSON. Các trường thời gian có hậu tố ms dùng mili giây; các trường lượng dữ liệu có hậu tố bytes dùng byte. Bảng đối chiếu tập hợp các trường của yêu cầu và các phần kết quả tương ứng, không ngụ ý mọi trường nằm chung một cấp trong tệp JSON.
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.08}
+\setlength{\tabcolsep}{3pt}
+\begin{longtable}{>{\RaggedRight\arraybackslash}p{6.8cm} >{\RaggedRight\arraybackslash}p{8.7cm}}
+\caption{Đối chiếu đại lượng và tên trường kỹ thuật}\label{tab:metric_fields}\\
+\toprule
+\textbf{Đại lượng hoặc thông tin} & \textbf{Tên trường kỹ thuật} \\
+\midrule
+\endfirsthead
+\multicolumn{2}{c}{\small Bảng \thetable{} (tiếp theo)}\\
+\toprule
+\textbf{Đại lượng hoặc thông tin} & \textbf{Tên trường kỹ thuật} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{2}{r}{\footnotesize Còn tiếp ở trang sau}\\
+\endfoot
+\bottomrule
+\endlastfoot
+
+Số token đầu vào & \texttt{prompt\_tokens} \\
+Số token đầu ra thực tế & \texttt{completion\_tokens} \\
+Giới hạn số token sinh & \texttt{max\_tokens} \\
+Lý do kết thúc & \texttt{finish\_reason} \\
+Số token đầu vào được tái sử dụng KV & \texttt{cached\_prompt\_tokens} \\
+Thời gian đến token đầu tiên & \texttt{time\_to\_first\_token\_ms} \\
+Thời gian xử lý đầu vào & \texttt{prefill\_ms} \\
+Thời gian sinh tiếp & \texttt{decode\_ms} \\
+Tổng thời gian sinh bên trong bộ máy suy luận & \texttt{total\_ms} \\
+Tổng thời gian phía ứng dụng gửi yêu cầu & \texttt{client\_wall\_ms} \\
+Thời gian từ khi nhận phần đầu HTTP đến nội dung đầu tiên & \texttt{client\_first\_content\_after\_headers\_ms} \\
+Số lần tìm thấy expert trong bộ đệm & \texttt{expert\_cache\_hits} \\
+Số lần không tìm thấy expert trong bộ đệm & \texttt{expert\_cache\_misses} \\
+Thời gian cung cấp hoặc chờ expert & \texttt{expert\_io\_ms} \\
+Thời gian tính expert & \texttt{expert\_compute\_ms} \\
+Thời gian attention & \texttt{attention\_ms} \\
+Thời gian chiếu đầu ra & \texttt{lm\_head\_ms} \\
+Thời gian đọc tệp expert & \texttt{expert\_file\_read\_ms} \\
+Lượng dữ liệu đọc tệp expert & \texttt{expert\_file\_bytes\_read} \\
+Thời gian truyền expert từ GPU về RAM & \texttt{expert\_vram\_download\_ms} \\
+Lượng dữ liệu truyền expert từ GPU về RAM & \texttt{expert\_vram\_download\_bytes} \\
+Thời gian truyền expert từ RAM lên GPU & \texttt{expert\_vram\_upload\_ms} \\
+Lượng dữ liệu truyền expert từ RAM lên GPU & \texttt{expert\_vram\_upload\_bytes} \\
+Mức tăng bộ đếm đọc thiết bị được quy cho tiến trình & \texttt{process\_read\_bytes\_delta} \\
+
+\end{longtable}
+\endgroup
+
+

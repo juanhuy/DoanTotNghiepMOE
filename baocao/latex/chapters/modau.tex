@@ -1,0 +1,13 @@
+\chapter*{MỞ ĐẦU}
+\addcontentsline{toc}{chapter}{MỞ ĐẦU}
+\markboth{MỞ ĐẦU}{MỞ ĐẦU}
+
+Các mô hình ngôn ngữ mở tạo điều kiện nghiên cứu và triển khai ứng dụng trên máy tính cá nhân. Khi dung lượng trọng số lớn so với tài nguyên phần cứng, hệ thống phải giải quyết đồng thời nhu cầu lưu trữ, bộ nhớ trung gian và chi phí trao đổi dữ liệu. Việc nạp được mô hình chưa bảo đảm suy luận tương tác có độ trễ và mức sử dụng bộ nhớ phù hợp.
+
+Kiến trúc hỗn hợp chuyên gia (Mixture-of-Experts, MoE) chỉ kích hoạt một tập expert ở mỗi token. Đặc điểm này cho phép nạp expert theo nhu cầu thay vì giữ toàn bộ expert thường trú trong bộ nhớ truy cập nhanh. Tuy nhiên, tập expert được Router lựa chọn thay đổi theo dữ liệu đầu vào, đặt ra bài toán lưu đệm, di chuyển giữa các tầng và tải trước dữ liệu.
+
+Đề tài \textbf{``\reporttitle''} nghiên cứu các vấn đề trên thông qua nguyên mẫu OLMoE sử dụng trọng số expert INT8. Engine được triển khai bằng Rust, tính expert trên CPU và hỗ trợ một số phép toán dense bằng CUDA/cuBLAS. RAM, VRAM và file trọng số được phối hợp để cung cấp dữ liệu theo nhu cầu suy luận.
+
+Báo cáo định kỳ lần 1 tập trung vào cơ sở Transformer, MoE và Router; lượng tử hóa; phân tầng bộ nhớ; caching, offloading và prefetching. Phương pháp thực hiện kết hợp nghiên cứu tài liệu, thiết kế nguyên mẫu, kiểm thử số học và thực nghiệm mô hình thật. Hai bộ thực nghiệm trên i5 và i7 được trình bày riêng theo phiên bản model và điều kiện vận hành, nhằm ghi nhận độ trễ, tốc độ sinh và mức sử dụng tài nguyên. Các phép đối chứng thuật toán có thiết kế và phạm vi kết luận riêng, bao gồm cả phương án không mang lại cải thiện.
+
+Báo cáo gồm năm chương: tổng quan bài toán; cơ sở lý thuyết; phân tích và thiết kế hệ thống; thuật toán và giải pháp khảo sát; thực nghiệm và kết quả bước đầu. Phần kết luận tổng hợp nội dung đã thực hiện và hướng phát triển. Kết quả kỳ 1 phục vụ đánh giá nguyên mẫu, chưa thay thế bộ đánh giá chất lượng chuẩn hóa hoặc nghiệm thu toàn bộ hệ thống.
