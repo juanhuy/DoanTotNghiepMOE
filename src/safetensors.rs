@@ -21,6 +21,7 @@ const MAX_HEADER_BYTES: u64 = 100_000_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum DType {
+    U8,
     I8,
     F16,
     BF16,
@@ -29,7 +30,7 @@ pub enum DType {
 impl DType {
     fn size(self) -> usize {
         match self {
-            Self::I8 => 1,
+            Self::U8 | Self::I8 => 1,
             Self::F16 | Self::BF16 => 2,
             Self::F32 => 4,
         }
@@ -289,7 +290,7 @@ impl TensorIndex {
                     *target = half_to_f32(u16::from_le_bytes([chunk[0], chunk[1]]));
                 }
             }
-            DType::I8 => unreachable!(),
+            DType::I8 | DType::U8 => unreachable!(),
         }
         Ok(())
     }

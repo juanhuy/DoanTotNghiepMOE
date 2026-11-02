@@ -97,6 +97,7 @@ struct CachedExpert {
     last_used: u64,
     hits_in_cache: u32,
     is_protected: bool,
+    is_pinned: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -136,6 +137,18 @@ pub struct ExpertStatusReport {
     pub gpu: crate::gpu::GpuTierStatus,
 }
 
+/// Thước đo độ phức tạp ngôn ngữ (Perplexity & Cross-Entropy) phục vụ đánh giá học thuật
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PerplexityMetrics {
+    pub token_count: usize,
+    pub evaluated_tokens: usize,
+    pub cross_entropy_loss: f64,
+    pub perplexity: f64,
+    pub bits_per_character: f64,
+    pub eval_time_ms: f64,
+    pub tokens_per_second: f64,
+}
+
 struct Layer {
     input_norm: Vec<f32>,
     post_norm: Vec<f32>,
@@ -151,6 +164,7 @@ struct Layer {
     heat: Vec<u32>,
     clock: u64,
     recycled_buffers: Vec<(Vec<u8>, Vec<f32>)>,
+    hot_pinned: usize,
 }
 
 impl Layer {
@@ -181,6 +195,26 @@ impl Layer {
                 <= budget
         {
             self.recycled_buffers.push(buffers);
+        }
+    }
+
+    /// Cập nhật trạng thái Ghim Chuyên Gia Nóng (HOT Expert Pinning lấy cảm hứng từ Colibrì).
+    /// Các chuyên gia có tần suất kích hoạt cao nhất trong tầng sẽ được đánh dấu `is_pinned = true`,
+    /// ngăn không bị cơ chế LRU loại bỏ ra đĩa khi bộ nhớ cache bị áp lực cao.
+    pub fn update_hot_pins(&mut self) {
+        if self.hot_pinned == 0 {
+            return;
+        }
+        let mut heat_pairs: Vec<(usize, u32)> = self.heat.iter().copied().enumerate().collect();
+        heat_pairs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let hot_set: std::collections::HashSet<usize> = heat_pairs
+            .into_iter()
+            .take(self.hot_pinned)
+            .filter(|(_, h)| *h > 0)
+            .map(|(eid, _)| eid)
+            .collect();
+        for cached in &mut self.cache {
+            cached.is_pinned = hot_set.contains(&cached.id);
         }
     }
 }
@@ -238,6 +272,8 @@ struct StepScratch {
     context: Vec<f32>,
     projected: Vec<f32>,
     router: Vec<f32>,
+    pilot_hidden: Vec<f32>,
+    pilot_router: Vec<f32>,
     logits: Vec<f32>,
     rope_bases: Vec<f32>,
     sincos: Vec<(f32, f32)>,
@@ -270,6 +306,8 @@ impl StepScratch {
             context: vec![0.0; hidden],
             projected: vec![0.0; hidden],
             router: vec![0.0; config.num_experts],
+            pilot_hidden: vec![0.0; hidden],
+            pilot_router: vec![0.0; config.num_experts],
             logits: vec![0.0; config.vocab_size],
             rope_bases,
             sincos,
@@ -457,6 +495,11 @@ impl OlmoeModel {
                     return Err(invalid(format!("{ep}: invalid merged expert layout")));
                 }
             }
+            let hot_pinned = std::env::var("MOE_HOT_PIN_COUNT")
+                .or_else(|_| std::env::var("HOT"))
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(0);
             layers.push(Layer {
                 input_norm,
                 post_norm,
@@ -472,6 +515,7 @@ impl OlmoeModel {
                 heat: vec![0; config.num_experts],
                 clock: 0,
                 recycled_buffers: Vec::new(),
+                hot_pinned,
             });
         }
         let tokenizer = if path.join("tokenizer.json").exists() {
@@ -1020,6 +1064,11 @@ impl OlmoeModel {
             return (HashMap::new(), Duration::ZERO);
         }
 
+        // Colibrì-inspired Sequential SSD locality: sắp xếp tăng dần theo EID để chuyển đổi
+        // các lượt đọc ngẫu nhiên thành đọc tuần tự trên file shard đĩa.
+        let mut missing_ids = missing_ids;
+        missing_ids.sort_unstable();
+
         let weight_count = d * intermediate_size * 3;
         let scale_count = intermediate_size * 2 + d;
         let mut buffers = Vec::with_capacity(missing_ids.len());
@@ -1046,12 +1095,15 @@ impl OlmoeModel {
     }
 
     /// Dự đoán danh sách expert của tầng tiếp theo (Lookahead Speculative Routing)
-    /// dựa trên:
-    /// 1. Ma trận xác suất chuyển tiếp giữa 2 tầng liên tiếp (Inter-Layer Markov Transition)
-    /// 2. Tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
-    /// 3. Lọc bỏ các expert đã có sẵn trong L2 Host RAM Cache hoặc L1 GPU VRAM Cache
+    /// Kết hợp giữa:
+    /// 1. Tín hiệu dự phóng động PILOT Router từ Colibrì (đánh giá router tầng sau trên residual stream x hiện tại)
+    /// 2. Ma trận xác suất chuyển tiếp giữa 2 tầng liên tiếp (Inter-Layer Markov Transition)
+    /// 3. Tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
+    /// 4. Lọc bỏ các expert đã có sẵn trong L2 Host RAM Cache hoặc L1 GPU VRAM Cache
+    /// 5. Sắp xếp thứ tự EID tăng dần để tối ưu SSD read locality
     #[allow(clippy::too_many_arguments)]
     fn predict_next_layer_experts(
+        pilot_router: Option<&[f32]>,
         transitions: &[Vec<u16>],
         curr_layer_id: usize,
         curr_top_experts: &[usize],
@@ -1067,7 +1119,19 @@ impl OlmoeModel {
         let trans = &transitions[curr_layer_id];
         let mut scores = [0u32; 64];
 
-        // 1. Tích lũy xác suất chuyển tiếp từ các expert đang hoạt động ở tầng hiện tại
+        // 1. Tín hiệu dự phóng động PILOT Router: xếp hạng Top-K logits của router tầng kế tiếp
+        if let Some(logits) = pilot_router {
+            if logits.len() >= 64 {
+                let mut pilot_order: Vec<usize> = (0..64).collect();
+                pilot_order.sort_unstable_by(|&a, &b| logits[b].total_cmp(&logits[a]));
+                for (rank, &eid) in pilot_order.iter().take(16).enumerate() {
+                    let pilot_score = ((16 - rank) * 100) as u32;
+                    scores[eid] = scores[eid].saturating_add(pilot_score);
+                }
+            }
+        }
+
+        // 2. Tích lũy xác suất chuyển tiếp từ các expert đang hoạt động ở tầng hiện tại (Markov)
         for &src in curr_top_experts {
             if src < 64 {
                 let row_offset = src * 64;
@@ -1077,14 +1141,14 @@ impl OlmoeModel {
             }
         }
 
-        // 2. Kết hợp với tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
+        // 3. Kết hợp với tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
         for (dst, score) in scores.iter_mut().enumerate() {
             if dst < next_layer_heat.len() {
                 *score = score.saturating_add(next_layer_heat[dst] / 4);
             }
         }
 
-        // 3. Lọc các expert CHƯA CÓ trong cache của tầng tiếp theo (và chỉ lấy expert có điểm tin cậy > 0)
+        // 4. Lọc các expert CHƯA CÓ trong cache của tầng tiếp theo (và chỉ lấy expert có điểm tin cậy > 0)
         let next_layer_id = curr_layer_id + 1;
         let mut candidates: Vec<(usize, u32)> = (0..64)
             .filter(|&eid| {
@@ -1104,15 +1168,19 @@ impl OlmoeModel {
             .map(|eid| (eid, scores[eid]))
             .collect();
 
-        // 4. Sắp xếp giảm dần theo điểm số dự đoán
+        // 5. Sắp xếp giảm dần theo điểm số dự đoán tổng hợp
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
-        // 5. Chọn top max_candidates ứng viên có xác suất cao nhất
-        candidates
+        // 6. Lấy top max_candidates ứng viên có xác suất cao nhất
+        let mut selected: Vec<usize> = candidates
             .into_iter()
             .take(max_candidates)
             .map(|(eid, _)| eid)
-            .collect()
+            .collect();
+
+        // 7. Sắp xếp tăng dần theo EID để tối ưu hóa SSD read locality (Sequential Seek)
+        selected.sort_unstable();
+        selected
     }
 
     /// Tra cứu Expert theo thứ tự phân tầng 3 cấp: L2 Host RAM -> L1 GPU VRAM -> SSD NVMe Cold Storage
@@ -1312,17 +1380,28 @@ impl OlmoeModel {
         }
 
         // Đảm bảo tổng dung lượng không vượt quá cache_bytes_per_layer
-        // Ưu tiên trục xuất (evict) các phần tử trong Probationary segment trước
+        // Cơ chế HOT Expert Pinning (Colibrì-inspired): Bỏ qua các expert đã được ghim (`is_pinned = true`).
+        // 1. Ưu tiên trục xuất các expert Probationary chưa ghim (!is_pinned && !is_protected).
+        // 2. Nếu không còn, trục xuất các expert Protected chưa ghim (!is_pinned).
+        // 3. Trường hợp áp lực cực đoan (toàn bộ cache đều bị ghim), buộc phải trục xuất phần tử nguội nhất.
         while layer.bytes > cache_bytes_per_layer.saturating_sub(bytes) {
             let victim_idx = layer
                 .cache
                 .iter()
                 .enumerate()
-                .filter(|(_, e)| !e.is_protected)
+                .filter(|(_, e)| !e.is_pinned && !e.is_protected)
                 .min_by_key(|(_, e)| (layer.heat[e.id], e.last_used))
                 .map(|(idx, _)| idx)
                 .or_else(|| {
-                    // Nếu không còn phần tử probationary nào, buộc phải evict phần tử nguội nhất trong protected
+                    layer
+                        .cache
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, e)| !e.is_pinned)
+                        .min_by_key(|(_, e)| (layer.heat[e.id], e.last_used))
+                        .map(|(idx, _)| idx)
+                })
+                .or_else(|| {
                     layer
                         .cache
                         .iter()
@@ -1356,6 +1435,18 @@ impl OlmoeModel {
             }
         }
 
+        let is_pinned = if layer.hot_pinned > 0 {
+            let mut heat_pairs: Vec<(usize, u32)> =
+                layer.heat.iter().copied().enumerate().collect();
+            heat_pairs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            heat_pairs
+                .iter()
+                .take(layer.hot_pinned)
+                .any(|&(eid, h)| eid == expert_id && h > 0)
+        } else {
+            false
+        };
+
         if layer.bytes <= cache_bytes_per_layer - bytes {
             layer.trim_recycled(cache_bytes_per_layer - bytes);
             if victim_cache && gpu_enabled {
@@ -1375,6 +1466,7 @@ impl OlmoeModel {
                 last_used: layer.clock,
                 hits_in_cache,
                 is_protected,
+                is_pinned,
             });
         }
     }
@@ -1551,7 +1643,28 @@ impl OlmoeModel {
             // Nếu tầng hiện tại có miss, ưu tiên 100% băng thông I/O nạp miss để tránh hiện tượng Prefetch Contention.
             let next_candidates = if miss_slots.is_empty() {
                 if let Some(next_l) = remaining.first() {
+                    // PILOT Router Lookahead (từ Colibrì):
+                    // Đánh giá trực tiếp router của tầng kế tiếp (next_l) trên residual activation scratch.x
+                    // Đạt độ chính xác dự đoán cao hơn nhiều so với chỉ dùng bảng tần suất Markov tĩnh.
+                    let pilot_router_opt = if rms_norm_into(
+                        &scratch.x,
+                        &next_l.post_norm,
+                        c.rms_norm_eps,
+                        &mut scratch.pilot_hidden,
+                    )
+                    .is_ok()
+                        && next_l
+                            .router
+                            .multiply_loaded_into(&scratch.pilot_hidden, &mut scratch.pilot_router)
+                            .is_ok()
+                    {
+                        Some(&scratch.pilot_router[..])
+                    } else {
+                        None
+                    };
+
                     Self::predict_next_layer_experts(
+                        pilot_router_opt,
                         transitions,
                         id,
                         top_experts,
@@ -1586,6 +1699,7 @@ impl OlmoeModel {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
+                layer.update_hot_pins();
                 let mut empty_map = HashMap::new();
                 let is_preloaded = preloaded.contains_key(&expert_id);
                 let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
@@ -1655,7 +1769,9 @@ impl OlmoeModel {
                 let (io_res, compute_res) = rayon::join(
                     || {
                         let started = Instant::now();
-                        let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
+                        let mut sorted_miss_ids = miss_ids.clone();
+                        sorted_miss_ids.sort_unstable();
+                        let curr_loaded: HashMap<usize, Int8Expert> = sorted_miss_ids
                             .into_par_iter()
                             .zip(curr_buffers.into_par_iter())
                             .filter_map(|(eid, (w, s))| {
@@ -1719,7 +1835,9 @@ impl OlmoeModel {
             } else if has_io_work {
                 // hit_ready rỗng (toàn bộ là Miss)
                 let started = Instant::now();
-                let curr_loaded: HashMap<usize, Int8Expert> = miss_ids
+                let mut sorted_miss_ids = miss_ids.clone();
+                sorted_miss_ids.sort_unstable();
+                let curr_loaded: HashMap<usize, Int8Expert> = sorted_miss_ids
                     .into_par_iter()
                     .zip(curr_buffers.into_par_iter())
                     .filter_map(|(eid, (w, s))| {
@@ -1779,6 +1897,7 @@ impl OlmoeModel {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
+                layer.update_hot_pins();
                 let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
                     id,
                     expert_id,
@@ -2128,6 +2247,7 @@ impl OlmoeModel {
                     layer.heat.iter_mut().for_each(|heat| *heat /= 2);
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(uses_u32);
+                layer.update_hot_pins();
                 let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
                     layer_id,
                     expert_id,
@@ -2258,6 +2378,97 @@ impl OlmoeModel {
         Ok(logits)
     }
 
+    /// Mã hóa chuỗi văn bản thành danh sách token ID sử dụng tokenizer của mô hình.
+    pub fn encode(&self, text: &str) -> io::Result<Vec<usize>> {
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
+            .ok_or_else(|| invalid("missing tokenizer.json"))?;
+        let encoding = tokenizer
+            .encode(text, false)
+            .map_err(|e| invalid(e.to_string()))?;
+        Ok(encoding.get_ids().iter().map(|&t| t as usize).collect())
+    }
+
+    /// Giải mã danh sách token ID thành chuỗi văn bản.
+    pub fn decode(&self, tokens: &[usize]) -> io::Result<String> {
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
+            .ok_or_else(|| invalid("missing tokenizer.json"))?;
+        let ids: Vec<u32> = tokens.iter().map(|&t| t as u32).collect();
+        tokenizer
+            .decode(&ids, true)
+            .map_err(|e| invalid(e.to_string()))
+    }
+
+    /// Tính toán độ phức tạp ngôn ngữ (Perplexity & Cross-Entropy Loss) trên một chuỗi văn bản.
+    /// Áp dụng công thức học thuật chuẩn:
+    /// NLL = ln(sum(exp(z_i))) - z_target
+    /// Loss = mean(NLL)
+    /// Perplexity = exp(Loss)
+    pub fn compute_perplexity(&mut self, text: &str) -> io::Result<PerplexityMetrics> {
+        let tokens = self.encode(text)?;
+        if tokens.len() < 2 {
+            return Err(invalid("perplexity requires at least 2 tokens"));
+        }
+        if tokens.len() > self.context_limit {
+            return Err(invalid(format!(
+                "token count {} exceeds context limit {}",
+                tokens.len(),
+                self.context_limit
+            )));
+        }
+
+        let start_time = Instant::now();
+        let all_logits = self.logits(&tokens)?;
+        let eval_duration = start_time.elapsed();
+
+        // Ở mỗi vị trí t từ 0 đến N-2: all_logits[t] là phân phối dự đoán cho token mục tiêu tokens[t+1]
+        let num_eval = tokens.len() - 1;
+        let mut total_nll = 0.0f64;
+
+        for (t, &target_token) in tokens[1..].iter().enumerate() {
+            let logits_t = &all_logits[t];
+            if target_token >= logits_t.len() {
+                return Err(invalid("target token index exceeds vocabulary size"));
+            }
+
+            // Log-Sum-Exp ổn định số học: max + ln(sum(exp(x - max)))
+            let max_logit = logits_t.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
+            let sum_exp: f64 = logits_t
+                .iter()
+                .map(|&v| ((v as f64) - max_logit).exp())
+                .sum();
+            let log_sum_exp = max_logit + sum_exp.ln();
+            let target_logit = logits_t[target_token] as f64;
+
+            let nll = log_sum_exp - target_logit;
+            total_nll += nll;
+        }
+
+        let cross_entropy_loss = total_nll / (num_eval as f64);
+        let perplexity = cross_entropy_loss.exp();
+        let char_count = text.chars().count().max(1);
+        let bits_per_character = (total_nll / std::f64::consts::LN_2) / (char_count as f64);
+        let eval_time_ms = eval_duration.as_secs_f64() * 1000.0;
+        let tokens_per_second = if eval_duration.as_secs_f64() > 0.0 {
+            (tokens.len() as f64) / eval_duration.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        Ok(PerplexityMetrics {
+            token_count: tokens.len(),
+            evaluated_tokens: num_eval,
+            cross_entropy_loss,
+            perplexity,
+            bits_per_character,
+            eval_time_ms,
+            tokens_per_second,
+        })
+    }
+
     pub fn generate(&mut self, prompt: &str, max_tokens: usize) -> io::Result<Generation> {
         self.generate_controlled(prompt, max_tokens, None, &|| Ok(()), || Ok(()), None)
     }
@@ -2313,7 +2524,24 @@ impl OlmoeModel {
         ready: impl FnOnce() -> io::Result<()>,
         emit: Option<&mut DeltaSink<'_>>,
     ) -> io::Result<Generation> {
-        let result = self.generate_inner(prompt, max_tokens, session_id, check, ready, emit);
+        self.generate_controlled_with_sampling(
+            prompt, max_tokens, session_id, check, ready, emit, None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn generate_controlled_with_sampling(
+        &mut self,
+        prompt: &str,
+        max_tokens: usize,
+        session_id: Option<&str>,
+        check: &dyn Fn() -> io::Result<()>,
+        ready: impl FnOnce() -> io::Result<()>,
+        emit: Option<&mut DeltaSink<'_>>,
+        sampling: Option<crate::sample::SamplingParams>,
+    ) -> io::Result<Generation> {
+        let result =
+            self.generate_inner(prompt, max_tokens, session_id, check, ready, emit, sampling);
         if result
             .as_ref()
             .is_err_and(|error| error.kind() == io::ErrorKind::OutOfMemory)
@@ -2330,6 +2558,7 @@ impl OlmoeModel {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn generate_inner(
         &mut self,
         prompt: &str,
@@ -2338,6 +2567,7 @@ impl OlmoeModel {
         check: &dyn Fn() -> io::Result<()>,
         ready: impl FnOnce() -> io::Result<()>,
         mut emit: Option<&mut DeltaSink<'_>>,
+        sampling: Option<crate::sample::SamplingParams>,
     ) -> io::Result<Generation> {
         let guard = self.ram_guard;
         // Check at existing cancellation boundaries, including inside layers.
@@ -2426,9 +2656,20 @@ impl OlmoeModel {
         let decode_started = Instant::now();
         let mut decode_steps = 0usize;
         let mut processed_tokens = tokens.clone();
+        let sampling_params = sampling.unwrap_or_else(crate::sample::SamplingParams::from_env);
+        let mut rng = crate::sample::XorShift64::default();
         for step in 0..max_tokens {
             check()?;
-            let token = argmax_greedy(&scratch.logits);
+            let token = if sampling_params.is_greedy() {
+                argmax_greedy(&scratch.logits)
+            } else {
+                crate::sample::sample_token(
+                    &scratch.logits,
+                    &sampling_params,
+                    &processed_tokens,
+                    &mut rng,
+                )
+            };
             output.push(token);
             if let (Some(decoder), Some(emit)) = (decoder.as_mut(), emit.as_mut()) {
                 if let Some(delta) = decoder
@@ -3813,6 +4054,7 @@ mod routing_and_topk_tests {
             heat: vec![0; 64],
             clock: 0,
             recycled_buffers: Vec::new(),
+            hot_pinned: 0,
         };
         let mut profile = RequestProfile::default();
 
@@ -4003,6 +4245,7 @@ mod routing_and_topk_tests {
         let next_layer_cache = VecDeque::new();
 
         let candidates = OlmoeModel::predict_next_layer_experts(
+            None,
             &transitions,
             0,
             &layer0_experts,
@@ -4029,6 +4272,42 @@ mod routing_and_topk_tests {
             candidates.contains(&9),
             "Expert 9 (high heat) phải nằm trong top candidates"
         );
+    }
+
+    #[test]
+    fn test_pilot_router_lookahead_speculation() {
+        // Kiểm tra cơ chế PILOT Router Lookahead từ Colibrì:
+        // Tín hiệu logits động từ router tầng kế tiếp dự phóng chính xác ứng viên
+        let num_layers = 4;
+        let transitions = vec![vec![0u16; 64 * 64]; num_layers - 1];
+        let layer0_experts = vec![1, 2];
+        let next_layer_heat = vec![0u32; 64];
+        let next_layer_cache = VecDeque::new();
+
+        // Giả lập router logits tầng kế tiếp dự phóng expert 42 và 17 có điểm số cao vượt trội
+        let mut pilot_router = vec![0.0f32; 64];
+        pilot_router[42] = 8.5; // Top 1
+        pilot_router[17] = 6.2; // Top 2
+        pilot_router[5] = 4.1; // Top 3
+
+        let candidates = OlmoeModel::predict_next_layer_experts(
+            Some(&pilot_router),
+            &transitions,
+            0,
+            &layer0_experts,
+            &next_layer_heat,
+            &next_layer_cache,
+            None,
+            false,
+            2,
+        );
+
+        assert_eq!(candidates.len(), 2);
+        // Top 2 candidates dự phóng từ PILOT router logits là 42 và 17
+        assert!(candidates.contains(&42));
+        assert!(candidates.contains(&17));
+        // Kiểm tra thứ tự EID tăng dần để đảm bảo Sequential SSD Locality
+        assert_eq!(candidates, vec![17, 42]);
     }
 
     #[test]
@@ -4093,5 +4372,135 @@ mod routing_and_topk_tests {
                 actual_x[i]
             );
         }
+    }
+
+    #[test]
+    fn test_hot_expert_pinning_prevents_eviction() {
+        // Kiểm tra cơ chế HOT Pinning từ Colibrì:
+        // Expert có tần suất sử dụng cao nhất được ghim và không bị trục xuất khỏi cache dù cache đầy
+        let hidden = 64;
+        let intermediate = 32;
+        let make_expert = || {
+            let n = hidden * intermediate;
+            let weights = vec![1u8; 3 * n];
+            let scales = vec![0.001f32; 2 * intermediate + hidden];
+            Int8Expert::from_raw(hidden, intermediate, weights, scales)
+        };
+
+        let expert_bytes = make_expert().resident_bytes();
+        let cache_capacity = expert_bytes * 2; // Ngân sách chỉ chứa tối đa 2 experts
+
+        let mut layer = Layer {
+            input_norm: vec![],
+            post_norm: vec![],
+            q_norm: vec![],
+            k_norm: vec![],
+            q: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            k: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            v: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            o: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            router: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            cache: VecDeque::new(),
+            bytes: 0,
+            heat: vec![0; 64],
+            clock: 0,
+            recycled_buffers: Vec::new(),
+            hot_pinned: 1, // Ghim top 1 hot expert
+        };
+        let mut profile = RequestProfile::default();
+
+        // 1. Nạp expert 5 với heat rất cao = 50 -> Trở thành HOT expert được ghim
+        layer.heat[5] = 50;
+        layer.clock = 1;
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            5,
+            make_expert(),
+            false,
+            0,
+            false,
+            cache_capacity,
+            &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
+        );
+        assert_eq!(layer.cache.len(), 1);
+        assert!(layer.cache[0].is_pinned);
+
+        // 2. Nạp expert 10 (heat = 1) -> Vừa khít ngân sách 2 experts
+        layer.heat[10] = 1;
+        layer.clock = 2;
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            10,
+            make_expert(),
+            false,
+            0,
+            false,
+            cache_capacity,
+            &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
+        );
+        assert_eq!(layer.cache.len(), 2);
+
+        // 3. Nạp expert 20 (heat = 2) -> Bắt buộc phải trục xuất 1 expert.
+        // Bình thường expert 5 (đến trước) hoặc expert 10 (heat thấp hơn) sẽ bị xem xét.
+        // Nhờ HOT Pinning, expert 5 được ghim, nên expert 10 bị trục xuất!
+        layer.heat[20] = 2;
+        layer.clock = 3;
+        OlmoeModel::admit_expert_l2(
+            &mut layer,
+            20,
+            make_expert(),
+            false,
+            0,
+            false,
+            cache_capacity,
+            &mut profile,
+            &mut None,
+            false,
+            false,
+            0,
+        );
+
+        assert_eq!(layer.cache.len(), 2);
+        let resident_ids: Vec<usize> = layer.cache.iter().map(|e| e.id).collect();
+        assert!(
+            resident_ids.contains(&5),
+            "Expert 5 được ghim (pinned) phải còn trong cache"
+        );
+        assert!(
+            resident_ids.contains(&20),
+            "Expert 20 mới nạp phải có trong cache"
+        );
+        assert!(
+            !resident_ids.contains(&10),
+            "Expert 10 không ghim phải bị trục xuất"
+        );
     }
 }

@@ -25,6 +25,24 @@ struct ChatRequest {
     stream: bool,
     model: Option<String>,
     session_id: Option<String>,
+    // Sampling parameters (Colibrì dynamic sampling suite)
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    top_k: Option<usize>,
+    repetition_penalty: Option<f32>,
+    // Standard OpenAI fields for schema compatibility
+    #[allow(dead_code)]
+    presence_penalty: Option<f32>,
+    #[allow(dead_code)]
+    frequency_penalty: Option<f32>,
+    #[allow(dead_code)]
+    user: Option<String>,
+    #[allow(dead_code)]
+    n: Option<usize>,
+    #[allow(dead_code)]
+    stop: Option<serde_json::Value>,
+    #[allow(dead_code)]
+    stream_options: Option<serde_json::Value>,
 }
 fn default_max_tokens() -> usize {
     32
@@ -65,6 +83,32 @@ struct AppState {
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
 
+#[derive(Serialize)]
+struct ModelInfo {
+    id: String,
+    object: &'static str,
+    created: u64,
+    owned_by: &'static str,
+}
+
+#[derive(Serialize)]
+struct ModelListResponse {
+    object: &'static str,
+    data: Vec<ModelInfo>,
+}
+
+async fn get_models(State(state): State<AppState>) -> Json<ModelListResponse> {
+    Json(ModelListResponse {
+        object: "list",
+        data: vec![ModelInfo {
+            id: state.engine.model_name().to_string(),
+            object: "model",
+            created: 1700000000,
+            owned_by: "moe-tier-engine",
+        }],
+    })
+}
+
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
@@ -83,6 +127,8 @@ fn app(state: AppState) -> Router {
         .route("/api/gpu/toggle", post(toggle_gpu))
         .route("/api/gpu/status", get(get_gpu_status))
         .route("/api/cache/reset", post(reset_cache))
+        .route("/v1/models", get(get_models))
+        .route("/models", get(get_models))
         .route("/v1/chat/completions", post(chat))
         .layer(DefaultBodyLimit::max(128 * 1024))
         .with_state(state)
@@ -178,9 +224,13 @@ async fn main() -> io::Result<()> {
     let directory =
         std::env::var("MOE_MODEL_DIR").unwrap_or_else(|_| "./models/olmoe-1b-7b-int8".into());
     let cache_bytes = if let Ok(custom) = std::env::var("MOE_CACHE_BYTES_PER_LAYER") {
-        custom
-            .parse::<usize>()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cache byte budget"))?
+        if custom.eq_ignore_ascii_case("auto") {
+            moe_tier_engine::ram::plan_auto_cache_bytes()?
+        } else {
+            custom.parse::<usize>().map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidInput, "invalid cache byte budget")
+            })?
+        }
     } else {
         default_cache_bytes()
     };
@@ -244,13 +294,32 @@ async fn chat(
             format!("loaded model is {}", engine.model_name()),
         ));
     }
+    let sampling = if request.temperature.is_some()
+        || request.top_p.is_some()
+        || request.top_k.is_some()
+        || request.repetition_penalty.is_some()
+    {
+        let env_params = moe_tier_engine::sample::SamplingParams::from_env();
+        Some(moe_tier_engine::sample::SamplingParams {
+            temperature: request.temperature.unwrap_or(env_params.temperature),
+            top_p: request.top_p.unwrap_or(env_params.top_p),
+            top_k: request.top_k.unwrap_or(env_params.top_k),
+            repetition_penalty: request
+                .repetition_penalty
+                .unwrap_or(env_params.repetition_penalty),
+        })
+    } else {
+        None
+    };
+
     if request.stream {
         let stream = engine
-            .chat_stream_with_session(
+            .chat_stream_with_session_and_sampling(
                 request.messages,
                 request.max_tokens,
                 request.session_id,
                 state.stream_send_timeout,
+                sampling,
             )
             .await
             .map_err(api_error)?;
@@ -264,7 +333,12 @@ async fn chat(
         .into_response());
     }
     let result = engine
-        .chat_with_session(request.messages, request.max_tokens, request.session_id)
+        .chat_with_session_and_sampling(
+            request.messages,
+            request.max_tokens,
+            request.session_id,
+            sampling,
+        )
         .await
         .map_err(api_error)?;
     let completion_tokens = result.token_ids.len();
@@ -556,5 +630,56 @@ mod tests {
                 assert!(!text.contains("generation_error"));
             }
         }
+    }
+
+    #[tokio::test]
+    async fn http_openai_models_endpoint_and_sampling_params() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/olmoe/unnormalized-mha");
+        let engine = Arc::new(
+            InferenceEngine::load_with_limits(directory, 10_000, 64, 10_000_000)
+                .await
+                .unwrap(),
+        );
+        let app = app(AppState {
+            engine: Arc::clone(&engine),
+            stream_send_timeout: Duration::from_secs(1),
+        });
+
+        // 1. Test GET /v1/models endpoint
+        let response = app
+            .clone()
+            .oneshot(Request::get("/v1/models").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["object"], "list");
+        assert_eq!(body["data"][0]["id"], "olmoe");
+
+        // 2. Test POST /v1/chat/completions with full OpenAI compatibility fields
+        let chat_body = serde_json::json!({
+            "messages": [{"role": "user", "content": "token3"}],
+            "max_tokens": 3,
+            "stream": false,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 40,
+            "repetition_penalty": 1.1,
+            "presence_penalty": 0.0,
+            "frequency_penalty": 0.0,
+            "user": "test-client"
+        });
+        let response = app
+            .oneshot(
+                Request::post("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(chat_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

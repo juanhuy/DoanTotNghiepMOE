@@ -25,6 +25,19 @@ Cache expert mặc định dùng `victim`: VRAM giữ expert bị đẩy khỏi 
 
 Server mặc định cache64MiB/layer cố định, không tự tăng theo RAM trống; `MOE_CACHE_BYTES_PER_LAYER` override tường minh. RAM preflight/guard có thể từ chối load hoặc trả lỗi request khi RSS/headroom không đủ. Đây là bảo vệ hợp tác, chưa hard RSS cap hay bảo đảm hết OOM; xem [kiến trúc](docs/ARCHITECTURE.md) và [quy trình kiểm RAM](docs/WORKFLOWS.md). Mức cache chung để ghi báo cáo i5/i7 vẫn cần kiểm ổn định trên từng máy.
 
+## Đánh giá chất lượng mô hình (Perplexity & Cross-Entropy)
+
+Hệ thống tích hợp công cụ đo lường chất lượng khoa học chuẩn hóa qua độ phức tạp ngôn ngữ (Perplexity) và hàm mất mát Cross-Entropy (Negative Log-Likelihood) trên phân phối Logits:
+
+```bash
+cargo run --release --example evaluate_perplexity -- models/olmoe-1b-7b-int8 "Văn bản thử nghiệm hoặc đường dẫn file corpus"
+```
+
+Công thức toán học áp dụng:
+- **Cross-Entropy Loss**: $\mathcal{L} = -\frac{1}{N - 1} \sum_{t=1}^{N - 1} \ln P(x_{t+1} \mid x_{1..t})$
+- **Perplexity**: $\text{PPL} = \exp(\mathcal{L})$
+- **Log-Sum-Exp ổn định**: $\text{LSE}(z) = \max(z) + \ln \sum \exp(z - \max(z))$
+
 ## Bản đồ project
 
 | Vị trí | Vai trò |

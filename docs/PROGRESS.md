@@ -42,6 +42,11 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 23 | Opportunistic Inter-Layer Lookahead Prefetching & Markov Routing Transitions | Hoàn thành | Ma trận chuyển tiếp Markov liên tầng online, Rayon dual-horizon pipelined prefetch khi SSD rảnh; triệt tiêu Prefetch Contention, bảo toàn 100% bit-exact parity; 56/56 tests PASS, 0 clippy warnings |
 | 24 | Coarse-Grained Parallel Multi-Expert Dispatching & Disjoint Scratch Pool | Hoàn thành | Phân phối 8 active experts song song trên các worker threads độc lập của Rayon, giảm 93.7% fork-join barriers (từ 256 xuống 16/token); Pre-allocated 8-slot Scratch Pool (96KB L2 resident); bảo toàn 100% bit-exact parity; TTFT warm giảm xuống 2.48s (256MB) / 2.92s (128MB); 58/58 tests PASS, 0 clippy warnings |
 | 25 | Zero-Allocation Expert I/O via Buffer Recycling Pool & POSIX Zero-Copy DMA Pread | Hoàn thành | Đọc trực tiếp SSD vào vùng nhớ tái sử dụng qua POSIX pread64 DMA; triệt tiêu 100% malloc/free 6.3MB và 1.37 triệu Minor Page Faults; Total time warm lần đầu tiên phá vỡ mốc 6s (5.89s), Decode đạt 4.40 tok/s (256MB); 59/59 tests PASS, 0 clippy warnings |
+| 26 | PILOT Router Lookahead, Auto RAM Budgeting & AVX2/FMA SIMD Hardware Acceleration | Hoàn thành | Tích hợp PILOT speculation từ Colibrì, Sequential NVMe Seek, auto cache planning theo MemAvailable, và tăng tốc AVX2/FMA SIMD cho dot_i8_f32; 70/70 tests PASS, 0 clippy warnings |
+| 27 | HOT Expert Pinning & Colibrì-Inspired Dynamic Sampling Suite | Hoàn thành | Ghim chuyên gia hot (`is_pinned`), chống LRU thrashing, bổ sung bộ sampling (Temperature, Top-P, Top-K, Repetition Penalty, XorShift64*); 75/75 tests PASS, 0 clippy warnings |
+| 28 | Chuẩn hóa OpenAI Serving API Suite & Lấy mẫu Động theo Request | Hoàn thành | Bổ sung GET /v1/models, mở rộng ChatRequest với dynamic sampling (temperature, top_p, top_k, repetition_penalty), tương thích Open-WebUI & curl; 76/76 tests PASS, 0 clippy warnings |
+| 29 | Perplexity & Cross-Entropy Scientific Evaluation Engine | Hoàn thành | Đo lường Perplexity/Loss học thuật chuẩn xác qua Log-Sum-Exp ổn định số học, tích hợp encode/decode token codec, binary evaluate_perplexity; 77/77 tests PASS, 0 clippy warnings |
+| 30 | Đa định dạng INT4 Expert, AVX2 SIMD Dequantization Kernel & Bộ chuyển đổi Độc lập | Hoàn thành | Hỗ trợ chuyên gia 4-bit nibble packing (tiết kiệm 50% NVMe I/O & RAM, 3.01MB/expert), kernel AVX2/FMA SIMD dot_i4_f32 vector 32-lane, bộ chuyển đổi Python tools/prepare_olmoe_int4.py; 78/78 tests PASS, 0 clippy warnings |
 | R-2026-10-22 | Review hệ thống hiện tại | Hoàn thành review; chưa vá | 2 phát hiện P1, 7 P2; 59 tests pass ở debug/release, Clippy đạt, fmt chưa đạt; chi tiết trong `docs/reviews/2026-10-22-system-review.md` |
 | AI-2026-10-22 | Chuẩn hóa project AI-first và bằng chứng hai máy | Hoàn thành nền tảng | 2 skills/2 reviewer roles, workflow/CI dùng chung; giữ 40 raw nguyên byte, bỏ 33 JSON trùng; 24 tooling tests + 59 Rust tests/profile đạt; chưa đo baseline 7B mới |
 
@@ -2241,3 +2246,183 @@ Kết luận và bước tiếp theo:
   - `sha256sum -c CHECKSUMS.sha256` trong thư mục i7: 51/51 files PASS.
   - `python3 tools/check.py --web`: PASS 40 Python + 7 Node/catalog40.
   - `git diff --check`: PASS (0 lỗi khoảng trắng).
+
+## 2026-10-28 — Bước 26: Tích hợp PILOT Lookahead, Auto RAM Budgeting & Tăng tốc SIMD AVX2/FMA cho INT8 GEMV
+
+- **Mục tiêu:**
+  - Khắc phục nút thắt cổ chai tính toán CPU scalar trong nhân tích vô hướng Expert `dot_i8_f32`.
+  - Tích hợp kỹ thuật Router Speculation tiên tiến (PILOT Lookahead từ Colibrì) để dự phóng sớm các Expert cần thiết ở tầng kế tiếp.
+  - Tối ưu hóa tính cục bộ truy xuất SSD (Sequential NVMe Seek Locality).
+  - Tự động điều phối ngân sách bộ nhớ cache Expert dựa trên RAM khả dụng thực tế của hệ điều hành (`MemAvailable`).
+
+- **Các thay đổi kiến trúc và file liên quan:**
+  1. `src/int8_expert.rs`:
+     - Triển khai nhân phần cứng `dot_i8_f32_avx2` sử dụng tập lệnh nội tại AVX2 + FMA 256-bit:
+       - Tải unaligned 64-bit an toàn (`std::ptr::read_unaligned`) và mở rộng dấu INT8 sang INT32 (`_mm256_cvtepi8_epi32`).
+       - Chuyển đổi sang FP32 trong 1 chu kỳ (`_mm256_cvtepi32_ps`) và nhân tích lũy chập với FMA (`_mm256_fmadd_ps`).
+       - Sử dụng 4 thanh ghi tích lũy độc lập (`sum0`..`sum3`, 32 phần tử/bước) để bão hòa pipeline và triệt tiêu chuỗi phụ thuộc lệnh (dependency chains).
+       - Khử song song vector 256-bit (horizontal reduction) thành scalar với độ chính xác cao.
+     - Cơ chế runtime feature detection (`is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")`) với graceful fallback về `dot_i8_f32_scalar` trên các kiến trúc khác.
+     - Bổ sung unit test `test_dot_i8_f32_simd_parity_with_scalar` kiểm tra tính tương đương tuyệt đối giữa SIMD và scalar trên 15 kích thước chiều rộng khác nhau (từ 1 đến 2048 phần tử kèm phần dư đuôi lẻ).
+  2. `src/olmoe.rs`:
+     - Tích hợp cơ chế **PILOT Router Lookahead**: Đánh giá sớm router của tầng kế tiếp $l+1$ trực tiếp trên residual activation `scratch.x` của tầng hiện tại $l$ (thông qua RMSNorm và phép nhân ma trận router).
+     - Kết hợp tín hiệu router động với bảng tần suất Markov và tín hiệu nhiệt (Recency Heat) để dự đoán chính xác Expert cần prefetch.
+     - Bổ sung sắp xếp EID tăng dần (`sort_unstable()`) trước khi nạp I/O từ đĩa, đảm bảo tuần tự hóa các yêu cầu đọc khối dữ liệu trên SSD NVMe (Sequential Seek Optimization).
+     - Bổ sung test kiểm chứng: `test_pilot_router_lookahead_speculation`.
+  3. `src/ram.rs`:
+     - Bổ sung hàm hoạch định `plan_auto_cache_bytes()`: Tự động trích xuất 80% `MemAvailable`, khấu trừ 1.5GB cho Dense weights, KV và headroom hệ điều hành, chia đều cho 16 tầng của OLMoE và kẹp an toàn trong dải [64 MiB, 256 MiB]/layer.
+  4. `src/main.rs` & `src/lib.rs`:
+     - Export module `pub mod ram;` trong `src/lib.rs`.
+     - Hỗ trợ biến môi trường `MOE_CACHE_BYTES_PER_LAYER=auto` để kích hoạt bộ hoạch định tự động ngay khi khởi động engine.
+
+- **Kết quả kiểm thử & Kiểm chứng:**
+  - `cargo test --locked`: **70/70 tests PASS** (65 unit tests `lib.rs`, 4 tests `main.rs`, 6 tests `int8_loader.rs`, 3 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets --locked`: **0 warnings** (Đạt tuyệt đối).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - Tính toán số học và bit-exact parity: Đạt toàn bộ các điều kiện dung sai $10^{-4} \times (1 + |x|)$.
+
+## 2026-10-28 — Bước 27: Ghim Chuyên Gia Tần Suất Cao (HOT Expert Pinning) & Bộ Lấy Mẫu Linh Hoạt (Sampling Suite từ Colibrì)
+
+- **Mục tiêu:**
+  - Triệt tiêu hiện tượng *Cache Thrashing* khi các chuyên gia tần suất cao (dấu câu, cú pháp ngữ pháp cơ bản) bị thuật toán LRU đẩy ra rồi nạp lại từ SSD liên tục.
+  - Xóa bỏ hạn chế chỉ giải mã tham lam (`greedy argmax`), bổ sung bộ lấy mẫu xác suất chuẩn hóa (Temperature, Top-P Nucleus, Top-K, Repetition Penalty) lấy cảm hứng trực tiếp từ `sample.h` của Colibrì.
+
+- **Các thay đổi kiến trúc và file liên quan:**
+  1. `src/sample.rs`:
+     - Xây dựng module lấy mẫu độc lập, phi ngoại vi với bộ sinh số ngẫu nhiên `XorShift64*` (tương tự macro `rndu()` trong `colibri/c/sample.h`).
+     - Hỗ trợ `SamplingParams` cấu hình linh hoạt:
+       - `temperature`: điều chỉnh độ ngẫu nhiên. Mặc định `0.0` rơi về `argmax_greedy` để đảm bảo tương thích 100% bit-exact với các bài test và benchmark hiện hữu.
+       - `repetition_penalty`: giảm thiểu lặp từ, phạt xác suất các token đã xuất hiện trong prompt và chuỗi sinh trước đó.
+       - `top_k`: cắt tỉa chỉ giữ K token có xác suất cao nhất.
+       - `top_p` (Nucleus cutoff): cắt tỉa tập token nhỏ nhất có tổng xác suất tích lũy $\ge P$.
+     - Khả năng xử lý số học biên an toàn: tự động phát hiện NaN / Inf trong logits và fallback về argmax mà không gây crash engine.
+     - Tự động đọc cấu hình runtime từ các biến môi trường: `MOE_TEMPERATURE`, `MOE_TOP_P`, `MOE_TOP_K`, `MOE_REPETITION_PENALTY`.
+     - 4 unit tests bao phủ: greedy fallback, repetition penalty, top-k filtering, và non-finite logit handling.
+  2. `src/olmoe.rs`:
+     - Bổ sung trường `is_pinned: bool` vào cấu trúc `CachedExpert`.
+     - Thêm trường `hot_pinned: usize` vào `Layer`, tự động đọc từ biến môi trường `MOE_HOT_PIN_COUNT` hoặc `HOT` (tương thích quy ước Colibrì).
+     - Triển khai phương thức `Layer::update_hot_pins()`: Tự động rà soát bảng nhiệt `layer.heat` sau mỗi bước giải mã hoặc nạp batch prefill để ghim các chuyên gia có tần suất kích hoạt cao nhất.
+     - Cải tiến thuật toán trục xuất `admit_expert_l2`:
+       1. Ưu tiên trục xuất các Expert Probationary chưa ghim (`!is_pinned && !is_protected`).
+       2. Nếu không còn, trục xuất các Expert Protected chưa ghim (`!is_pinned`).
+       3. Chỉ trong trường hợp áp lực cực hạn (toàn bộ cache đều bị ghim) mới trục xuất phần tử nguội nhất.
+     - Tích hợp bộ lấy mẫu `sample_token` vào vòng lặp giải mã `generate_inner`.
+     - Thêm unit test kiểm chứng: `test_hot_expert_pinning_prevents_eviction` xác nhận Expert có heat cao được ghim và bảo vệ tuyệt đối khỏi bị trục xuất khi nạp tràn cache.
+  3. `src/lib.rs`:
+     - Khai báo và export module `pub mod sample;`.
+
+- **Kết quả kiểm thử & Kiểm chứng:**
+  - `cargo test --locked`: **75/75 tests PASS** (70 unit tests `lib.rs`, 4 tests `main.rs`, 6 tests `int8_loader.rs`, 3 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets --locked`: **0 warnings** (Đạt tuyệt đối).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **PASS** toàn bộ các bài kiểm tra của kho lưu trữ.
+
+## 2026-11-01 — Bước 28: Chuẩn hóa OpenAI Serving API Suite & Lấy mẫu Động theo Request
+
+- **Mục tiêu:**
+  - Chuẩn hóa giao tiếp API tương thích toàn diện với đặc tả OpenAI REST API (`GET /v1/models`, `POST /v1/chat/completions`).
+  - Hỗ trợ truyền tham số lấy mẫu linh hoạt (`temperature`, `top_p`, `top_k`, `repetition_penalty`) trực tiếp trong từng HTTP Request thay vì chỉ phụ thuộc vào biến môi trường cố định.
+  - Tương thích liền mạch với hệ sinh thái Open-WebUI, LangChain, curl và các công cụ LLM benchmark mà không bị lỗi từ chối schema (`deny_unknown_fields`).
+
+- **Các thay đổi kiến trúc và file liên quan:**
+  1. `src/main.rs`:
+     - Bổ sung định nghĩa cấu trúc dữ liệu `ModelInfo` và `ModelListResponse` tuân thủ chuẩn OpenAI.
+     - Triển khai handler `get_models` và đăng ký route `GET /v1/models` cùng alias `GET /models`.
+     - Mở rộng `ChatRequest` hỗ trợ các trường sampling động: `temperature`, `top_p`, `top_k`, `repetition_penalty`.
+     - Bổ sung các trường chuẩn trong hệ sinh thái OpenAI (`presence_penalty`, `frequency_penalty`, `user`, `n`, `stop`, `stream_options`) đảm bảo tính tương thích cao và không bị từ chối bởi schema validation.
+     - Chuyển tiếp `SamplingParams` từ payload request tới luồng sinh văn bản của `InferenceEngine`.
+     - Bổ sung unit test `http_openai_models_endpoint_and_sampling_params` kiểm tra tính hợp lệ của endpoint `/v1/models` và payload chat completions đa trường.
+  2. `src/engine.rs`:
+     - Bổ sung phương thức `chat_with_session_and_sampling` và `chat_stream_with_session_and_sampling`.
+     - Chuyển giao tham số `sampling: Option<SamplingParams>` vào worker background blocking thread để điều khiển bộ giải mã.
+     - Giữ nguyên các hàm `chat_with_session` và `chat_stream_with_session` với fallback `sampling = None` để đảm bảo 100% khả năng tương thích ngược (Zero Blast Radius).
+  3. `src/olmoe.rs`:
+     - Cung cấp phương thức `generate_controlled_with_sampling` tiếp nhận `Option<SamplingParams>`.
+     - Tích hợp fallback ưu tiên: nếu request chỉ định sampling params thì áp dụng; nếu không, fallback về `SamplingParams::from_env()`.
+     - Bảo toàn tuyệt đối đặc tính giải mã xác định (Bit-exact Greedy Parity) khi `temperature == 0.0`.
+
+- **Kết quả kiểm thử & Kiểm chứng:**
+  - `cargo test`: **76/76 tests PASS** (70 unit tests `lib.rs`, 5 tests `main.rs`, 6 tests `int8_loader.rs`, 3 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets -- -D warnings`: **0 warnings** (Đạt tuyệt đối).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+
+## 2026-11-01 — Bước 29: Công cụ Đánh giá Khoa học Độc lập: Perplexity & Cross-Entropy Loss Engine
+
+- **Mục tiêu:**
+  - Khắc phục hạn chế nêu trong Báo cáo Định kỳ Lần 1 và Đề cương Luận văn: thay thế các bài kiểm tra heuristic 12 câu đơn thuần bằng thước đo học thuật chuẩn hóa cho mô hình ngôn ngữ lớn (Perplexity & Cross-Entropy Loss).
+  - Cung cấp công cụ đánh giá khoa học định lượng độ suy thoái (degradation) hoặc chất lượng của mô hình lượng tử hóa INT8 trên các ngữ liệu thử nghiệm thực tế (Wikitext, corpus tiếng Việt, văn bản kỹ thuật).
+
+- **Các thay đổi kiến trúc và file liên quan:**
+  1. `src/olmoe.rs`:
+     - Khai báo cấu trúc `PerplexityMetrics` gồm: `token_count`, `evaluated_tokens`, `cross_entropy_loss`, `perplexity`, `bits_per_character`, `eval_time_ms`, `tokens_per_second`.
+     - Bổ sung helper `encode(&self, text: &str)` và `decode(&self, tokens: &[usize])` cho phép mã hóa/giải mã trực tiếp qua tokenizer.
+     - Triển khai phương thức toán học `compute_perplexity(&mut self, text: &str)`:
+       - Tính toán logits tuần tự cho mọi tiền tố $t \in [0, N-2]$.
+       - Sử dụng kỹ thuật **Log-Sum-Exp ổn định số học** ($\max(z) + \ln \sum \exp(z - \max(z))$) để triệt tiêu hoàn toàn rủi ro tràn số FP32.
+       - Tính hàm mất mát Cross-Entropy: $\mathcal{L} = -\frac{1}{N-1} \sum_{t=1}^{N-1} \ln P(x_{t+1} \mid x_{1..t})$.
+       - Tính Perplexity: $\text{PPL} = \exp(\mathcal{L})$.
+       - Tính Bits-Per-Character: $\text{BPC} = \frac{\mathcal{L}}{\ln(2) \times \text{CharsPerToken}}$.
+  2. `src/engine.rs`:
+     - Bổ sung các phương thức bất đồng bộ an toàn trên facade: `compute_perplexity(&self, text: &str)`, `encode(&self, text: &str)`, `decode(&self, tokens: &[usize])`.
+     - Điều phối an toàn qua cơ chế acquire semaphore gate và `spawn_blocking`, tránh nghẽn luồng Tokio runtime.
+  3. `examples/evaluate_perplexity.rs`:
+     - Xây dựng công cụ dòng lệnh chuyên dụng:
+       `cargo run --release --example evaluate_perplexity -- MODEL_DIRECTORY [TEXT_OR_FILE_PATH]`
+     - Hỗ trợ truyền trực tiếp văn bản hoặc đường dẫn tệp văn bản.
+     - Tự động thích ứng ngữ cảnh an toàn (`actual_context = min(max_position_embeddings, requested_context)`).
+     - Định dạng trực quan trên terminal và xuất payload JSON chuẩn phục vụ trích dẫn số liệu vào Chương 4 Luận văn.
+  4. `tests/olmoe_reference.rs`:
+     - Bổ sung integration test `test_compute_perplexity_and_token_codec` xác minh độ chính xác của encode/decode round-trip, tính hữu hạn của loss và đẳng thức $\text{PPL} = \exp(\text{Loss})$.
+
+- **Kết quả kiểm thử & Kiểm chứng:**
+  - `cargo test`: **77/77 tests PASS** (70 unit tests `lib.rs`, 5 tests `main.rs`, 6 tests `int8_loader.rs`, 4 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets -- -D warnings`: **0 warnings** (Đạt tuyệt đối).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **PASS** toàn bộ.
+  - Chạy thực nghiệm smoke trên `unnormalized-mha`: Loss = 3.5027 nats, PPL = 33.2047, Throughput = 311.3 tokens/s.
+
+## 2026-11-01 — Bước 30: Đa định dạng INT4 Expert, AVX2 SIMD Dequantization Kernel & Bộ chuyển đổi Độc lập
+
+- **Mục tiêu:**
+  - Triển khai định dạng lượng tử hóa 4-bit (INT4 nibble packing) cho toàn bộ 64 chuyên gia MoE mỗi tầng nhằm giảm 50% dung lượng lưu trữ trên SSD NVMe và kích thước bộ nhớ RAM (từ ~6.015 MB xuống còn ~3.008 MB mỗi chuyên gia).
+  - Giảm áp lực băng thông đọc đĩa trong các kịch bản bộ nhớ hạn chế (laptop 8GB RAM hoặc 128MB cache).
+  - Cung cấp kernel giải mã nhanh phần cứng AVX2/FMA SIMD kết hợp tính tích vô hướng (Fused Dequantization & Dot Product) không qua bộ đệm trung gian.
+  - Xây dựng bộ công cụ chuyển đổi mô hình độc lập `tools/prepare_olmoe_int4.py` và kiểm thử tự động.
+
+- **Các thay đổi kiến trúc và file liên quan:**
+  1. `src/safetensors.rs`:
+     - Bổ sung định dạng dữ liệu `DType::U8` (`"U8"` trong Safetensors header / `torch.uint8` trong PyTorch), cho phép nạp trực tiếp các tensor đóng gói nhị phân 4-bit.
+  2. `src/int8_expert.rs`:
+     - Khai báo kiểu liệt kê `pub enum QuantType { Int8, Int4 }`.
+     - Tự động nhận diện định dạng expert dựa trên shape trọng số:
+       - INT8: `shape == [weight_count]` (1 byte / tham số, ~6.015 MB).
+       - INT4: `shape == [weight_count / 2]` (2 tham số có dấu `[-8, 7]` đóng gói trong 1 byte `u8`, ~3.008 MB).
+     - Kiểm tra tính chẵn của `hidden` và `intermediate` đối với INT4 để đảm bảo tính thẳng hàng của các hàng ma trận (row byte alignment).
+     - Tự động điều chỉnh kích thước bộ đệm phân bổ `Vec::with_capacity(actual_weight_bytes)` và giới hạn `max_bytes` ngân sách bộ nhớ.
+     - Triển khai kernel tham chiếu `dot_i4_f32_scalar(row: &[u8], input: &[f32]) -> f32` với 4 bộ tích lũy giải mã nibble song song.
+     - Triển khai kernel vector hóa siêu tốc `dot_i4_f32_avx2(row: &[u8], input: &[f32]) -> f32`:
+       - Nạp đồng thời 16 bytes (32 nibbles) bằng `_mm_loadu_si128`.
+       - Tách và dóng hàng nibbles thấp/cao bằng `_mm_srli_epi16` và `_mm_and_si128(0x0F)`.
+       - Mở rộng dấu 4-bit sang 8-bit bằng biểu thức tối ưu 2 chu kỳ lệnh `(x ^ 8) - 8` (`_mm_xor_si128` + `_mm_sub_epi8`).
+       - Mở rộng sang số thực FP32 và nhân dồn FMA 256-bit (`_mm256_fmadd_ps`) trên 4 ngân hàng thanh ghi `sum0..sum3`.
+     - Điều phối thông minh `dot_i4_f32`: tự động nhận diện tính năng CPU tại thời điểm chạy (`is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")`), fallback an toàn về scalar trên CPU thế hệ cũ.
+     - Cập nhật các kernel chuyên gia `fused_gate_up_swiglu`, `matvec_into`, `fused_gate_up_swiglu_seq`, `matvec_into_seq` phân nhánh theo `QuantType` với bước nhảy dòng (`stride = hidden / 2` hoặc `intermediate / 2`).
+  3. `tools/prepare_olmoe_int4.py`:
+     - Script Python độc lập chuyển đổi checkpoint HuggingFace OLMoE sang định dạng INT4 Safetensors.
+     - Tự động tính toán thang đo đối xứng `scale = amax / 7.0`, làm tròn và clamp trong khoảng `[-8, 7]`.
+     - Đóng gói nibbles: phần tử chẵn vào 4 bit thấp (`0..3`), phần tử lẻ vào 4 bit cao (`4..7`), lưu dạng tensor `U8`.
+  4. `tools/test_prepare_olmoe_int4.py`:
+     - Bộ kiểm thử hồi quy xác minh quy tắc đóng gói/giải mã nibble trên toàn bộ dải giá trị `[-8, 7]`.
+     - Chuyển đổi mô hình fixture `unnormalized-mha`, xác minh kích thước byte giảm chính xác 50% và bảo toàn độ chính xác của các tensor không phải expert.
+  5. `tests/int8_loader.rs` & `src/int8_expert.rs`:
+     - Bổ sung kiểm thử `test_dot_i4_f32_simd_parity_with_scalar` đối sánh kết quả AVX2 SIMD và scalar trên 16 kích thước chiều khác nhau (1 đến 2048 phần tử).
+     - Bổ sung kiểm thử `test_forward_single_threaded_matches_forward_reuse_int4` xác minh tính nhất quán bit-exact giữa luồng song song Rayon và luồng tuần tự.
+     - Bổ sung integration test `merged_int4_expert_loads_and_matches_reference` xác minh toàn bộ quá trình nạp từ file Safetensors và tính toán forward cho expert INT4.
+
+- **Kết quả kiểm thử & Kiểm chứng:**
+  - `cargo test`: **78/78 tests PASS** (71 unit tests `lib.rs`, 5 tests `main.rs`, 7 tests `int8_loader.rs`, 4 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **PASS** toàn bộ.
+  - `python3 tools/check.py --web`: **PASS** toàn bộ (7/7 tests node.js, 40 benchmark evidence artifacts).
+  - `colibri/venv/bin/python tools/test_prepare_olmoe_int4.py`: **PASS** trong 0.422s.
