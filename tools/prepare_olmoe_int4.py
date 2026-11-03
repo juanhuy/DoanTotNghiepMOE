@@ -44,15 +44,24 @@ def convert(source, output):
                 index[name] = path
     if not index:
         raise ValueError("no source tensors")
-    if any(name.endswith(".merged_weight") for name in index):
-        raise ValueError("source is already converted; use its directory directly")
-    # Ensure all expert projections exist before creating output.
+
+    is_already_merged = any(name.endswith(".merged_weight") for name in index)
+
+    # Validate that all required expert tensors exist before creating output
     for layer in range(config["num_hidden_layers"]):
         for expert in range(config["num_experts"]):
-            for projection in ["gate_proj", "up_proj", "down_proj"]:
-                name = f"model.layers.{layer}.mlp.experts.{expert}.{projection}.weight"
-                if name not in index:
-                    raise ValueError(f"missing tensor: {name}")
+            prefix = f"model.layers.{layer}.mlp.experts.{expert}"
+            if is_already_merged:
+                w_name = f"{prefix}.merged_weight"
+                s_name = f"{prefix}.qs"
+                if w_name not in index or s_name not in index:
+                    raise ValueError(f"missing merged tensor: {w_name} or {s_name}")
+            else:
+                for projection in ["gate_proj", "up_proj", "down_proj"]:
+                    name = f"{prefix}.{projection}.weight"
+                    if name not in index:
+                        raise ValueError(f"missing tensor: {name}")
+
     output.mkdir(parents=True, exist_ok=False)
     (output / "INCOMPLETE").write_text("Conversion in progress; do not run this directory.\n")
     buffer, size, shard_id = {}, 0, 0
@@ -86,23 +95,49 @@ def convert(source, output):
         if ".mlp.experts." not in name and ".rotary_emb." not in name:
             add({name: read(name).contiguous()})
     flush()
+
+    d, i = config["hidden_size"], config["intermediate_size"]
+    n = d * i
+
     for layer in range(config["num_hidden_layers"]):
         for expert in range(config["num_experts"]):
             prefix = f"model.layers.{layer}.mlp.experts.{expert}"
             weights, scales = [], []
-            for projection in ["gate_proj", "up_proj", "down_proj"]:
-                tensor = read(f"{prefix}.{projection}.weight").float()
-                shape = (
-                    (config["hidden_size"], config["intermediate_size"])
-                    if projection == "down_proj"
-                    else (config["intermediate_size"], config["hidden_size"])
-                )
-                if tuple(tensor.shape) != shape or not torch.isfinite(tensor).all():
-                    raise ValueError(f"invalid expert tensor {prefix}.{projection}")
-                scale = tensor.abs().amax(dim=1).clamp(min=1e-12) / 7.0
-                quantized = (tensor / scale[:, None]).round().clamp(-8, 7).to(torch.int8)
-                weights.append(quantized.flatten())
-                scales.append(scale)
+
+            if is_already_merged:
+                # Direct INT8 -> INT4 re-quantization
+                merged_int8 = read(f"{prefix}.merged_weight")
+                qs_int8 = read(f"{prefix}.qs").float()
+
+                projections = [
+                    (merged_int8[0:n].reshape(i, d), qs_int8[0:i]),
+                    (merged_int8[n : 2 * n].reshape(i, d), qs_int8[i : 2 * i]),
+                    (merged_int8[2 * n : 3 * n].reshape(d, i), qs_int8[2 * i : 2 * i + d]),
+                ]
+                for tensor_int8, scale_int8 in projections:
+                    # ratio maps [-max, max] to [-7, 7]
+                    max_val = tensor_int8.float().abs().amax(dim=1).clamp(min=1.0)
+                    ratio = max_val / 7.0
+                    quantized = (tensor_int8.float() / ratio[:, None]).round().clamp(-8, 7).to(torch.int8)
+                    scale = scale_int8 * ratio
+                    weights.append(quantized.flatten())
+                    scales.append(scale)
+            else:
+                # Conversion from unmerged FP16/FP32 source
+                for projection in ["gate_proj", "up_proj", "down_proj"]:
+                    tensor = read(f"{prefix}.{projection}.weight").float()
+                    shape = (
+                        (d, i)
+                        if projection == "down_proj"
+                        else (i, d)
+                    )
+                    if tuple(tensor.shape) != shape or not torch.isfinite(tensor).all():
+                        raise ValueError(f"invalid expert tensor {prefix}.{projection}")
+                    scale = tensor.abs().amax(dim=1).clamp(min=1e-12) / 7.0
+                    quantized = (tensor / scale[:, None]).round().clamp(-8, 7).to(torch.int8)
+                    weights.append(quantized.flatten())
+                    scales.append(scale)
+
             flat_weights = torch.cat(weights)
             packed_weights = pack_int4_nibbles(flat_weights)
             add({

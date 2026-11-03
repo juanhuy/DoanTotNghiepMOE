@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
     fs, io,
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 use tracing::{info, warn};
@@ -165,6 +165,7 @@ struct Layer {
     clock: u64,
     recycled_buffers: Vec<(Vec<u8>, Vec<f32>)>,
     hot_pinned: usize,
+    router_ema: Vec<f32>,
 }
 
 impl Layer {
@@ -195,6 +196,34 @@ impl Layer {
                 <= budget
         {
             self.recycled_buffers.push(buffers);
+        }
+    }
+
+    /// Cập nhật router EMA theo đà định tuyến (Routing Momentum từ Colibrì olmoe.c).
+    /// `ema = (1.0 - smooth) * logits + smooth * ema`
+    fn update_router_ema(&mut self, logits: &[f32], smooth: f32) {
+        if smooth <= 0.0 || logits.is_empty() {
+            return;
+        }
+        let is_uninit = self.router_ema.iter().all(|&v| v == 0.0);
+        let n = self.router_ema.len().min(logits.len());
+        if is_uninit {
+            self.router_ema[..n].copy_from_slice(&logits[..n]);
+        } else {
+            for (ema, &logit) in self.router_ema[..n].iter_mut().zip(&logits[..n]) {
+                *ema = (1.0 - smooth) * logit + smooth * *ema;
+            }
+        }
+    }
+
+    /// Trộn tín hiệu router logits dự phóng PILOT với lịch sử EMA của tầng kế tiếp.
+    fn blend_pilot_router(&self, pilot_logits: &mut [f32], smooth: f32) {
+        if smooth <= 0.0 || self.router_ema.iter().all(|&v| v == 0.0) {
+            return;
+        }
+        let n = pilot_logits.len().min(self.router_ema.len());
+        for (pilot, &ema) in pilot_logits[..n].iter_mut().zip(&self.router_ema[..n]) {
+            *pilot = (1.0 - smooth) * *pilot + smooth * ema;
         }
     }
 
@@ -315,6 +344,43 @@ impl StepScratch {
     }
 }
 
+/// Bộ ghi nhật ký định tuyến routing trực tiếp lấy cảm hứng từ engine Colibrì (route_trace.h).
+/// Ghi vết định tuyến ra luồng văn bản: `<call_id> <row> <layer> <expert_0>:<gate_0> ...`
+/// phục vụ phân tích ma trận tương quan kích hoạt (co-activation heatmap) trong luận văn.
+#[derive(Debug)]
+pub(crate) struct RouteTraceLogger {
+    file: fs::File,
+    call_id: usize,
+}
+
+impl RouteTraceLogger {
+    pub(crate) fn new(path: &Path) -> Option<Self> {
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| warn!("Không thể mở ROUTE_TRACE tại {}: {e}", path.display()))
+            .ok()?;
+        Some(Self { file, call_id: 0 })
+    }
+
+    #[inline]
+    pub(crate) fn trace(&mut self, row: usize, layer: usize, experts: &[usize], gates: &[f32]) {
+        use std::io::Write;
+        let mut line = format!("{} {} {}", self.call_id, row, layer);
+        for (&e, &g) in experts.iter().zip(gates) {
+            line.push_str(&format!(" {}:{:.4}", e, g));
+        }
+        line.push('\n');
+        let _ = self.file.write_all(line.as_bytes());
+    }
+
+    #[inline]
+    pub(crate) fn advance_call(&mut self) {
+        self.call_id += 1;
+    }
+}
+
 pub struct OlmoeModel {
     // Retain the serial reference only in tests for paired in-process measurements.
     #[cfg(test)]
@@ -340,6 +406,8 @@ pub struct OlmoeModel {
     gpu_tier: crate::gpu::GpuTierManager,
     gpu_dense: Option<crate::gpu::GpuDenseStorage>,
     inter_layer_transitions: Vec<Vec<u16>>,
+    usage_path: Option<PathBuf>,
+    route_trace: Option<RouteTraceLogger>,
 }
 
 fn mat(
@@ -403,14 +471,21 @@ impl OlmoeModel {
         let index = TensorIndex::open(path)?;
         let d = config.hidden_size;
         let kd = d / config.num_attention_heads * config.num_key_value_heads;
-        let expert_bytes = d
+        let raw_weight_count = d
             .checked_mul(config.intermediate_size)
             .and_then(|count| count.checked_mul(3))
-            .and_then(|weights| {
-                (config.intermediate_size * 2 + d)
-                    .checked_mul(std::mem::size_of::<f32>())
-                    .and_then(|scales| weights.checked_add(scales))
-            })
+            .ok_or_else(|| invalid("expert size overflow"))?;
+        let sample_w = index.tensor("model.layers.0.mlp.experts.0.merged_weight")?;
+        let is_int4 = sample_w.dtype == crate::safetensors::DType::U8
+            || sample_w.shape == [raw_weight_count / 2];
+        let weight_slot_bytes = if is_int4 {
+            raw_weight_count / 2
+        } else {
+            raw_weight_count
+        };
+        let expert_bytes = (config.intermediate_size * 2 + d)
+            .checked_mul(std::mem::size_of::<f32>())
+            .and_then(|scales| weight_slot_bytes.checked_add(scales))
             .ok_or_else(|| invalid("expert size overflow"))?;
         let active_set_bytes = expert_bytes
             .checked_mul(config.num_experts_per_tok)
@@ -487,8 +562,12 @@ impl OlmoeModel {
                 let ep = format!("{p}.mlp.experts.{expert}");
                 let w = index.tensor(&format!("{ep}.merged_weight"))?;
                 let s = index.tensor(&format!("{ep}.qs"))?;
-                if w.dtype != crate::safetensors::DType::I8
-                    || w.shape != [3 * d * config.intermediate_size]
+                let valid_w = if is_int4 {
+                    w.dtype == crate::safetensors::DType::U8 && w.shape == [raw_weight_count / 2]
+                } else {
+                    w.dtype == crate::safetensors::DType::I8 && w.shape == [raw_weight_count]
+                };
+                if !valid_w
                     || s.dtype != crate::safetensors::DType::F32
                     || s.shape != [2 * config.intermediate_size + d]
                 {
@@ -516,6 +595,7 @@ impl OlmoeModel {
                 clock: 0,
                 recycled_buffers: Vec::new(),
                 hot_pinned,
+                router_ema: vec![0.0; config.num_experts],
             });
         }
         let tokenizer = if path.join("tokenizer.json").exists() {
@@ -572,7 +652,11 @@ impl OlmoeModel {
                             .budget()
                             .map(|b| (b.usable_vram_bytes as usize).saturating_sub(total_bytes))
                             .unwrap_or(0);
-                        let weight_slot_bytes = 3 * config.hidden_size * config.intermediate_size;
+                        let weight_slot_bytes = if is_int4 {
+                            (3 * config.hidden_size * config.intermediate_size) / 2
+                        } else {
+                            3 * config.hidden_size * config.intermediate_size
+                        };
                         let scale_slot_bytes = (config.hidden_size + 2 * config.intermediate_size)
                             * std::mem::size_of::<f32>();
                         let single_expert_bytes = weight_slot_bytes + scale_slot_bytes;
@@ -624,6 +708,27 @@ impl OlmoeModel {
         }
 
         let num_layers = layers.len();
+        let usage_path = std::env::var("MOE_USAGE_PATH")
+            .map(PathBuf::from)
+            .ok()
+            .or_else(|| {
+                let default_p = path.join(".moe_usage");
+                if default_p.exists() {
+                    Some(default_p)
+                } else {
+                    None
+                }
+            });
+
+        if let Some(up) = &usage_path {
+            Self::load_usage_from_path(up, &mut layers, config.num_experts);
+        }
+
+        let route_trace = std::env::var("ROUTE_TRACE")
+            .or_else(|_| std::env::var("MOE_ROUTE_TRACE"))
+            .ok()
+            .and_then(|p| RouteTraceLogger::new(Path::new(&p)));
+
         Ok(Self {
             #[cfg(test)]
             serial_prefill_reference: true,
@@ -648,7 +753,76 @@ impl OlmoeModel {
             gpu_tier,
             gpu_dense,
             inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
+            usage_path,
+            route_trace,
         })
+    }
+
+    /// Nạp lịch sử tần suất kích hoạt routing từ file `.moe_usage` (hoặc `.coli_usage`)
+    /// theo chuẩn tương thích ngược của Colibrì.
+    fn load_usage_from_path(path: &Path, layers: &mut [Layer], num_experts: usize) {
+        let Ok(content) = fs::read_to_string(path) else {
+            return;
+        };
+        for line in content.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+            if parts[0] == "-1" {
+                if parts.len() >= 3 {
+                    let nl = parts[1].parse::<usize>().unwrap_or(0);
+                    let ne = parts[2].parse::<usize>().unwrap_or(0);
+                    if nl != layers.len() || ne != num_experts {
+                        warn!(
+                            "Lịch sử routing {} có cấu hình ({} layers, {} experts) không khớp mô hình ({} layers, {} experts). Bỏ qua.",
+                            path.display(), nl, ne, layers.len(), num_experts
+                        );
+                        return;
+                    }
+                }
+                continue;
+            }
+            if parts[0] == "-2" {
+                continue;
+            }
+            if parts.len() >= 3 {
+                if let (Ok(l), Ok(e), Ok(c)) = (
+                    parts[0].parse::<usize>(),
+                    parts[1].parse::<usize>(),
+                    parts[2].parse::<u32>(),
+                ) {
+                    if l < layers.len() && e < num_experts {
+                        layers[l].heat[e] = layers[l].heat[e].saturating_add(c);
+                    }
+                }
+            }
+        }
+        for layer in layers.iter_mut() {
+            layer.update_hot_pins();
+        }
+        info!(
+            "Đã nạp lịch sử routing chuyên gia từ {}, tự động ghim hot experts",
+            path.display()
+        );
+    }
+
+    /// Lưu lịch sử tần suất kích hoạt routing ra file `.moe_usage` với đảm bảo tính nguyên tử (atomic file replace).
+    fn save_usage_to_path(path: &Path, layers: &[Layer], num_experts: usize) -> io::Result<()> {
+        let mut content = String::with_capacity(layers.len() * num_experts * 16);
+        content.push_str(&format!("-1 {} {}\n", layers.len(), num_experts));
+        content.push_str("-2 1 3192021591\n");
+        for (l, layer) in layers.iter().enumerate() {
+            for (e, &count) in layer.heat.iter().enumerate() {
+                if count > 0 {
+                    content.push_str(&format!("{l} {e} {count}\n"));
+                }
+            }
+        }
+        let tmp_path = path.with_extension("tmp");
+        fs::write(&tmp_path, content)?;
+        fs::rename(&tmp_path, path)?;
+        Ok(())
     }
 
     pub fn expert_status(&self) -> ExpertStatusReport {
@@ -1097,10 +1271,11 @@ impl OlmoeModel {
     /// Dự đoán danh sách expert của tầng tiếp theo (Lookahead Speculative Routing)
     /// Kết hợp giữa:
     /// 1. Tín hiệu dự phóng động PILOT Router từ Colibrì (đánh giá router tầng sau trên residual stream x hiện tại)
-    /// 2. Ma trận xác suất chuyển tiếp giữa 2 tầng liên tiếp (Inter-Layer Markov Transition)
-    /// 3. Tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
-    /// 4. Lọc bỏ các expert đã có sẵn trong L2 Host RAM Cache hoặc L1 GPU VRAM Cache
-    /// 5. Sắp xếp thứ tự EID tăng dần để tối ưu SSD read locality
+    /// 2. Ngưỡng độ tin cậy tích lũy Cumulative Confidence Cutoff (từ Colibrì olmoe.c pilot_conf_limit)
+    /// 3. Ma trận xác suất chuyển tiếp giữa 2 tầng liên tiếp (Inter-Layer Markov Transition)
+    /// 4. Tín hiệu nhiệt (Heat/Recency) của tầng tiếp theo
+    /// 5. Lọc bỏ các expert đã có sẵn trong L2 Host RAM Cache hoặc L1 GPU VRAM Cache
+    /// 6. Sắp xếp thứ tự EID tăng dần để tối ưu SSD read locality (Sequential Seek)
     #[allow(clippy::too_many_arguments)]
     fn predict_next_layer_experts(
         pilot_router: Option<&[f32]>,
@@ -1112,6 +1287,7 @@ impl OlmoeModel {
         gpu_dense: Option<&crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
         max_candidates: usize,
+        conf_limit: Option<f32>,
     ) -> Vec<usize> {
         if curr_layer_id >= transitions.len() || max_candidates == 0 {
             return Vec::new();
@@ -1120,13 +1296,42 @@ impl OlmoeModel {
         let mut scores = [0u32; 64];
 
         // 1. Tín hiệu dự phóng động PILOT Router: xếp hạng Top-K logits của router tầng kế tiếp
+        // Áp dụng Cumulative Confidence Cutoff (học hỏi từ Colibrì olmoe.c pilot_conf_limit)
+        let mut pilot_selected_count = max_candidates;
         if let Some(logits) = pilot_router {
             if logits.len() >= 64 {
+                let max_l = logits[..64]
+                    .iter()
+                    .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+                let mut exps = [0.0f32; 64];
+                let mut sum_exp = 0.0f32;
+                for i in 0..64 {
+                    exps[i] = (logits[i] - max_l).exp();
+                    sum_exp += exps[i];
+                }
+
                 let mut pilot_order: Vec<usize> = (0..64).collect();
                 pilot_order.sort_unstable_by(|&a, &b| logits[b].total_cmp(&logits[a]));
+
+                let mut cum_prob = 0.0f32;
+                let limit = conf_limit.unwrap_or(1.0);
+                let mut taken = 0;
                 for (rank, &eid) in pilot_order.iter().take(16).enumerate() {
+                    let prob = if sum_exp > 0.0 {
+                        exps[eid] / sum_exp
+                    } else {
+                        0.0
+                    };
+                    cum_prob += prob;
                     let pilot_score = ((16 - rank) * 100) as u32;
                     scores[eid] = scores[eid].saturating_add(pilot_score);
+                    taken += 1;
+                    if conf_limit.is_some() && cum_prob >= limit && taken >= 1 {
+                        break;
+                    }
+                }
+                if conf_limit.is_some() {
+                    pilot_selected_count = taken;
                 }
             }
         }
@@ -1171,10 +1376,15 @@ impl OlmoeModel {
         // 5. Sắp xếp giảm dần theo điểm số dự đoán tổng hợp
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
-        // 6. Lấy top max_candidates ứng viên có xác suất cao nhất
+        // 6. Lấy top ứng viên có xác suất cao nhất (giới hạn bởi max_candidates và confidence threshold)
+        let effective_limit = if conf_limit.is_some() && pilot_router.is_some() {
+            max_candidates.min(pilot_selected_count)
+        } else {
+            max_candidates
+        };
         let mut selected: Vec<usize> = candidates
             .into_iter()
-            .take(max_candidates)
+            .take(effective_limit)
             .map(|(eid, _)| eid)
             .collect();
 
@@ -1494,18 +1704,31 @@ impl OlmoeModel {
             .x
             .copy_from_slice(&self.embedding.values[token * d..(token + 1) * d]);
 
-        let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer, transitions) = (
+        let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer, transitions, route_trace) = (
             &mut self.layers,
             &mut self.gpu_dense,
             &self.gpu_tier,
             &self.index,
             self.cache_bytes_per_layer,
             &mut self.inter_layer_transitions,
+            &mut self.route_trace,
         );
 
         let num_layers = layers.len();
         let mut lookahead_prefetched: HashMap<usize, Int8Expert> = HashMap::new();
         let mut prev_top_experts: Vec<usize> = Vec::with_capacity(8);
+
+        let pilot_smooth = std::env::var("MOE_PILOT_SMOOTH")
+            .or_else(|_| std::env::var("SMOOTH"))
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(0.35);
+
+        let pilot_conf_limit = std::env::var("MOE_PILOT_CONF_LIMIT")
+            .or_else(|_| std::env::var("CONF_LIMIT"))
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .or(Some(0.90));
 
         for id in 0..num_layers {
             check()?;
@@ -1560,6 +1783,7 @@ impl OlmoeModel {
             layer
                 .router
                 .multiply_loaded_into(&scratch.hidden, &mut scratch.router)?;
+            layer.update_router_ema(&scratch.router, pilot_smooth);
             softmax(&mut scratch.router)?;
 
             let mut expert_indices = [0usize; 64];
@@ -1589,6 +1813,19 @@ impl OlmoeModel {
             } else {
                 1.0
             };
+
+            if let Some(tracer) = route_trace.as_mut() {
+                let pos = if !kv.is_empty() && kd > 0 {
+                    kv[0].keys.len() / kd
+                } else {
+                    0
+                };
+                let gates: Vec<f32> = top_experts
+                    .iter()
+                    .map(|&expert| scratch.router[expert] / normalizer)
+                    .collect();
+                tracer.trace(pos, id, top_experts, &gates);
+            }
 
             // 1. Cập nhật Inter-Layer Markov Transition Matrix:
             // Tích lũy tần suất chuyển tiếp giữa top_experts của tầng trước (id - 1) và tầng hiện tại (id)
@@ -1658,6 +1895,7 @@ impl OlmoeModel {
                             .multiply_loaded_into(&scratch.pilot_hidden, &mut scratch.pilot_router)
                             .is_ok()
                     {
+                        next_l.blend_pilot_router(&mut scratch.pilot_router, pilot_smooth);
                         Some(&scratch.pilot_router[..])
                     } else {
                         None
@@ -1673,6 +1911,7 @@ impl OlmoeModel {
                         gpu_dense.as_ref(),
                         gpu_tier.is_enabled(),
                         2, // Window = 2 candidates sáng giá nhất có score > 0
+                        pilot_conf_limit,
                     )
                 } else {
                     Vec::new()
@@ -2069,12 +2308,13 @@ impl OlmoeModel {
         let weight_count = d * intermediate_size * 3;
         let scale_count = intermediate_size * 2 + d;
 
-        let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer) = (
+        let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer, route_trace) = (
             &mut self.layers,
             &mut self.gpu_dense,
             &self.gpu_tier,
             &self.index,
             self.cache_bytes_per_layer,
+            &mut self.route_trace,
         );
 
         for (layer_id, layer) in layers.iter_mut().enumerate() {
@@ -2206,6 +2446,13 @@ impl OlmoeModel {
                         slot,
                         scratch.router[expert] / normalizer,
                     ));
+                }
+                if let Some(tracer) = route_trace.as_mut() {
+                    let gates: Vec<f32> = top_experts
+                        .iter()
+                        .map(|&expert| scratch.router[expert] / normalizer)
+                        .collect();
+                    tracer.trace(local_position, layer_id, top_experts, &gates);
                 }
             }
 
@@ -2374,6 +2621,9 @@ impl OlmoeModel {
         for &token in tokens {
             self.step(token, &mut kv, &mut profile, &mut scratch, &|| Ok(()))?;
             logits.push(scratch.logits.clone());
+        }
+        if let Some(tracer) = self.route_trace.as_mut() {
+            tracer.advance_call();
         }
         Ok(logits)
     }
@@ -2710,6 +2960,12 @@ impl OlmoeModel {
             }
         }
         check()?;
+        if let Some(tracer) = self.route_trace.as_mut() {
+            tracer.advance_call();
+        }
+        if let Some(path) = &self.usage_path {
+            let _ = Self::save_usage_to_path(path, &self.layers, self.config.num_experts);
+        }
         let total_elapsed = total_started.elapsed();
         let cache_bytes = self.layers.iter().map(|layer| layer.bytes).sum();
         let kv_bytes = kv
@@ -2789,6 +3045,14 @@ impl OlmoeModel {
                 cached_prompt_tokens,
             }),
         })
+    }
+}
+
+impl Drop for OlmoeModel {
+    fn drop(&mut self) {
+        if let Some(path) = &self.usage_path {
+            let _ = Self::save_usage_to_path(path, &self.layers, self.config.num_experts);
+        }
     }
 }
 
@@ -4055,6 +4319,7 @@ mod routing_and_topk_tests {
             clock: 0,
             recycled_buffers: Vec::new(),
             hot_pinned: 0,
+            router_ema: vec![0.0; 64],
         };
         let mut profile = RequestProfile::default();
 
@@ -4254,6 +4519,7 @@ mod routing_and_topk_tests {
             None,
             false,
             3,
+            None,
         );
 
         // Expert 25 có cả transition (10 + 10 = 20) và heat (20/4 = 5) -> Score = 25
@@ -4300,6 +4566,7 @@ mod routing_and_topk_tests {
             None,
             false,
             2,
+            None,
         );
 
         assert_eq!(candidates.len(), 2);
@@ -4308,6 +4575,100 @@ mod routing_and_topk_tests {
         assert!(candidates.contains(&17));
         // Kiểm tra thứ tự EID tăng dần để đảm bảo Sequential SSD Locality
         assert_eq!(candidates, vec![17, 42]);
+    }
+
+    #[test]
+    fn test_pilot_router_momentum_ema() {
+        // Kiểm tra cơ chế Routing Momentum EMA từ Colibrì (olmoe.c):
+        let mut layer = Layer {
+            input_norm: vec![],
+            post_norm: vec![],
+            q_norm: vec![],
+            k_norm: vec![],
+            q: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            k: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            v: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            o: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            router: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            cache: VecDeque::new(),
+            bytes: 0,
+            heat: vec![0; 64],
+            clock: 0,
+            recycled_buffers: Vec::new(),
+            hot_pinned: 0,
+            router_ema: vec![0.0; 64],
+        };
+
+        let logits_tok0 = vec![1.0f32; 64];
+        let smooth = 0.35f32;
+        // Lần đầu tiên cập nhật: EMA được gán bằng chính logits
+        layer.update_router_ema(&logits_tok0, smooth);
+        assert!((layer.router_ema[0] - 1.0).abs() < 1e-5);
+
+        // Lần thứ hai cập nhật: logits = 2.0
+        let logits_tok1 = vec![2.0f32; 64];
+        layer.update_router_ema(&logits_tok1, smooth);
+        // EMA = (1 - 0.35) * 2.0 + 0.35 * 1.0 = 1.30 + 0.35 = 1.65
+        let expected = (1.0 - smooth) * 2.0 + smooth * 1.0;
+        assert!((layer.router_ema[0] - expected).abs() < 1e-5);
+
+        // Kiểm tra hàm blend_pilot_router
+        let mut lookahead_logits = vec![3.0f32; 64];
+        layer.blend_pilot_router(&mut lookahead_logits, smooth);
+        let expected_blend = (1.0 - smooth) * 3.0 + smooth * expected;
+        assert!((lookahead_logits[0] - expected_blend).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_pilot_confidence_cutoff_pruning() {
+        // Kiểm tra Cumulative Confidence Cutoff (pilot_conf_limit) từ Colibrì:
+        let num_layers = 4;
+        let transitions = vec![vec![0u16; 64 * 64]; num_layers - 1];
+        let layer0_experts = vec![1, 2];
+        let next_layer_heat = vec![0u32; 64];
+        let next_layer_cache = VecDeque::new();
+
+        let mut pilot_router = vec![0.0f32; 64];
+        // Expert 33 có logit 10.0 (áp đảo, xác suất softmax > 99%)
+        pilot_router[33] = 10.0;
+
+        // Yêu cầu max_candidates = 4, nhưng với conf_limit = Some(0.90),
+        // expert 33 đã vượt ngưỡng 90%, thuật toán phải cắt tỉa và chỉ trả về 1 candidate!
+        let candidates = OlmoeModel::predict_next_layer_experts(
+            Some(&pilot_router),
+            &transitions,
+            0,
+            &layer0_experts,
+            &next_layer_heat,
+            &next_layer_cache,
+            None,
+            false,
+            4,
+            Some(0.90),
+        );
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0], 33);
     }
 
     #[test]
@@ -4426,6 +4787,7 @@ mod routing_and_topk_tests {
             clock: 0,
             recycled_buffers: Vec::new(),
             hot_pinned: 1, // Ghim top 1 hot expert
+            router_ema: vec![0.0; 64],
         };
         let mut profile = RequestProfile::default();
 
@@ -4502,5 +4864,126 @@ mod routing_and_topk_tests {
             !resident_ids.contains(&10),
             "Expert 10 không ghim phải bị trục xuất"
         );
+    }
+
+    #[test]
+    fn test_route_trace_logger_format() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("test_route_trace_{}.log", std::process::id()));
+        let _ = fs::remove_file(&path);
+
+        let mut logger = RouteTraceLogger::new(&path).expect("Tạo logger file");
+        logger.trace(0, 3, &[5, 12], &[0.65432, 0.34568]);
+        logger.trace(1, 3, &[5, 21], &[0.81234, 0.18766]);
+        logger.advance_call();
+        logger.trace(0, 0, &[1, 2], &[0.5, 0.5]);
+        drop(logger);
+
+        let content = fs::read_to_string(&path).expect("Đọc trace file");
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "0 0 3 5:0.6543 12:0.3457");
+        assert_eq!(lines[1], "0 1 3 5:0.8123 21:0.1877");
+        assert_eq!(lines[2], "1 0 0 1:0.5000 2:0.5000");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_persistent_usage_save_and_load_pins_hot_experts() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("test_usage_{}.usage", std::process::id()));
+        let _ = fs::remove_file(&path);
+
+        let mut layer = Layer {
+            input_norm: vec![],
+            post_norm: vec![],
+            q_norm: vec![],
+            k_norm: vec![],
+            q: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            k: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            v: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            o: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            router: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            cache: VecDeque::new(),
+            bytes: 0,
+            heat: vec![0; 64],
+            clock: 0,
+            recycled_buffers: Vec::new(),
+            hot_pinned: 1,
+            router_ema: vec![0.0; 64],
+        };
+        layer.heat[17] = 250;
+        layer.heat[4] = 80;
+
+        let layers = vec![layer];
+        OlmoeModel::save_usage_to_path(&path, &layers, 64).expect("Lưu usage file");
+
+        let fresh_layer = Layer {
+            input_norm: vec![],
+            post_norm: vec![],
+            q_norm: vec![],
+            k_norm: vec![],
+            q: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            k: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            v: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            o: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            router: Matrix {
+                rows: 0,
+                columns: 0,
+                values: vec![],
+            },
+            cache: VecDeque::new(),
+            bytes: 0,
+            heat: vec![0; 64],
+            clock: 0,
+            recycled_buffers: Vec::new(),
+            hot_pinned: 1,
+            router_ema: vec![0.0; 64],
+        };
+        let mut fresh_layers = vec![fresh_layer];
+        OlmoeModel::load_usage_from_path(&path, &mut fresh_layers, 64);
+
+        assert_eq!(fresh_layers[0].heat[17], 250);
+        assert_eq!(fresh_layers[0].heat[4], 80);
+        assert_eq!(fresh_layers[0].heat[0], 0);
+
+        let _ = fs::remove_file(&path);
     }
 }

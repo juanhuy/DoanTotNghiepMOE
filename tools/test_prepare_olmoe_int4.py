@@ -90,6 +90,41 @@ class Int4ConverterTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 convert(source, output)
 
+    def test_convert_from_already_merged_int8(self):
+        # Directly convert existing merged INT8 fixture to INT4
+        fixture = Path(__file__).resolve().parents[1] / "tests/fixtures/olmoe/unnormalized-mha"
+        config = json.loads((fixture / "config.json").read_text())
+        tensors = load_file(str(fixture / "model.safetensors"))
+        d, i = config["hidden_size"], config["intermediate_size"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "output"
+            convert(fixture, output)
+            self.assertFalse((output / "INCOMPLETE").exists())
+
+            actual = {}
+            for path in output.glob("*.safetensors"):
+                actual.update(load_file(str(path)))
+
+            self.assertEqual(set(actual), set(tensors))
+
+            for layer in range(config["num_hidden_layers"]):
+                for expert in range(config["num_experts"]):
+                    p = f"model.layers.{layer}.mlp.experts.{expert}"
+                    weight_key = p + ".merged_weight"
+                    scale_key = p + ".qs"
+
+                    # Verify INT4 tensor properties
+                    self.assertEqual(actual[weight_key].dtype, torch.uint8)
+                    self.assertEqual(actual[weight_key].shape, torch.Size([3 * d * i // 2]))
+                    self.assertEqual(actual[scale_key].dtype, torch.float32)
+                    self.assertEqual(actual[scale_key].shape, torch.Size([2 * i + d]))
+
+            # Non-expert tensors must match identically
+            for name in tensors:
+                if ".mlp.experts." not in name:
+                    torch.testing.assert_close(actual[name], tensors[name])
+
 
 if __name__ == "__main__":
     unittest.main()

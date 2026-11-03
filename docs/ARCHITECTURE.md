@@ -123,3 +123,66 @@ Kernel `dot_i4_f32_avx2` xử lý 32 nibbles (16 bytes) trên mỗi chu kỳ l�
 3. `_mm_unpacklo_epi8` / `_mm_unpackhi_epi8`: Xen kẽ các nibbles trở lại thứ tự ban đầu của vector đầu vào.
 4. `_mm256_cvtepi8_epi32` + `_mm256_cvtepi32_ps`: Chuyển đổi trực tiếp các số nguyên 8-bit sang 8 số thực FP32.
 5. `_mm256_fmadd_ps`: Nhân dồn đồng thời với vector `input` vào 4 thanh ghi tích lũy `sum0..sum3`, giải phóng tối đa throughput của đơn vị FMA trên CPU.
+
+## Kernel Fused SwiGLU Ghép Cặp (Paired Gate-Up SIMD): Tối ưu Hóa Vi Kiến Trúc CPU L1 Cache
+
+Tiếp thu và phát triển kỹ thuật tối ưu hóa vi kiến trúc từ engine MoE tham chiếu Colibrì (`colibri/c/fused_simd.h`), engine tích hợp kernel ghép cặp Gate-Up cho cả INT8 và INT4.
+
+### 1. Động lực học thuật và Nghẽn cổ chai L1 Cache
+Trong khối kích hoạt SwiGLU chuẩn:
+$$\text{SwiGLU}(x) = (\text{SiLU}(x \cdot W_{\text{gate}}) \odot (x \cdot W_{\text{up}})) \cdot W_{\text{down}}$$
+Cả hai phép nhân ma trận $x \cdot W_{\text{gate}}$ và $x \cdot W_{\text{up}}$ đều sử dụng cùng một vector kích hoạt đầu vào $x \in \mathbb{R}^{d_{\text{hidden}}}$:
+- Nếu thực hiện rời rạc 2 phép nhân tích vô hướng riêng biệt, CPU buộc phải nạp lại $x$ hai lần từ bộ nhớ đệm L1 Data Cache vào thanh ghi SIMD. Với $d_{\text{hidden}} = 2048$ và $d_{\text{intermediate}} = 1024$, vector $x$ bị đọc lặp lại 1024 lần.
+- **Giải pháp ghép cặp (Paired Gate-Up Kernel)**: Vector $x$ được nạp một lần duy nhất vào 4 thanh ghi 256-bit (`x0..x3`) cho mỗi khối 32 số thực FP32, sau đó nhân song song với cả 32 trọng số của Gate và 32 trọng số của Up.
+
+### 2. Tận dụng Hai Cổng Thực thi FMA (Dual FMA Execution Ports)
+Trên các vi kiến trúc hiện đại của Intel (Raptor Lake / Golden Cove trên Core i7-14650HX):
+- CPU sở hữu 2 cổng thực thi FMA 256-bit độc lập (Port 0 và Port 1), cho thông lượng lý thuyết đạt tối đa 2 lệnh FMA trên mỗi chu kỳ xung nhịp (thông lượng 16 phép toán FP32/chu kỳ).
+- Bằng cách bố trí các lệnh `_mm256_fmadd_ps` xen kẽ giữa các thanh ghi tích lũy của Gate (`sum_g0..sum_g3`) và Up (`sum_u0..sum_u3`), chuỗi phụ thuộc dữ liệu (data dependency chain) được giãn cách hoàn toàn, loại bỏ hiện tượng nghẽn thanh ghi (register stalling) và cho phép CPU đạt gần 100% công suất tính toán lý thuyết.
+
+### 3. Triển khai Kỹ thuật: `dot_i8_f32_pair_avx2` & `dot_i4_f32_pair_avx2`
+- **INT8 Paired Kernel**: Nạp 32 bytes trọng số từ `gate_row` và 32 bytes từ `up_row`, mở rộng dấu sang FP32, nhân dồn vào 4 bộ tích lũy Gate và 4 bộ tích lũy Up cùng với cùng một bản sao `x0..x3`.
+- **INT4 Paired Kernel**: Nạp 16 bytes (32 nibbles) của Gate và 16 bytes của Up, giải mã branchless `(x ^ 8) - 8` đồng thời, nạp vector $x$ một lần và tính song song hai kết quả vô hướng `(dot_g, dot_u)`.
+- **Độ chính xác và Parity**: Hai kernel ghép cặp được bảo chứng thông qua hai unit test `test_dot_i8_f32_pair_parity` và `test_dot_i4_f32_pair_parity` trên 16 dải kích thước vector khác nhau, đạt sai số toán học tuyệt đối $< 10^{-4} \times (1 + |\text{scalar}|)$.
+
+## Telemetry Định Tuyến & Ghim Chuyên Gia Nóng Bền Vững (.moe_usage & ROUTE_TRACE)
+
+Nhằm chuyển đổi cơ chế quản lý bộ nhớ đệm từ LRU bị động (reactive) sang cơ chế ghim dự đoán chủ động dựa trên lịch sử (history-aware proactive cache pinning), engine tích hợp giao thức lưu vết định tuyến chuẩn hóa theo Colibrì.
+
+### 1. Định dạng Tệp Lịch sử `.moe_usage`
+Tệp ghi nhận tần suất kích hoạt tích lũy của từng chuyên gia trên từng tầng:
+```text
+-1 <num_layers> <num_experts>
+-2 <version> <engine_id>
+<layer_id> <expert_id> <activation_count>
+```
+- Các dòng mở đầu với số âm (`-1`, `-2`) chứa siêu dữ liệu chiều mô hình và mã định danh engine, đảm bảo tính tương thích chéo với các engine MoE khác.
+- **Tính nguyên tử khi ghi (Atomic File Replace)**: Quá trình lưu luôn ghi ra file tạm `.tmp` sau đó gọi `fs::rename`, đảm bảo tệp không bị hư hỏng khi mất điện hoặc bị ngắt đột ngột.
+- **Tự động ghim khi khởi động**: Trong `OlmoeModel::load`, engine tự động đọc `.moe_usage` (nếu tồn tại hoặc chỉ định qua `MOE_USAGE_PATH`), tích lũy vào `layer.heat` và gọi `update_hot_pins()`, ghim các chuyên gia nóng nhất ngay từ trước khi nhận request đầu tiên.
+
+### 2. Luồng Vết Định tuyến Trực tiếp (`ROUTE_TRACE`)
+Khi biến môi trường `ROUTE_TRACE` hoặc `MOE_ROUTE_TRACE` được cấu hình, engine kích hoạt `RouteTraceLogger` xuất dữ liệu vết định tuyến theo thời gian thực:
+```text
+<call_id> <row> <layer> <expert_0>:<gate_0> <expert_1>:<gate_1> ...
+```
+- Dữ liệu này được xử lý bởi `tools/analyze_route_trace.py` để trích xuất hệ số bất cân đối Gini và xác lập ma trận tương quan giữa các cặp chuyên gia đồng kích hoạt (co-activation correlation).
+
+## Nâng Cấp PILOT Lookahead: Đà Định Tuyến (Routing Momentum) & Ngưỡng Tin Cậy Tích Lũy (Cumulative Confidence Cutoff)
+
+Nhằm tối ưu hóa cơ chế nạp trước chuyên gia (speculative lookahead prefetching) trên các thiết bị có băng thông đĩa NVMe và bộ nhớ RAM giới hạn, engine kế thừa và hoàn thiện cơ chế PILOT Router từ Colibrì (`colibri/c/olmoe.c`):
+
+### 1. Đà Định Tuyến Theo Token (Token-Level Routing Momentum EMA)
+- Khi dự phóng router của tầng kế tiếp ($l+1$) từ residual activation $x$ của tầng hiện tại ($l$), vector logits dự đoán dễ bị nhiễu do dao động cục bộ của từng token riêng lẻ.
+- Engine duy trì vector `router_ema` cho từng tầng mô hình. Khi tầng $l$ hoàn thành tính toán router, logits thực tế được dùng để cập nhật lịch sử hàm mũ:
+  $$\text{EMA}_l^{[t]} = (1.0 - \text{smooth}) \cdot \text{logits}_l^{[t]} + \text{smooth} \cdot \text{EMA}_l^{[t-1]}$$
+- Khi dự phóng router tầng kế tiếp, logits dự phóng được hòa trộn cùng vector EMA của tầng đó (`blend_pilot_router`) với tham số $\text{smooth} = 0.35$ (cấu hình qua biến môi trường `MOE_PILOT_SMOOTH`), giúp loại bỏ nhiễu tần số cao và nâng cao độ chính xác dự báo chuyên gia.
+
+### 2. Ngưỡng Tin Cậy Tích Lũy (Cumulative Confidence Cutoff - `pilot_conf_limit`)
+- Thay vì luôn nạp trước một số lượng ứng viên cố định (`max_candidates`), engine tính toán phân phối xác suất softmax trên vector logits dự phóng:
+  $$p_i = \frac{e^{l_i - l_{\max}}}{\sum_{j} e^{l_j - l_{\max}}}$$
+- Các ứng viên được duyệt theo thứ tự xác suất giảm dần. Engine tích lũy tổng xác suất $\sum p_i$; ngay khi tổng này vượt qua ngưỡng $\text{pilot\_conf\_limit}$ (mặc định $0.90$, cấu hình qua `MOE_PILOT_CONF_LIMIT`), engine ngừng bổ sung thêm ứng viên.
+- Cơ chế này giúp triệt tiêu hoàn toàn các yêu cầu đọc đĩa SSD lãng phí cho các chuyên gia có xác suất kích hoạt không đáng kể (< 5-10%), bảo toàn băng thông I/O cho các tác vụ quan trọng.
+
+### 3. Sắp Xếp Tịnh Tiến Đơn Điệu (Sequential Seek Locality)
+- Trước khi gửi danh sách ứng viên nạp trước xuống tầng I/O, các ID chuyên gia được sắp xếp tăng dần (`selected.sort_unstable()`).
+- Nhờ cấu trúc lưu trữ liên tục của các chuyên gia trong tệp checkpoint Safetensors, việc đọc tuần tự tăng dần giúp bộ điều khiển SSD NVMe tận dụng tối đa cơ chế nạp trước phần cứng (hardware read-ahead cache), triệt tiêu chi phí định vị ngẫu nhiên.

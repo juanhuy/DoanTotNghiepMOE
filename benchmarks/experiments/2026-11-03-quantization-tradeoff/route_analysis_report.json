@@ -1,0 +1,461 @@
+{
+  "usage_analysis": {
+    "num_layers": 16,
+    "num_experts": 64,
+    "total_expert_activations": 3968,
+    "layer_statistics": [
+      {
+        "layer": 0,
+        "total_activations": 248,
+        "active_experts": 44,
+        "gini_coefficient": 0.6174,
+        "top_hot_experts": [
+          {
+            "expert_id": 11,
+            "count": 22,
+            "share": 0.0887
+          },
+          {
+            "expert_id": 3,
+            "count": 21,
+            "share": 0.0847
+          },
+          {
+            "expert_id": 6,
+            "count": 16,
+            "share": 0.0645
+          },
+          {
+            "expert_id": 17,
+            "count": 16,
+            "share": 0.0645
+          }
+        ]
+      },
+      {
+        "layer": 1,
+        "total_activations": 248,
+        "active_experts": 50,
+        "gini_coefficient": 0.5593,
+        "top_hot_experts": [
+          {
+            "expert_id": 59,
+            "count": 16,
+            "share": 0.0645
+          },
+          {
+            "expert_id": 43,
+            "count": 14,
+            "share": 0.0565
+          },
+          {
+            "expert_id": 15,
+            "count": 12,
+            "share": 0.0484
+          },
+          {
+            "expert_id": 28,
+            "count": 12,
+            "share": 0.0484
+          }
+        ]
+      },
+      {
+        "layer": 2,
+        "total_activations": 248,
+        "active_experts": 39,
+        "gini_coefficient": 0.734,
+        "top_hot_experts": [
+          {
+            "expert_id": 61,
+            "count": 29,
+            "share": 0.1169
+          },
+          {
+            "expert_id": 45,
+            "count": 26,
+            "share": 0.1048
+          },
+          {
+            "expert_id": 40,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 51,
+            "count": 21,
+            "share": 0.0847
+          }
+        ]
+      },
+      {
+        "layer": 3,
+        "total_activations": 248,
+        "active_experts": 42,
+        "gini_coefficient": 0.7198,
+        "top_hot_experts": [
+          {
+            "expert_id": 16,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 41,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 46,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 17,
+            "count": 17,
+            "share": 0.0685
+          }
+        ]
+      },
+      {
+        "layer": 4,
+        "total_activations": 248,
+        "active_experts": 45,
+        "gini_coefficient": 0.6406,
+        "top_hot_experts": [
+          {
+            "expert_id": 4,
+            "count": 26,
+            "share": 0.1048
+          },
+          {
+            "expert_id": 33,
+            "count": 21,
+            "share": 0.0847
+          },
+          {
+            "expert_id": 17,
+            "count": 17,
+            "share": 0.0685
+          },
+          {
+            "expert_id": 6,
+            "count": 12,
+            "share": 0.0484
+          }
+        ]
+      },
+      {
+        "layer": 5,
+        "total_activations": 248,
+        "active_experts": 48,
+        "gini_coefficient": 0.6472,
+        "top_hot_experts": [
+          {
+            "expert_id": 15,
+            "count": 26,
+            "share": 0.1048
+          },
+          {
+            "expert_id": 5,
+            "count": 22,
+            "share": 0.0887
+          },
+          {
+            "expert_id": 29,
+            "count": 18,
+            "share": 0.0726
+          },
+          {
+            "expert_id": 27,
+            "count": 16,
+            "share": 0.0645
+          }
+        ]
+      },
+      {
+        "layer": 6,
+        "total_activations": 248,
+        "active_experts": 44,
+        "gini_coefficient": 0.6739,
+        "top_hot_experts": [
+          {
+            "expert_id": 24,
+            "count": 29,
+            "share": 0.1169
+          },
+          {
+            "expert_id": 19,
+            "count": 22,
+            "share": 0.0887
+          },
+          {
+            "expert_id": 8,
+            "count": 20,
+            "share": 0.0806
+          },
+          {
+            "expert_id": 22,
+            "count": 19,
+            "share": 0.0766
+          }
+        ]
+      },
+      {
+        "layer": 7,
+        "total_activations": 248,
+        "active_experts": 42,
+        "gini_coefficient": 0.7122,
+        "top_hot_experts": [
+          {
+            "expert_id": 27,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 49,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 22,
+            "count": 22,
+            "share": 0.0887
+          },
+          {
+            "expert_id": 31,
+            "count": 21,
+            "share": 0.0847
+          }
+        ]
+      },
+      {
+        "layer": 8,
+        "total_activations": 248,
+        "active_experts": 45,
+        "gini_coefficient": 0.7143,
+        "top_hot_experts": [
+          {
+            "expert_id": 33,
+            "count": 31,
+            "share": 0.125
+          },
+          {
+            "expert_id": 44,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 51,
+            "count": 21,
+            "share": 0.0847
+          },
+          {
+            "expert_id": 48,
+            "count": 20,
+            "share": 0.0806
+          }
+        ]
+      },
+      {
+        "layer": 9,
+        "total_activations": 248,
+        "active_experts": 46,
+        "gini_coefficient": 0.7106,
+        "top_hot_experts": [
+          {
+            "expert_id": 60,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 11,
+            "count": 28,
+            "share": 0.1129
+          },
+          {
+            "expert_id": 20,
+            "count": 26,
+            "share": 0.1048
+          },
+          {
+            "expert_id": 40,
+            "count": 19,
+            "share": 0.0766
+          }
+        ]
+      },
+      {
+        "layer": 10,
+        "total_activations": 248,
+        "active_experts": 43,
+        "gini_coefficient": 0.7227,
+        "top_hot_experts": [
+          {
+            "expert_id": 19,
+            "count": 29,
+            "share": 0.1169
+          },
+          {
+            "expert_id": 49,
+            "count": 25,
+            "share": 0.1008
+          },
+          {
+            "expert_id": 34,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 18,
+            "count": 19,
+            "share": 0.0766
+          }
+        ]
+      },
+      {
+        "layer": 11,
+        "total_activations": 248,
+        "active_experts": 41,
+        "gini_coefficient": 0.6765,
+        "top_hot_experts": [
+          {
+            "expert_id": 59,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 12,
+            "count": 21,
+            "share": 0.0847
+          },
+          {
+            "expert_id": 17,
+            "count": 16,
+            "share": 0.0645
+          },
+          {
+            "expert_id": 9,
+            "count": 15,
+            "share": 0.0605
+          }
+        ]
+      },
+      {
+        "layer": 12,
+        "total_activations": 248,
+        "active_experts": 41,
+        "gini_coefficient": 0.7232,
+        "top_hot_experts": [
+          {
+            "expert_id": 31,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 51,
+            "count": 22,
+            "share": 0.0887
+          },
+          {
+            "expert_id": 57,
+            "count": 21,
+            "share": 0.0847
+          },
+          {
+            "expert_id": 20,
+            "count": 20,
+            "share": 0.0806
+          }
+        ]
+      },
+      {
+        "layer": 13,
+        "total_activations": 248,
+        "active_experts": 42,
+        "gini_coefficient": 0.7244,
+        "top_hot_experts": [
+          {
+            "expert_id": 7,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 21,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 28,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 18,
+            "count": 20,
+            "share": 0.0806
+          }
+        ]
+      },
+      {
+        "layer": 14,
+        "total_activations": 248,
+        "active_experts": 34,
+        "gini_coefficient": 0.796,
+        "top_hot_experts": [
+          {
+            "expert_id": 7,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 13,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 27,
+            "count": 28,
+            "share": 0.1129
+          },
+          {
+            "expert_id": 39,
+            "count": 28,
+            "share": 0.1129
+          }
+        ]
+      },
+      {
+        "layer": 15,
+        "total_activations": 248,
+        "active_experts": 23,
+        "gini_coefficient": 0.8058,
+        "top_hot_experts": [
+          {
+            "expert_id": 57,
+            "count": 30,
+            "share": 0.121
+          },
+          {
+            "expert_id": 36,
+            "count": 29,
+            "share": 0.1169
+          },
+          {
+            "expert_id": 0,
+            "count": 23,
+            "share": 0.0927
+          },
+          {
+            "expert_id": 43,
+            "count": 22,
+            "share": 0.0887
+          }
+        ]
+      }
+    ]
+  },
+  "trace_summary": {
+    "total_records": 496,
+    "calls_count": 1
+  }
+}
