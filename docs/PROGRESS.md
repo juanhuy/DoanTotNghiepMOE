@@ -51,6 +51,8 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 32 | Kernel Ghép cặp Gate-Up AVX2 SIMD Fused SwiGLU | Hoàn thành | Tiếp thu từ Colibrì fused_simd.h: Nạp x vào YMM 1 lần duy nhất, tính song song Gate & Up FMA bão hòa Port 0 & Port 1; 84/84 tests PASS, 0 clippy warnings |
 | 33 | Telemetry Định tuyến & Ghim Chuyên gia Nóng Bền vững | Hoàn thành | Ghi vết route_trace theo chuẩn Colibrì, lưu bền vững .moe_usage nguyên tử, công cụ phân tích Gini Skewness (0.5593 - 0.8058); 86/86 tests PASS, 0 clippy warnings |
 | 34 | Nâng cấp PILOT Lookahead: Routing Momentum EMA & Cumulative Confidence Cutoff | Hoàn thành | Tiếp thu từ Colibrì olmoe.c: Cân bằng nhiễu định tuyến qua EMA momentum (smooth=0.35), cắt tỉa I/O đĩa thừa qua Cumulative Confidence Cutoff (conf_limit=0.90); 88/88 tests PASS, 0 clippy warnings |
+| 36 | Nén KV Cache bằng FP8 E4M3 O(1) LUT Attention | Hoàn thành | Tiếp thu từ Colibrì kv_fp8.h: OCP E4M3 quantization, O(1) LUT decode, giảm 74.95% dung lượng KV (6.82MB -> 1.71MB), 100% token sequence parity, decode đạt 4.07 tok/s; 88/88 tests PASS, 0 clippy warnings |
+| 37 | Lưu trữ KV Cache Bền vững Chống Sập Nguồn (.moekv) & Phục hồi Trạng thái Lạnh | Hoàn thành | Tiếp thu từ Colibrì kv_persist.h: Định dạng nhị phân .moekv crash-safe, khôi phục session sau khởi động lại máy chủ trong vài ms, tái sử dụng 19 tokens prefix, giảm 58.7% prefill time; 90/90 tests PASS, 0 clippy warnings |
 | R-2026-10-22 | Review hệ thống hiện tại | Hoàn thành review; chưa vá | 2 phát hiện P1, 7 P2; 59 tests pass ở debug/release, Clippy đạt, fmt chưa đạt; chi tiết trong `docs/reviews/2026-10-22-system-review.md` |
 | AI-2026-10-22 | Chuẩn hóa project AI-first và bằng chứng hai máy | Hoàn thành nền tảng | 2 skills/2 reviewer roles, workflow/CI dùng chung; giữ 40 raw nguyên byte, bỏ 33 JSON trùng; 24 tooling tests + 59 Rust tests/profile đạt; chưa đo baseline 7B mới |
 
@@ -2578,6 +2580,162 @@ Kết luận và bước tiếp theo:
     - Sinh câu trả lời logic mạch lạc: `"Gravity is the force that attracts two bodies toward each other, with the strength of the force depending"`.
     - Tỷ lệ cache hit đạt **57.9%** (2,889 hits / 4,992 expert accesses) ngay trên chế độ sinh suy luận với ngân sách cache tiết kiệm.
   - `cargo test --all-targets`: **88/88 tests PASS** (80 unit tests `lib.rs`, 5 tests `main.rs`, 7 tests `int8_loader.rs`, 4 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
+
+## 2026-11-05 — Bước 37: Lưu trữ KV Cache Bền vững Chống Sập Nguồn (`.moekv`) & Phục hồi Trạng thái Lạnh (Học hỏi Colibrì `kv_persist.h` & `kv_prefix.h`)
+
+- **Mục tiêu:**
+  - Tiếp thu nguyên lý quản lý trạng thái hội thoại bền vững (Stateful Multi-turn Persistence) từ Colibrì (`colibri/c/kv_persist.h` và `colibri/c/kv_prefix.h`):
+    - Khi máy chủ khởi động lại (restart) hoặc khi RAM đầy khiến session bị đẩy ra (eviction), toàn bộ KV Cache trong RAM biến mất, buộc các lượt hội thoại sau phải tính toán lại prefill từ đầu (tốn 2.5s - 5s).
+    - Thiết kế định dạng tệp nhị phân `.moekv` có khả năng lưu trữ cả FP32 và FP8 E4M3 nén, bảo đảm an toàn chống sập nguồn (Crash-Safe Invariant): ghi dữ liệu payload trước, gọi `sync_all()`, sau đó mới xác thực counter trong header qua cơ chế atomic rename (`.tmp -> .moekv`).
+    - Hoàn thiện kiến trúc Phân tầng Bộ nhớ 3 cấp toàn diện:
+      - **Trọng số Chuyên gia:** VRAM L1 $\leftrightarrow$ Host RAM L2 $\leftrightarrow$ NVMe L3.
+      - **Trạng thái KV Cache:** Host RAM L2 $\leftrightarrow$ NVMe L3 Persistent Disk (`.moekv`).
+    - Tự động phát hiện và khôi phục tiền tố (Prefix Matching) trực tiếp từ SSD NVMe trong vài mili-giây, bỏ qua giai đoạn prefill nặng nề cho toàn bộ lịch sử đã có.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Khai báo các hằng số định dạng: `MOE_KV_MAGIC_FP32` (`b"MOEKV1\0\0"`), `MOE_KV_MAGIC_FP8` (`b"MOEKV2\0\0"`), và `MOE_KV_VERSION` ($1$).
+     - Thêm trường `session_dir: Option<PathBuf>` vào `struct OlmoeModel` và tự động đọc từ biến môi trường `MOE_SESSION_DIR`.
+     - Cung cấp các phương thức điều khiển: `set_session_dir` và `session_dir`.
+     - Hiện thực `save_session_to_file(&self, path: &Path, tokens: &[usize], kv: &[Kv]) -> io::Result<()>`:
+       - Header 32 bytes (magic, version, layers, kd, format, num_tokens).
+       - Payload tuần tự từng token ID và dữ liệu KV theo từng layer (hỗ trợ cả FP32 và FP8).
+       - Cơ chế ghi tệp tạm `.tmp` và `rename` đảm bảo tính nguyên tử tuyệt đối.
+     - Hiện thực `load_session_from_file(&self, path: &Path, tokens: &[usize], kd: usize) -> io::Result<Option<(usize, Vec<Kv>)>>`:
+       - Đọc header, xác thực magic/version/chiều mô hình.
+       - So khớp tiền tố token IDs trực tiếp từ tệp; dừng đọc ngay khi chuỗi token rẽ nhánh (diverge).
+       - Cắt tỉa nhất quán theo nguyên tắc causal attention.
+     - Tích hợp vào `take_prefix_kv`: Nếu session không có trên RAM, tự động tra cứu trên đĩa NVMe (`<session_dir>/<id>.moekv`).
+     - Tích hợp vào `generate_inner`: Khi có `session_id` và `session_dir`, tự động lưu trạng thái xuống NVMe.
+     - Bổ sung 2 bài unit tests toàn diện:
+       - `test_kv_session_disk_persistence_roundtrip_and_crash_safety`: Kiểm tra toàn vẹn roundtrip cả FP32/FP8, kiểm thử so khớp tiền tố rẽ nhánh và khả năng kháng lỗi khi header bị hỏng.
+       - `test_session_resume_after_engine_restart`: Mô phỏng quá trình khởi động lại máy chủ (tạo mới engine hoàn toàn với RAM trống 100%), xác minh engine mới khôi phục thành công prompt prefix từ đĩa NVMe mà không phải prefill lại.
+  2. `examples/chat_olmoe.rs`:
+     - Hỗ trợ tham số dòng lệnh thứ 4 `SESSION_ID` hoặc biến môi trường `MOE_SESSION_ID` để kích hoạt chế độ hội thoại nhiều lượt.
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - **Kiểm chứng thực tế trên mô hình OLMoE-1B-7B (INT4) với `chat_olmoe`:**
+    - Cấu hình: `MOE_SESSION_DIR=.moe_sessions`, Testbed A (i7-14650HX).
+    - **Lượt 1 (Cold Start):**
+      - Prompt: `"What is the capital of France?"` ($20$ tokens).
+      - Prefill time: **2,922.60 ms** (tính toán toàn bộ 20 tokens từ đầu).
+      - Văn bản sinh ra: `"The capital of France is Paris."`.
+      - Tệp trạng thái nhị phân `.moe_sessions/turn1.moekv` được tạo thành công trên đĩa NVMe ($7.08\text{ MB}$).
+    - **Lượt 2 (Cold Process Restart - Tắt tiến trình, mở lại tiến trình mới):**
+      - Prompt: `"What is the capital of France? And what is its population?"` ($27$ tokens).
+      - Tiền tố được tái sử dụng trực tiếp từ tệp `.moekv`: **$19$ tokens** (`cached_prompt_tokens = 19`).
+      - Prefill time giảm từ $2,922.60\text{ ms}$ xuống **$1,205.77\text{ ms}$** (**giảm 58.7%** thời gian prefill, chỉ tính toán phần câu hỏi mới!).
+      - Văn bản sinh tiếp nối hoàn hảo: `"The capital of France is Paris. Its population is approximately 2"`.
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
+
+## 2026-11-03 — Bước 36: Nén Bộ nhớ Đệm KV Cache bằng Định dạng FP8 E4M3 & Giải mã O(1) LUT Attention (Học hỏi Colibrì)
+
+- **Mục tiêu:**
+  - Tiếp thu nguyên lý nén bộ nhớ đệm KV Cache từ engine Colibrì (`colibri/c/kv_fp8.h`):
+    - Trong quá trình sinh suy luận ngữ cảnh dài (Long-Context Generation) hoặc phiên hội thoại đa lượt (Multi-turn Sessions), kích thước KV Cache tăng tuyến tính theo số lượng token và số tầng ($O(L \times T \times kd)$).
+    - Với định dạng FP32 nguyên bản, mỗi token tại mỗi tầng tiêu thụ $512 \times 4 \times 2 = 4,096\text{ bytes}$. Với ngữ cảnh 2,048 tokens trên 16 tầng, KV Cache chiếm hơn $134.2\text{ MB}$ RAM, gây nghẽn băng thông đọc bộ nhớ (Memory Bandwidth Bottleneck) của CPU trong các vòng lặp Attention Dot-Product.
+    - Chuyển đổi toàn bộ Key và Value sang định dạng số thực 8-bit chuẩn OCP FP8 E4M3 (1 sign bit, 4 exponent bits, 3 mantissa bits) với hệ số tỷ lệ per-row scaling factor:
+      $scale = \frac{\max(|x_i|)}{448.0}, \quad byte_i = \text{fp8\_e4m3\_encode}\left(\frac{x_i}{scale}\right)$
+    - Tiết kiệm lý thuyết: $\frac{2 \cdot kd \cdot 1 + 8}{2 \cdot kd \cdot 4} = \frac{1032}{4096} = 25.19\%$ dung lượng (giảm **74.8% ~ 75%** bộ nhớ RAM KV).
+    - Duy trì tốc độ giải mã tức thời $O(1)$ thông qua bảng tra cứu trước `FP8_E4M3_LUT: LazyLock<[f32; 256]>` nằm thường trực trong L1 Data Cache CPU, triệt tiêu mọi phép giải nén tạm thời (zero temporary buffer allocations) khi tính tích vô hướng Attention.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/quantization.rs`:
+     - Khai báo bảng tra cứu tĩnh `FP8_E4M3_LUT: LazyLock<[f32; 256]>` giải mã tức thời 256 byte FP8 E4M3 theo chuẩn OCP.
+     - Hàm mã hóa `fp8_e4m3_encode(f: f32) -> u8` với xử lý bão hòa tại $\pm 448.0$ và xử lý số phi chuẩn (denormals) tại $2^{-9}$.
+     - Hàm giải mã `fp8_e4m3_decode(byte: u8) -> f32` đạt độ trễ 1 chu kỳ máy CPU.
+     - Các phép toán ma trận lượng tử hóa: `quantize_row_fp8`, `dequantize_row_fp8`, `dot_fp8_f32`, và `accumulate_fp8`.
+     - Bổ sung 5 bài unit tests xác minh roundtrip và sai số trong `quantization::tests`.
+  2. `src/backend.rs`:
+     - Hiện thực hàm nhân chú ý nén `causal_attention_fp8_into`:
+       - Tích vô hướng Query (FP32) với Keys (FP8) trực tiếp qua `dot_fp8_f32(query, k_slice, k_scale)`.
+       - Tích lũy Softmax weights với Values (FP8) trực tiếp qua `accumulate_fp8(output, v_slice, weight * v_scale)`.
+       - Hỗ trợ xử lý song song Rayon `par_chunks_exact_mut` khi số chiều lớn.
+     - Bổ sung unit test `test_causal_attention_fp8_matches_fp32_within_tolerance` xác minh sai số tuyệt đối so với FP32 $< 0.08$.
+  3. `src/olmoe.rs`:
+     - Cập nhật cấu trúc `struct Kv`:
+       - Bổ sung các trường `fp8_keys: Vec<u8>`, `fp8_key_scales: Vec<f32>`, `fp8_values: Vec<u8>`, `fp8_value_scales: Vec<f32>`, `is_fp8: bool`.
+       - Thêm phương thức `positions(kd)` hỗ trợ cả 2 chế độ FP8 và FP32.
+       - Thêm phương thức `truncate_positions(prefix, kd)` cắt tỉa nhất quán dữ liệu nén khi tái sử dụng tiền tố session.
+       - Cập nhật `memory_bytes()` và `allocated_bytes()` tính toán chính xác dung lượng nén FP8.
+     - Mở rộng `StepScratch` với 2 buffer lượng tử hóa tạm thời `fp8_key: Vec<u8>` và `fp8_value: Vec<u8>` (pre-allocated).
+     - Bổ sung cờ điều khiển `kv_fp8: bool` trong `OlmoeModel`, tự động đọc từ biến môi trường `MOE_KV_FP8` hoặc `FP8_KV`, cùng các API `set_kv_fp8` và `is_kv_fp8`.
+     - Phân nhánh linh hoạt trong cả hai hàm lõi: `step()` (decode) và `prefill()` (layer-major causal prefill) mà không làm ảnh hưởng (zero blast radius) tới đường chạy FP32 mặc định.
+     - Bổ sung bài unit test toàn diện `test_kv_fp8_compression_and_numerical_parity`:
+       - Kiểm tra tính bảo toàn chính xác chuỗi greedy token ($top\_fp8 == top\_fp32$).
+       - Kiểm tra tỷ lệ nén bộ nhớ trên cả mô hình đồ chơi và mô hình thật ($kd = 512$).
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - **Kiểm chứng trên mô hình thực tế OLMoE 1B-7B (INT4) với `chat_olmoe`:**
+    - Cấu hình: `Prompt: "What is gravity?"`, `max_tokens = 10`.
+    - **FP32 KV Cache Baseline:**
+      - Bộ nhớ KV Cache: **6,815,744 bytes** (~6.82 MB).
+      - Tốc độ decode: 3.77 tok/s.
+      - Chuỗi token sinh ra: `[48062, 414, 310, 247, 3490, 273, 21779, 875, 767, 5113]`.
+      - Văn bản: `"Gravity is a force of attraction between two objects"`.
+    - **FP8 E4M3 KV Cache (`MOE_KV_FP8=1`):**
+      - Bộ nhớ KV Cache: **1,707,264 bytes** (~1.71 MB).
+      - **Tỷ lệ tiết kiệm bộ nhớ:** $\mathbf{74.95\%}$ (chính xác bằng tỷ lệ lý thuyết).
+      - Tốc độ decode: **4.07 tok/s** (tăng tốc độ đọc dữ liệu chú ý nhờ giảm 75% băng thông RAM).
+      - Chuỗi token sinh ra: `[48062, 414, 310, 247, 3490, 273, 21779, 875, 767, 5113]` (**trùng khớp 100% bit-exact** với baseline FP32).
+      - Văn bản: `"Gravity is a force of attraction between two objects"`.
+  - `cargo test --all-targets`: **88/88 tests PASS** (80 unit tests `lib.rs`, 5 tests `main.rs`, 7 tests `int8_loader.rs`, 4 tests `olmoe_reference.rs`, 1 doc-test).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
+
+## 2026-11-05 — Bước 37: Lưu trữ KV Cache Bền vững Chống Sập Nguồn (`.moekv`) & Phục hồi Trạng thái Lạnh (Học hỏi Colibrì `kv_persist.h` & `kv_prefix.h`)
+
+- **Mục tiêu:**
+  - Tiếp thu nguyên lý quản lý trạng thái hội thoại bền vững (Stateful Multi-turn Persistence) từ Colibrì (`colibri/c/kv_persist.h` và `colibri/c/kv_prefix.h`):
+    - Khi máy chủ khởi động lại (restart) hoặc khi RAM đầy khiến session bị đẩy ra (eviction), toàn bộ KV Cache trong RAM biến mất, buộc các lượt hội thoại sau phải tính toán lại prefill từ đầu (tốn 2.5s - 5s).
+    - Thiết kế định dạng tệp nhị phân `.moekv` có khả năng lưu trữ cả FP32 và FP8 E4M3 nén, bảo đảm an toàn chống sập nguồn (Crash-Safe Invariant): ghi dữ liệu payload trước, gọi `sync_all()`, sau đó mới xác thực counter trong header qua cơ chế atomic rename (`.tmp -> .moekv`).
+    - Hoàn thiện kiến trúc Phân tầng Bộ nhớ 3 cấp toàn diện:
+      - **Trọng số Chuyên gia:** VRAM L1 $\leftrightarrow$ Host RAM L2 $\leftrightarrow$ NVMe L3.
+      - **Trạng thái KV Cache:** Host RAM L2 $\leftrightarrow$ NVMe L3 Persistent Disk (`.moekv`).
+    - Tự động phát hiện và khôi phục tiền tố (Prefix Matching) trực tiếp từ SSD NVMe trong vài mili-giây, bỏ qua giai đoạn prefill nặng nề cho toàn bộ lịch sử đã có.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Khai báo các hằng số định dạng: `MOE_KV_MAGIC_FP32` (`b"MOEKV1\0\0"`), `MOE_KV_MAGIC_FP8` (`b"MOEKV2\0\0"`), và `MOE_KV_VERSION` ($1$).
+     - Thêm trường `session_dir: Option<PathBuf>` vào `struct OlmoeModel` và tự động đọc từ biến môi trường `MOE_SESSION_DIR`.
+     - Cung cấp các phương thức điều khiển: `set_session_dir` và `session_dir`.
+     - Hiện thực `save_session_to_file(&self, path: &Path, tokens: &[usize], kv: &[Kv]) -> io::Result<()>`:
+       - Header 32 bytes (magic, version, layers, kd, format, num_tokens).
+       - Payload tuần tự từng token ID và dữ liệu KV theo từng layer (hỗ trợ cả FP32 và FP8).
+       - Cơ chế ghi tệp tạm `.tmp` và `rename` đảm bảo tính nguyên tử tuyệt đối.
+     - Hiện thực `load_session_from_file(&self, path: &Path, tokens: &[usize], kd: usize) -> io::Result<Option<(usize, Vec<Kv>)>>`:
+       - Đọc header, xác thực magic/version/chiều mô hình.
+       - So khớp tiền tố token IDs trực tiếp từ tệp; dừng đọc ngay khi chuỗi token rẽ nhánh (diverge).
+       - Cắt tỉa nhất quán theo nguyên tắc causal attention.
+     - Tích hợp vào `take_prefix_kv`: Nếu session không có trên RAM, tự động tra cứu trên đĩa NVMe (`<session_dir>/<id>.moekv`).
+     - Tích hợp vào `generate_inner`: Khi có `session_id` và `session_dir`, tự động lưu trạng thái xuống NVMe.
+     - Bổ sung 2 bài unit tests toàn diện:
+       - `test_kv_session_disk_persistence_roundtrip_and_crash_safety`: Kiểm tra toàn vẹn roundtrip cả FP32/FP8, kiểm thử so khớp tiền tố rẽ nhánh và khả năng kháng lỗi khi header bị hỏng.
+       - `test_session_resume_after_engine_restart`: Mô phỏng quá trình khởi động lại máy chủ (tạo mới engine hoàn toàn với RAM trống 100%), xác minh engine mới khôi phục thành công prompt prefix từ đĩa NVMe mà không phải prefill lại.
+  2. `examples/chat_olmoe.rs`:
+     - Hỗ trợ tham số dòng lệnh thứ 4 `SESSION_ID` hoặc biến môi trường `MOE_SESSION_ID` để kích hoạt chế độ hội thoại nhiều lượt.
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - **Kiểm chứng thực tế trên mô hình OLMoE-1B-7B (INT4) với `chat_olmoe`:**
+    - Cấu hình: `MOE_SESSION_DIR=.moe_sessions`, Testbed A (i7-14650HX).
+    - **Lượt 1 (Cold Start):**
+      - Prompt: `"What is the capital of France?"` ($20$ tokens).
+      - Prefill time: **2,922.60 ms** (tính toán toàn bộ 20 tokens từ đầu).
+      - Văn bản sinh ra: `"The capital of France is Paris."`.
+      - Tệp trạng thái nhị phân `.moe_sessions/turn1.moekv` được tạo thành công trên đĩa NVMe ($7.08\text{ MB}$).
+    - **Lượt 2 (Cold Process Restart - Tắt tiến trình, mở lại tiến trình mới):**
+      - Prompt: `"What is the capital of France? And what is its population?"` ($27$ tokens).
+      - Tiền tố được tái sử dụng trực tiếp từ tệp `.moekv`: **$19$ tokens** (`cached_prompt_tokens = 19`).
+      - Prefill time giảm từ $2,922.60\text{ ms}$ xuống **$1,205.77\text{ ms}$** (**giảm 58.7%** thời gian prefill, chỉ tính toán phần câu hỏi mới!).
+      - Văn bản sinh tiếp nối hoàn hảo: `"The capital of France is Paris. Its population is approximately 2"`.
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
   - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
   - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
   - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.

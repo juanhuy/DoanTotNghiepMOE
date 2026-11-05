@@ -1,18 +1,20 @@
 //! CPU OLMoE decoder for merged INT8 checkpoints.
 use crate::{
     backend::{
-        causal_attention_into, configure_parallelism, finite, invalid, rms_norm_in_place,
-        rms_norm_into, softmax, Matrix,
+        causal_attention_fp8_into, causal_attention_into, configure_parallelism, finite, invalid,
+        rms_norm_in_place, rms_norm_into, softmax, Matrix,
     },
     generation::{Generation, GenerationMetrics},
     int8_expert::{ExpertScratch, Int8Expert},
+    quantization::quantize_row_fp8,
     safetensors::TensorIndex,
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
-    fs, io,
+    fs::{self, File},
+    io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -247,18 +249,98 @@ impl Layer {
         }
     }
 }
-#[derive(Default)]
-struct Kv {
+#[derive(Default, Clone)]
+pub(crate) struct Kv {
     keys: Vec<f32>,
     values: Vec<f32>,
+    fp8_keys: Vec<u8>,
+    fp8_key_scales: Vec<f32>,
+    fp8_values: Vec<u8>,
+    fp8_value_scales: Vec<f32>,
+    is_fp8: bool,
 }
 
 impl Kv {
-    fn with_capacity(capacity_tokens: usize, kd: usize) -> Self {
-        let total = capacity_tokens * kd;
+    #[allow(dead_code)]
+    fn new(is_fp8: bool) -> Self {
         Self {
-            keys: Vec::with_capacity(total),
-            values: Vec::with_capacity(total),
+            keys: Vec::new(),
+            values: Vec::new(),
+            fp8_keys: Vec::new(),
+            fp8_key_scales: Vec::new(),
+            fp8_values: Vec::new(),
+            fp8_value_scales: Vec::new(),
+            is_fp8,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn with_capacity(capacity_tokens: usize, kd: usize) -> Self {
+        Self::with_capacity_precision(capacity_tokens, kd, false)
+    }
+
+    fn with_capacity_precision(capacity_tokens: usize, kd: usize, is_fp8: bool) -> Self {
+        let total = capacity_tokens * kd;
+        if is_fp8 {
+            Self {
+                keys: Vec::new(),
+                values: Vec::new(),
+                fp8_keys: Vec::with_capacity(total),
+                fp8_key_scales: Vec::with_capacity(capacity_tokens),
+                fp8_values: Vec::with_capacity(total),
+                fp8_value_scales: Vec::with_capacity(capacity_tokens),
+                is_fp8: true,
+            }
+        } else {
+            Self {
+                keys: Vec::with_capacity(total),
+                values: Vec::with_capacity(total),
+                fp8_keys: Vec::new(),
+                fp8_key_scales: Vec::new(),
+                fp8_values: Vec::new(),
+                fp8_value_scales: Vec::new(),
+                is_fp8: false,
+            }
+        }
+    }
+
+    fn positions(&self, kd: usize) -> usize {
+        if self.is_fp8 {
+            self.fp8_key_scales.len()
+        } else {
+            self.keys.len().checked_div(kd).unwrap_or(0)
+        }
+    }
+
+    fn truncate_positions(&mut self, prefix: usize, kd: usize) {
+        if self.is_fp8 {
+            self.fp8_keys.truncate(prefix * kd);
+            self.fp8_values.truncate(prefix * kd);
+            self.fp8_key_scales.truncate(prefix);
+            self.fp8_value_scales.truncate(prefix);
+        } else {
+            self.keys.truncate(prefix * kd);
+            self.values.truncate(prefix * kd);
+        }
+    }
+
+    fn memory_bytes(&self) -> usize {
+        if self.is_fp8 {
+            self.fp8_keys.len()
+                + self.fp8_values.len()
+                + (self.fp8_key_scales.len() + self.fp8_value_scales.len()) * 4
+        } else {
+            (self.keys.len() + self.values.len()) * 4
+        }
+    }
+
+    fn allocated_bytes(&self) -> usize {
+        if self.is_fp8 {
+            self.fp8_keys.capacity()
+                + self.fp8_values.capacity()
+                + (self.fp8_key_scales.capacity() + self.fp8_value_scales.capacity()) * 4
+        } else {
+            (self.keys.capacity() + self.values.capacity()) * 4
         }
     }
 }
@@ -306,6 +388,8 @@ struct StepScratch {
     logits: Vec<f32>,
     rope_bases: Vec<f32>,
     sincos: Vec<(f32, f32)>,
+    fp8_key: Vec<u8>,
+    fp8_value: Vec<u8>,
 }
 
 impl StepScratch {
@@ -340,6 +424,8 @@ impl StepScratch {
             logits: vec![0.0; config.vocab_size],
             rope_bases,
             sincos,
+            fp8_key: vec![0u8; key_value],
+            fp8_value: vec![0u8; key_value],
         }
     }
 }
@@ -408,7 +494,13 @@ pub struct OlmoeModel {
     inter_layer_transitions: Vec<Vec<u16>>,
     usage_path: Option<PathBuf>,
     route_trace: Option<RouteTraceLogger>,
+    kv_fp8: bool,
+    session_dir: Option<PathBuf>,
 }
+
+pub const MOE_KV_MAGIC_FP32: &[u8; 8] = b"MOEKV1\0\0";
+pub const MOE_KV_MAGIC_FP8: &[u8; 8] = b"MOEKV2\0\0";
+pub const MOE_KV_VERSION: u32 = 1;
 
 fn mat(
     index: &TensorIndex,
@@ -729,6 +821,16 @@ impl OlmoeModel {
             .ok()
             .and_then(|p| RouteTraceLogger::new(Path::new(&p)));
 
+        let kv_fp8 = std::env::var("MOE_KV_FP8")
+            .or_else(|_| std::env::var("FP8_KV"))
+            .map(|v| v != "0" && v != "false")
+            .unwrap_or(false);
+
+        let session_dir = std::env::var("MOE_SESSION_DIR").ok().map(PathBuf::from);
+        if let Some(dir) = &session_dir {
+            let _ = fs::create_dir_all(dir);
+        }
+
         Ok(Self {
             #[cfg(test)]
             serial_prefill_reference: true,
@@ -755,6 +857,8 @@ impl OlmoeModel {
             inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
             usage_path,
             route_trace,
+            kv_fp8,
+            session_dir,
         })
     }
 
@@ -894,6 +998,29 @@ impl OlmoeModel {
             }
         }
         self.gpu_tier.status()
+    }
+
+    /// Thiết lập chế độ nén KV Cache bằng FP8 E4M3 (tiết kiệm 75% RAM KV Cache)
+    pub fn set_kv_fp8(&mut self, enabled: bool) {
+        self.kv_fp8 = enabled;
+    }
+
+    /// Trạng thái kích hoạt nén KV Cache FP8
+    pub fn is_kv_fp8(&self) -> bool {
+        self.kv_fp8
+    }
+
+    /// Thiết lập thư mục lưu trữ trạng thái KV cache bền vững (.moekv)
+    pub fn set_session_dir(&mut self, dir: Option<PathBuf>) {
+        if let Some(d) = &dir {
+            let _ = fs::create_dir_all(d);
+        }
+        self.session_dir = dir;
+    }
+
+    /// Lấy đường dẫn thư mục lưu trữ trạng thái session
+    pub fn session_dir(&self) -> Option<&Path> {
+        self.session_dir.as_deref()
     }
 
     /// Thiết lập trạng thái Bật / Tắt GPU Tier
@@ -1736,7 +1863,7 @@ impl OlmoeModel {
             let layer = &mut prev_and_curr[id];
 
             let attention_started = Instant::now();
-            let position = kv[id].keys.len() / kd;
+            let position = kv[id].positions(kd);
             if position >= self.context_limit {
                 return Err(invalid("context exhausted"));
             }
@@ -1752,16 +1879,35 @@ impl OlmoeModel {
             prepare_rope_sincos(&mut scratch.sincos, &scratch.rope_bases, position);
             apply_rope_cached(&mut scratch.query, hd, &scratch.sincos);
             apply_rope_cached(&mut scratch.key, hd, &scratch.sincos);
-            kv[id].keys.extend_from_slice(&scratch.key);
-            kv[id].values.extend_from_slice(&scratch.value);
-            causal_attention_into(
-                &scratch.query,
-                &kv[id].keys,
-                &kv[id].values,
-                c.num_attention_heads,
-                c.num_key_value_heads,
-                &mut scratch.context,
-            )?;
+            if kv[id].is_fp8 {
+                let k_scale = quantize_row_fp8(&scratch.key, &mut scratch.fp8_key);
+                let v_scale = quantize_row_fp8(&scratch.value, &mut scratch.fp8_value);
+                kv[id].fp8_keys.extend_from_slice(&scratch.fp8_key);
+                kv[id].fp8_key_scales.push(k_scale);
+                kv[id].fp8_values.extend_from_slice(&scratch.fp8_value);
+                kv[id].fp8_value_scales.push(v_scale);
+                causal_attention_fp8_into(
+                    &scratch.query,
+                    &kv[id].fp8_keys,
+                    &kv[id].fp8_key_scales,
+                    &kv[id].fp8_values,
+                    &kv[id].fp8_value_scales,
+                    c.num_attention_heads,
+                    c.num_key_value_heads,
+                    &mut scratch.context,
+                )?;
+            } else {
+                kv[id].keys.extend_from_slice(&scratch.key);
+                kv[id].values.extend_from_slice(&scratch.value);
+                causal_attention_into(
+                    &scratch.query,
+                    &kv[id].keys,
+                    &kv[id].values,
+                    c.num_attention_heads,
+                    c.num_key_value_heads,
+                    &mut scratch.context,
+                )?;
+            }
             Self::dense_gemv(
                 &*gpu_dense,
                 gpu_tier.is_enabled(),
@@ -1816,7 +1962,7 @@ impl OlmoeModel {
 
             if let Some(tracer) = route_trace.as_mut() {
                 let pos = if !kv.is_empty() && kd > 0 {
-                    kv[0].keys.len() / kd
+                    kv[0].positions(kd)
                 } else {
                     0
                 };
@@ -2319,7 +2465,7 @@ impl OlmoeModel {
 
         for (layer_id, layer) in layers.iter_mut().enumerate() {
             check()?;
-            let base_position = kv[layer_id].keys.len() / kd;
+            let base_position = kv[layer_id].positions(kd);
             if base_position
                 .checked_add(tokens.len())
                 .is_none_or(|length| length > self.context_limit)
@@ -2363,18 +2509,38 @@ impl OlmoeModel {
                 prepare_rope_sincos(&mut scratch.sincos, &scratch.rope_bases, position);
                 apply_rope_cached(q_slice, hd, &scratch.sincos);
                 apply_rope_cached(k_slice, hd, &scratch.sincos);
-                kv[layer_id].keys.extend_from_slice(k_slice);
-                kv[layer_id].values.extend_from_slice(v_slice);
-
                 let ctx_slice = &mut context_batch[local_position * d..(local_position + 1) * d];
-                causal_attention_into(
-                    q_slice,
-                    &kv[layer_id].keys,
-                    &kv[layer_id].values,
-                    c.num_attention_heads,
-                    c.num_key_value_heads,
-                    ctx_slice,
-                )?;
+                if kv[layer_id].is_fp8 {
+                    let k_scale = quantize_row_fp8(k_slice, &mut scratch.fp8_key);
+                    let v_scale = quantize_row_fp8(v_slice, &mut scratch.fp8_value);
+                    kv[layer_id].fp8_keys.extend_from_slice(&scratch.fp8_key);
+                    kv[layer_id].fp8_key_scales.push(k_scale);
+                    kv[layer_id]
+                        .fp8_values
+                        .extend_from_slice(&scratch.fp8_value);
+                    kv[layer_id].fp8_value_scales.push(v_scale);
+                    causal_attention_fp8_into(
+                        q_slice,
+                        &kv[layer_id].fp8_keys,
+                        &kv[layer_id].fp8_key_scales,
+                        &kv[layer_id].fp8_values,
+                        &kv[layer_id].fp8_value_scales,
+                        c.num_attention_heads,
+                        c.num_key_value_heads,
+                        ctx_slice,
+                    )?;
+                } else {
+                    kv[layer_id].keys.extend_from_slice(k_slice);
+                    kv[layer_id].values.extend_from_slice(v_slice);
+                    causal_attention_into(
+                        q_slice,
+                        &kv[layer_id].keys,
+                        &kv[layer_id].values,
+                        c.num_attention_heads,
+                        c.num_key_value_heads,
+                        ctx_slice,
+                    )?;
+                }
             }
 
             // 4. Batched Output Projection cuBLAS SGEMM trên GPU
@@ -2613,7 +2779,7 @@ impl OlmoeModel {
         let d = self.config.hidden_size;
         let kd = d / self.config.num_attention_heads * self.config.num_key_value_heads;
         let mut kv: Vec<_> = (0..self.layers.len())
-            .map(|_| Kv::with_capacity(self.context_limit, kd))
+            .map(|_| Kv::with_capacity_precision(self.context_limit, kd, self.kv_fp8))
             .collect();
         let mut profile = RequestProfile::default();
         let mut scratch = StepScratch::new(&self.config);
@@ -2723,6 +2889,198 @@ impl OlmoeModel {
         self.generate_controlled(prompt, max_tokens, None, &|| Ok(()), || Ok(()), None)
     }
 
+    /// Lưu trạng thái KV cache của một session xuống tệp nhị phân .moekv
+    /// Áp dụng cơ chế ghi nguyên tử (Atomic file write qua tệp tạm .tmp và rename)
+    pub(crate) fn save_session_to_file(
+        &self,
+        path: &Path,
+        tokens: &[usize],
+        kv: &[Kv],
+    ) -> io::Result<()> {
+        if kv.is_empty() {
+            return Ok(());
+        }
+        let is_fp8 = kv[0].is_fp8;
+        let c = &self.config;
+        let hd = c.hidden_size / c.num_attention_heads;
+        let kd = hd * c.num_key_value_heads;
+        let num_layers = kv.len();
+        let num_tokens = kv[0].positions(kd).min(tokens.len());
+        if num_tokens == 0 {
+            return Ok(());
+        }
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let tmp_path = path.with_extension("tmp");
+        let file = File::create(&tmp_path)?;
+        let mut writer = BufWriter::new(file);
+
+        let magic = if is_fp8 {
+            MOE_KV_MAGIC_FP8
+        } else {
+            MOE_KV_MAGIC_FP32
+        };
+        writer.write_all(magic)?;
+        writer.write_all(&MOE_KV_VERSION.to_le_bytes())?;
+        writer.write_all(&(num_layers as u32).to_le_bytes())?;
+        writer.write_all(&(kd as u32).to_le_bytes())?;
+        writer.write_all(&(if is_fp8 { 1u32 } else { 0u32 }).to_le_bytes())?;
+        writer.write_all(&(num_tokens as u32).to_le_bytes())?;
+        writer.write_all(&0u32.to_le_bytes())?; // reserved
+
+        for (p, &tok) in tokens.iter().enumerate().take(num_tokens) {
+            let tok = tok as u32;
+            writer.write_all(&tok.to_le_bytes())?;
+            for layer in kv {
+                if is_fp8 {
+                    let k_slice = &layer.fp8_keys[p * kd..(p + 1) * kd];
+                    let k_scale = layer.fp8_key_scales[p];
+                    let v_slice = &layer.fp8_values[p * kd..(p + 1) * kd];
+                    let v_scale = layer.fp8_value_scales[p];
+                    writer.write_all(k_slice)?;
+                    writer.write_all(&k_scale.to_le_bytes())?;
+                    writer.write_all(v_slice)?;
+                    writer.write_all(&v_scale.to_le_bytes())?;
+                } else {
+                    let k_slice = &layer.keys[p * kd..(p + 1) * kd];
+                    let v_slice = &layer.values[p * kd..(p + 1) * kd];
+                    for &k in k_slice {
+                        writer.write_all(&k.to_le_bytes())?;
+                    }
+                    for &v in v_slice {
+                        writer.write_all(&v.to_le_bytes())?;
+                    }
+                }
+            }
+        }
+        writer.flush()?;
+        let underlying = writer
+            .into_inner()
+            .map_err(|e| io::Error::other(e.to_string()))?;
+        underlying.sync_all()?;
+        fs::rename(&tmp_path, path)?;
+        Ok(())
+    }
+
+    /// Nạp trạng thái KV cache đã lưu từ tệp .moekv trên đĩa
+    /// Tự động so khớp tiền tố token IDs, khôi phục trực tiếp KV Cache trong vài mili-giây
+    pub(crate) fn load_session_from_file(
+        &self,
+        path: &Path,
+        tokens: &[usize],
+        kd: usize,
+    ) -> io::Result<Option<(usize, Vec<Kv>)>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+
+        let mut header = [0u8; 32];
+        if reader.read_exact(&mut header).is_err() {
+            return Ok(None);
+        }
+
+        let magic = &header[0..8];
+        let is_fp8 = if magic == MOE_KV_MAGIC_FP8 {
+            true
+        } else if magic == MOE_KV_MAGIC_FP32 {
+            false
+        } else {
+            return Ok(None);
+        };
+
+        let version = u32::from_le_bytes(header[8..12].try_into().unwrap());
+        let file_layers = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+        let file_kd = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
+        let file_tokens = u32::from_le_bytes(header[24..28].try_into().unwrap()) as usize;
+
+        if version != MOE_KV_VERSION
+            || file_layers != self.layers.len()
+            || file_kd != kd
+            || file_tokens == 0
+        {
+            return Ok(None);
+        }
+
+        let rec_bytes = if is_fp8 {
+            4 + file_layers * (kd * 2 + 8)
+        } else {
+            4 + file_layers * (kd * 2 * 4)
+        };
+
+        let mut kv: Vec<Kv> = (0..file_layers)
+            .map(|_| Kv::with_capacity_precision(self.context_limit, kd, is_fp8))
+            .collect();
+
+        let mut matched = 0usize;
+        let mut scratch_record = vec![0u8; rec_bytes];
+
+        for p in 0..file_tokens {
+            if reader.read_exact(&mut scratch_record).is_err() {
+                break;
+            }
+            let tok_id = u32::from_le_bytes(scratch_record[0..4].try_into().unwrap()) as usize;
+            let expected_tok = tokens.get(p).copied();
+            if Some(tok_id) == expected_tok && matched == p {
+                matched += 1;
+                let mut offset = 4;
+                for layer in kv.iter_mut() {
+                    if is_fp8 {
+                        let k_slice = &scratch_record[offset..offset + kd];
+                        offset += kd;
+                        let k_scale = f32::from_le_bytes(
+                            scratch_record[offset..offset + 4].try_into().unwrap(),
+                        );
+                        offset += 4;
+                        let v_slice = &scratch_record[offset..offset + kd];
+                        offset += kd;
+                        let v_scale = f32::from_le_bytes(
+                            scratch_record[offset..offset + 4].try_into().unwrap(),
+                        );
+                        offset += 4;
+
+                        layer.fp8_keys.extend_from_slice(k_slice);
+                        layer.fp8_key_scales.push(k_scale);
+                        layer.fp8_values.extend_from_slice(v_slice);
+                        layer.fp8_value_scales.push(v_scale);
+                    } else {
+                        for _ in 0..kd {
+                            let val = f32::from_le_bytes(
+                                scratch_record[offset..offset + 4].try_into().unwrap(),
+                            );
+                            offset += 4;
+                            layer.keys.push(val);
+                        }
+                        for _ in 0..kd {
+                            let val = f32::from_le_bytes(
+                                scratch_record[offset..offset + 4].try_into().unwrap(),
+                            );
+                            offset += 4;
+                            layer.values.push(val);
+                        }
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Causal KV remains valid up to the first changed token. Recompute at
+        // least the final prompt token because the cache does not retain logits.
+        let prefix = matched.min(tokens.len().saturating_sub(1));
+        if prefix > 0 {
+            for cache in &mut kv {
+                cache.truncate_positions(prefix, kd);
+            }
+            Ok(Some((prefix, kv)))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn take_prefix_kv(
         &mut self,
         tokens: &[usize],
@@ -2750,17 +3108,30 @@ impl OlmoeModel {
             };
             if prefix > 0 {
                 for cache in &mut state.kv {
-                    cache.keys.truncate(prefix * kd);
-                    cache.values.truncate(prefix * kd);
+                    cache.truncate_positions(prefix, kd);
                 }
                 return (prefix, state.kv);
             }
         }
+
+        // Nếu session không có trên RAM, tự động tra cứu và khôi phục từ tệp .moekv trên NVMe disk
+        if let Some(id) = session_id {
+            if let Some(dir) = &self.session_dir {
+                let file_path = dir.join(format!("{id}.moekv"));
+                if let Ok(Some((prefix, kv))) = self.load_session_from_file(&file_path, tokens, kd)
+                {
+                    if prefix > 0 {
+                        return (prefix, kv);
+                    }
+                }
+            }
+        }
+
         // Allocate only after lookup; a reusable session already owns its buffers.
         (
             0,
             (0..self.layers.len())
-                .map(|_| Kv::with_capacity(self.context_limit, kd))
+                .map(|_| Kv::with_capacity_precision(self.context_limit, kd, self.kv_fp8))
                 .collect(),
         )
     }
@@ -2968,12 +3339,14 @@ impl OlmoeModel {
         }
         let total_elapsed = total_started.elapsed();
         let cache_bytes = self.layers.iter().map(|layer| layer.bytes).sum();
-        let kv_bytes = kv
-            .iter()
-            .map(|cache| (cache.keys.len() + cache.values.len()) * std::mem::size_of::<f32>())
-            .sum();
+        let kv_bytes = kv.iter().map(|cache| cache.memory_bytes()).sum();
         if let Some(id) = session_id {
             let id = id.to_owned();
+            // Lưu bền vững trạng thái KV cache của session xuống NVMe disk (.moekv) nếu session_dir được cấu hình
+            if let Some(dir) = &self.session_dir {
+                let file_path = dir.join(format!("{id}.moekv"));
+                let _ = self.save_session_to_file(&file_path, &processed_tokens, &kv);
+            }
             let state = SessionState {
                 tokens: processed_tokens,
                 kv,
@@ -3073,11 +3446,7 @@ fn session_bytes(state: &SessionState) -> usize {
                     .capacity()
                     .saturating_mul(std::mem::size_of::<Kv>()),
             ),
-        |total, cache| {
-            total
-                .saturating_add(cache.keys.capacity().saturating_mul(4))
-                .saturating_add(cache.values.capacity().saturating_mul(4))
-        },
+        |total, cache| total.saturating_add(cache.allocated_bytes()),
     )
 }
 
@@ -3677,19 +4046,7 @@ mod cancellation_tests {
                 [false, true]
             };
             for strict in order {
-                let kv = seed
-                    .kv
-                    .iter()
-                    .map(|cache| {
-                        let mut copy = Kv::with_capacity(
-                            model.context_limit,
-                            cache.keys.len() / seed.tokens.len(),
-                        );
-                        copy.keys.extend_from_slice(&cache.keys);
-                        copy.values.extend_from_slice(&cache.values);
-                        copy
-                    })
-                    .collect();
+                let kv = seed.kv.clone();
                 model.sessions.insert(
                     "paired-session".into(),
                     SessionState {
@@ -4985,5 +5342,273 @@ mod routing_and_topk_tests {
         assert_eq!(fresh_layers[0].heat[0], 0);
 
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_kv_fp8_compression_and_numerical_parity() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/olmoe")
+                .join(fixture);
+            let reference: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(directory.join("reference.json")).unwrap())
+                    .unwrap();
+            let tokens: Vec<_> = reference["ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() as usize)
+                .collect();
+
+            let mut model_fp32 = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+            assert!(!model_fp32.is_kv_fp8());
+            let logits_fp32 = model_fp32.logits(&tokens).unwrap();
+
+            let mut model_fp8 = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+            model_fp8.set_kv_fp8(true);
+            assert!(model_fp8.is_kv_fp8());
+            let logits_fp8 = model_fp8.logits(&tokens).unwrap();
+
+            assert_eq!(logits_fp32.len(), logits_fp8.len());
+            for (step, (l32, l8)) in logits_fp32.iter().zip(&logits_fp8).enumerate() {
+                let top_fp32 = argmax_greedy(l32);
+                let top_fp8 = argmax_greedy(l8);
+                assert_eq!(
+                    top_fp32, top_fp8,
+                    "Fixture {fixture} step {step} greedy token mismatch"
+                );
+
+                let max_err = l32
+                    .iter()
+                    .zip(l8)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(
+                    max_err < 0.25,
+                    "Fixture {fixture} step {step} max logit delta too high: {max_err}"
+                );
+            }
+
+            // Kiểm tra tỉ lệ nén bộ nhớ KV Cache
+            let kd = model_fp8.config.hidden_size / model_fp8.config.num_attention_heads
+                * model_fp8.config.num_key_value_heads;
+            let mut kv_fp32 = Kv::with_capacity_precision(1024, kd, false);
+            let mut kv_fp8 = Kv::with_capacity_precision(1024, kd, true);
+
+            // Giả lập 256 tokens trong cache
+            for _ in 0..256 {
+                kv_fp32.keys.extend((0..kd).map(|i| i as f32));
+                kv_fp32.values.extend((0..kd).map(|i| i as f32));
+
+                kv_fp8.fp8_keys.extend((0..kd).map(|i| (i % 256) as u8));
+                kv_fp8.fp8_values.extend((0..kd).map(|i| (i % 256) as u8));
+                kv_fp8.fp8_key_scales.push(1.0);
+                kv_fp8.fp8_value_scales.push(1.0);
+            }
+
+            assert_eq!(kv_fp32.positions(kd), 256);
+            assert_eq!(kv_fp8.positions(kd), 256);
+
+            let bytes_fp32 = kv_fp32.memory_bytes();
+            let bytes_fp8 = kv_fp8.memory_bytes();
+            let ratio = bytes_fp8 as f64 / bytes_fp32 as f64;
+            let theoretical_ratio = (2.0 * kd as f64 + 8.0) / (2.0 * kd as f64 * 4.0);
+            assert!(
+                (ratio - theoretical_ratio).abs() < 1e-4,
+                "Tỉ lệ dung lượng thực tế {ratio} lệch khỏi lý thuyết {theoretical_ratio}"
+            );
+            assert!(
+                ratio <= 0.40,
+                "Tỉ lệ dung lượng KV FP8/FP32 vượt quá 40%: {ratio}"
+            );
+
+            // Kiểm tra tỉ lệ nén trên kích thước thật của OLMoE (kd = 512, tiết kiệm ~74.8% RAM)
+            let mut full_fp32 = Kv::with_capacity_precision(1024, 512, false);
+            let mut full_fp8 = Kv::with_capacity_precision(1024, 512, true);
+            for _ in 0..256 {
+                full_fp32.keys.extend((0..512).map(|i| i as f32));
+                full_fp32.values.extend((0..512).map(|i| i as f32));
+                full_fp8.fp8_keys.extend((0..512).map(|i| (i % 256) as u8));
+                full_fp8
+                    .fp8_values
+                    .extend((0..512).map(|i| (i % 256) as u8));
+                full_fp8.fp8_key_scales.push(1.0);
+                full_fp8.fp8_value_scales.push(1.0);
+            }
+            let full_ratio = full_fp8.memory_bytes() as f64 / full_fp32.memory_bytes() as f64;
+            assert!(
+                full_ratio < 0.255,
+                "Full OLMoE kd=512 phải đạt tỉ lệ nén < 25.5%: {full_ratio}"
+            );
+
+            // Kiểm tra truncate_positions
+            kv_fp8.truncate_positions(100, kd);
+            assert_eq!(kv_fp8.positions(kd), 100);
+            assert_eq!(kv_fp8.fp8_keys.len(), 100 * kd);
+            assert_eq!(kv_fp8.fp8_values.len(), 100 * kd);
+            assert_eq!(kv_fp8.fp8_key_scales.len(), 100);
+            assert_eq!(kv_fp8.fp8_value_scales.len(), 100);
+        }
+    }
+
+    #[test]
+    fn test_kv_session_disk_persistence_roundtrip_and_crash_safety() {
+        let temp_dir = std::env::temp_dir().join(format!("moe_test_kv_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let file_path = temp_dir.join("test_session.moekv");
+
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        let kd = model.config.hidden_size / model.config.num_attention_heads
+            * model.config.num_key_value_heads;
+
+        // 1. Kiểm thử lưu và nạp định dạng FP32
+        let tokens: Vec<usize> = vec![10, 20, 30, 40, 50];
+        let mut kv_fp32: Vec<Kv> = (0..model.layers.len())
+            .map(|_| Kv::with_capacity_precision(128, kd, false))
+            .collect();
+        for layer in &mut kv_fp32 {
+            for p in 0..tokens.len() {
+                layer.keys.extend((0..kd).map(|i| (p * 100 + i) as f32));
+                layer.values.extend((0..kd).map(|i| (p * 200 + i) as f32));
+            }
+        }
+
+        model
+            .save_session_to_file(&file_path, &tokens, &kv_fp32)
+            .unwrap();
+        assert!(file_path.exists());
+
+        // Nạp lại khớp 100% tiền tố
+        let (prefix, loaded_kv) = model
+            .load_session_from_file(&file_path, &tokens, kd)
+            .unwrap()
+            .expect("Phải nạp thành công session từ đĩa");
+
+        // Causal truncation giữ lại tối đa tokens.len() - 1 = 4
+        assert_eq!(prefix, 4);
+        assert_eq!(loaded_kv.len(), model.layers.len());
+        for (layer_orig, layer_loaded) in kv_fp32.iter().zip(&loaded_kv) {
+            assert_eq!(layer_loaded.positions(kd), 4);
+            assert_eq!(&layer_loaded.keys, &layer_orig.keys[..4 * kd]);
+            assert_eq!(&layer_loaded.values, &layer_orig.values[..4 * kd]);
+        }
+
+        // 2. Kiểm thử lưu và nạp định dạng nén FP8 E4M3
+        let mut kv_fp8: Vec<Kv> = (0..model.layers.len())
+            .map(|_| Kv::with_capacity_precision(128, kd, true))
+            .collect();
+        for layer in &mut kv_fp8 {
+            for p in 0..tokens.len() {
+                layer
+                    .fp8_keys
+                    .extend((0..kd).map(|i| ((p + i) % 255) as u8));
+                layer.fp8_key_scales.push(1.5);
+                layer
+                    .fp8_values
+                    .extend((0..kd).map(|i| ((p * 2 + i) % 255) as u8));
+                layer.fp8_value_scales.push(2.5);
+            }
+        }
+
+        model
+            .save_session_to_file(&file_path, &tokens, &kv_fp8)
+            .unwrap();
+        let (prefix_fp8, loaded_fp8) = model
+            .load_session_from_file(&file_path, &tokens, kd)
+            .unwrap()
+            .expect("Phải nạp thành công session FP8");
+        assert_eq!(prefix_fp8, 4);
+        for (layer_orig, layer_loaded) in kv_fp8.iter().zip(&loaded_fp8) {
+            assert!(layer_loaded.is_fp8);
+            assert_eq!(layer_loaded.positions(kd), 4);
+            assert_eq!(&layer_loaded.fp8_keys, &layer_orig.fp8_keys[..4 * kd]);
+            assert_eq!(
+                &layer_loaded.fp8_key_scales,
+                &layer_orig.fp8_key_scales[..4]
+            );
+            assert_eq!(&layer_loaded.fp8_values, &layer_orig.fp8_values[..4 * kd]);
+            assert_eq!(
+                &layer_loaded.fp8_value_scales,
+                &layer_orig.fp8_value_scales[..4]
+            );
+        }
+
+        // 3. Kiểm thử so khớp tiền tố không trùng (Diverging tokens)
+        let alt_tokens: Vec<usize> = vec![10, 20, 999, 40, 50]; // Lệch tại vị trí 2
+        let (prefix_div, loaded_div) = model
+            .load_session_from_file(&file_path, &alt_tokens, kd)
+            .unwrap()
+            .expect("Phải nạp phần tiền tố khớp trước khi lệch");
+        assert_eq!(prefix_div, 2); // Chỉ giữ lại 2 tokens [10, 20]
+        assert_eq!(loaded_div[0].positions(kd), 2);
+
+        // 4. Kiểm thử xử lý lỗi dữ liệu hỏng (Robustness on corruption)
+        fs::write(&file_path, b"CORRUPTED_SHORT_HEADER").unwrap();
+        let result = model
+            .load_session_from_file(&file_path, &tokens, kd)
+            .unwrap();
+        assert!(
+            result.is_none(),
+            "Dữ liệu header hỏng phải trả về None thay vì panic"
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_session_resume_after_engine_restart() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("moe_test_restart_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+
+        // 1. Chạy lượt 1 với engine 1
+        let mut model1 = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        model1.set_session_dir(Some(temp_dir.clone()));
+        let prompt1 = "Hello";
+        let out1 = model1
+            .generate_controlled(
+                prompt1,
+                2,
+                Some("chat-session-1"),
+                &|| Ok(()),
+                || Ok(()),
+                None,
+            )
+            .unwrap();
+        assert_eq!(out1.finish_reason, "length");
+        assert!(temp_dir.join("chat-session-1.moekv").exists());
+
+        // 2. "Khởi động lại máy chủ": Tạo thực thể engine 2 hoàn toàn mới (RAM trống 100%)
+        let mut model2 = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
+        assert!(model2.sessions.is_empty(), "Engine mới phải có RAM trống");
+        model2.set_session_dir(Some(temp_dir.clone()));
+
+        // Gửi lượt 2 tiếp nối hội thoại trên cùng session ID
+        let prompt2 = format!("{} world", prompt1);
+        let out2 = model2
+            .generate_controlled(
+                &prompt2,
+                2,
+                Some("chat-session-1"),
+                &|| Ok(()),
+                || Ok(()),
+                None,
+            )
+            .unwrap();
+
+        // Xác minh session được khôi phục thành công từ đĩa NVMe mà không phải prefill từ đầu
+        let metrics = out2.metrics.expect("Phải có metrics");
+        assert!(
+            metrics.cached_prompt_tokens > 0,
+            "Engine 2 sau khởi động lại phải khôi phục được tiền tố prompt từ đĩa NVMe: cached={}",
+            metrics.cached_prompt_tokens
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
