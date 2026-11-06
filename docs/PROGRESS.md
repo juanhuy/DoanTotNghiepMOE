@@ -53,6 +53,10 @@ Theo yêu cầu người dùng: mỗi bước triển khai phải ghi lại kế
 | 34 | Nâng cấp PILOT Lookahead: Routing Momentum EMA & Cumulative Confidence Cutoff | Hoàn thành | Tiếp thu từ Colibrì olmoe.c: Cân bằng nhiễu định tuyến qua EMA momentum (smooth=0.35), cắt tỉa I/O đĩa thừa qua Cumulative Confidence Cutoff (conf_limit=0.90); 88/88 tests PASS, 0 clippy warnings |
 | 36 | Nén KV Cache bằng FP8 E4M3 O(1) LUT Attention | Hoàn thành | Tiếp thu từ Colibrì kv_fp8.h: OCP E4M3 quantization, O(1) LUT decode, giảm 74.95% dung lượng KV (6.82MB -> 1.71MB), 100% token sequence parity, decode đạt 4.07 tok/s; 88/88 tests PASS, 0 clippy warnings |
 | 37 | Lưu trữ KV Cache Bền vững Chống Sập Nguồn (.moekv) & Phục hồi Trạng thái Lạnh | Hoàn thành | Tiếp thu từ Colibrì kv_persist.h: Định dạng nhị phân .moekv crash-safe, khôi phục session sau khởi động lại máy chủ trong vài ms, tái sử dụng 19 tokens prefix, giảm 58.7% prefill time; 90/90 tests PASS, 0 clippy warnings |
+| 38 | Nâng cấp Bàn điều khiển Trực quan & Live Heatmap Trình diễn Bảo vệ Luận văn | Hoàn thành | Tích hợp công tắc A/B động KV Cache FP8 E4M3, hiển thị mức chiếm dụng RAM/tiết kiệm 75%, huy hiệu đĩa NVMe L3, biểu đồ nhiệt thích ứng 1.024 chuyên gia theo skewness định tuyến thực tế; 90/90 tests PASS, 0 clippy warnings |
+| 39 | Speculative Decoding Engine với Fast Draft Router & Parallel Verification | Kế hoạch dự kiến | Tiếp thu từ Colibrì deepseek_v41.c & MTP: Dự đoán nhanh K tokens với Draft siêu nhẹ, xác thực song song 1 pass qua MoE Engine, tăng tốc giải mã +80% đến +120% (dự kiến đạt 7.5 - 9.0 tok/s) không suy hao chất lượng |
+| 40 | Ràng buộc Cấu trúc GBNF Grammar & JSON Schema Enforcement | Kế hoạch dự kiến | Tiếp thu từ Colibrì schema_gbnf.h: Mặt nạ phân phối logits theo bộ máy trạng thái FSM, đảm bảo JSON output chuẩn 100% không ảo giác cú pháp |
+| 41 | Linux io_uring Asynchronous NVMe Batch I/O Engine | Kế hoạch dự kiến | Tiếp thu từ Colibrì uring.h: Khử thuế context switch qua Shared Ring SQ/CQ, batch I/O nạp đồng thời toàn bộ Top-K cold experts |
 | R-2026-10-22 | Review hệ thống hiện tại | Hoàn thành review; chưa vá | 2 phát hiện P1, 7 P2; 59 tests pass ở debug/release, Clippy đạt, fmt chưa đạt; chi tiết trong `docs/reviews/2026-10-22-system-review.md` |
 | AI-2026-10-22 | Chuẩn hóa project AI-first và bằng chứng hai máy | Hoàn thành nền tảng | 2 skills/2 reviewer roles, workflow/CI dùng chung; giữ 40 raw nguyên byte, bỏ 33 JSON trùng; 24 tooling tests + 59 Rust tests/profile đạt; chưa đo baseline 7B mới |
 
@@ -2539,6 +2543,74 @@ Kết luận và bước tiếp theo:
   - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
   - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
 
+## 2026-11-05 — Bước 38: Nâng cấp Bàn điều khiển Trực quan & Live Heatmap Trình diễn Bảo vệ Luận văn (Defense Workbench & Real-Time Skewness Heatmap)
+
+- **Mục tiêu:**
+  - Nâng cấp giao diện trực quan Web Workbench phục vụ buổi bảo vệ đồ án tốt nghiệp trước Hội đồng đánh giá:
+    - Cho phép hội đồng tận mắt chứng kiến và tương tác thời gian thực (interactive live demonstration) các cơ chế phân tầng 3 cấp và tối ưu bộ nhớ.
+    - Bổ sung nút chuyển đổi động A/B KV Cache FP8 E4M3 (`POST /api/kv_fp8/toggle`) ngay trên thanh tiêu đề của Web UI mà không cần khởi động lại máy chủ.
+    - Hiển thị trực quan dung lượng bộ nhớ RAM của KV Cache theo thời gian thực (so sánh trực diện giữa FP32 và FP8 E4M3 với mức tiết kiệm -75%).
+    - Hiển thị trạng thái lưu trữ bền vững SSD NVMe L3 (`SSD L3: ON`).
+    - Nâng cấp chế độ hiển thị Biểu đồ nhiệt tích lũy (Cumulative Heatmap) trên ma trận $16 \times 64 = 1.024$ chuyên gia với bảng màu dải động thích ứng (Crimson/Rose $\rightarrow$ Amber $\rightarrow$ Emerald $\rightarrow$ Sky Blue), làm nổi bật hiện tượng lệch định tuyến (Routing Skewness & Gini inequality) mà luận văn đã chứng minh lý thuyết.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Bổ sung trường `pub kv_fp8: bool` và `pub session_dir: Option<String>` vào `struct ExpertStatusReport`.
+     - Cập nhật hàm `expert_status(&self)` trả về trạng thái nén FP8 và thư mục session disk.
+     - Hiện thực `pub fn toggle_kv_fp8(&mut self) -> bool` đảo trạng thái nén bộ nhớ đệm KV.
+  2. `src/engine.rs`:
+     - Hiện thực phương thức `pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>>` và `pub fn is_kv_fp8(&self) -> bool` trên `InferenceEngine`.
+  3. `src/main.rs`:
+     - Khai báo 2 API endpoints mới:
+       - `POST /api/kv_fp8/toggle`: Đảo trạng thái nén KV FP8 và cập nhật cache trạng thái tức thì.
+       - `GET /api/kv_fp8/status`: Truy vấn trạng thái nén KV FP8 và thư mục lưu trữ NVMe.
+  4. `web/index.html`:
+     - Bổ sung nút bấm công tắc `[KV FP8: ON/OFF]` với hiệu ứng màu ngọc lục bảo (Emerald) trên header.
+     - Bổ sung huy hiệu `[SSD L3: ON]` hiển thị đường dẫn thư mục lưu trữ trạng thái bền vững.
+     - Nâng cấp thước đo Context Meter: Hiển thị song song số lượng tokens và dung lượng RAM của KV Cache (ví dụ `1.71 MB (FP8 E4M3 (-75%))` so với `6.82 MB (FP32 Full)`).
+     - Nâng cấp thuật toán vẽ Canvas Ma trận 1.024 Chuyên gia: Trong chế độ `Cumulative Heatmap`, quét tìm `maxHeat` thích ứng của phiên làm việc và gán màu đa bậc:
+       - $>70\%$ max heat: Đỏ thẫm/Hồng cánh sen (`#f43f5e` - Ultra Hot).
+       - $40\% - 70\%$ max heat: Vàng hổ phách (`#f59e0b` - Hot).
+       - $15\% - 40\%$ max heat: Xanh lục bảo (`#10b981` - Warm).
+       - $<15\%$ max heat: Xanh da trời (`#0284c7` - Cool).
+       - $0$ accesses: Xanh đen (`#0f172a` - Inactive Cold).
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **100% PASS** (kiểm tra testbeds, evidence matrix, benchmarks).
+  - `python3 tools/check.py --web`: **100% PASS** (kiểm tra toàn bộ JavaScript/HTML frontend, SSE client tests).
+
+## Kế hoạch Nâng cấp Tiếp theo (Future Roadmap)
+
+### Bước 39: Speculative Decoding Engine với Fast Draft Router & Parallel Verification (Học hỏi Colibrì `deepseek_v41.c` & `colibri.c` MTP)
+- **Mục tiêu:**
+  - Giải quyết nút thắt cổ chai lớn nhất của kiến trúc MoE trên phần cứng cá nhân: mỗi bước sinh từ phải nạp và tính qua 8 chuyên gia độc lập, khiến tốc độ giải mã bị chặn ở ngưỡng 4–6 tokens/s.
+  - Xây dựng cơ chế **Suy luận suy đoán (Speculative Decoding)** bất đối xứng cho MoE:
+    1. **Tầng Draft siêu nhẹ:** Dự đoán trước chuỗi $K$ tokens ($K = 3 \sim 4$) bằng cơ chế Fast N-gram Speculation hoặc Lightweight Draft Router chỉ mất $<0.5\text{ ms}$.
+    2. **Tầng Parallel Verification:** Đưa toàn bộ $K$ tokens vào MoE Engine để thẩm định song song trong **1 lượt Forward Pass duy nhất** (tận dụng kiến trúc Layer-major Causal Batch Prefill đã có ở Bước 5).
+    3. **Tầng Rejection Sampling & KV Rollback:** So sánh phân phối xác suất giữa Draft và MoE Target. Nếu khớp, chấp thuận (Accept) toàn bộ chuỗi; nếu lệch, rollback con trỏ KV Cache về vị trí token bị từ chối đầu tiên và thay thế bằng token đúng từ Target model.
+- **Kỳ vọng hiệu năng & Giá trị học thuật:**
+  - Tăng thông lượng giải mã từ **$\sim 4.1\text{ tok/s}$ lên $\sim 7.5 - 9.0\text{ tok/s}$ (+80% đến +120%)** hoàn toàn không làm suy hao chất lượng toán học (lossless bit-exact parity).
+  - Trực quan hóa tỷ lệ chấp thuận (`Acceptance Rate: ~75%`) và hệ số tăng tốc (`Speedup: 1.8x`) trực tiếp trên Web Defense Workbench.
+
+### Bước 40: Ràng buộc Cấu trúc GBNF Grammar & JSON Schema Enforcement (`schema_gbnf.h`)
+- **Mục tiêu:**
+  - Tiếp thu bộ giải mã ngữ pháp GBNF từ `colibri/c/schema_gbnf.h` và `grammar.h`.
+  - Tích hợp bộ máy trạng thái hữu hạn (FSM / PDA) trực tiếp vào tầng Logits Filtering / Masking trước Softmax/Argmax.
+  - Che toàn bộ token không thỏa mãn cú pháp JSON Schema tại từng bước sinh.
+  - Hỗ trợ tham số `response_format: { type: "json_object", schema: ... }` trong OpenAI API `/v1/chat/completions`.
+  - Đảm bảo 100% dữ liệu xuất ra chuẩn cú pháp JSON, triệt tiêu hoàn toàn ảo giác cấu trúc khi phục vụ AI Agent.
+
+### Bước 41: Linux `io_uring` Asynchronous NVMe Batch I/O Engine (`uring.h`)
+- **Mục tiêu:**
+  - Tiếp thu cơ chế I/O bất đồng bộ hiệu năng cao từ `colibri/c/uring.h`.
+  - Thay thế lời gọi hệ thống `pread64` đồng bộ bằng cặp hàng đợi vòng dùng chung bộ nhớ giữa User space và Kernel space (Submission Queue SQ & Completion Queue CQ).
+  - Gửi đồng thời toàn bộ yêu cầu nạp Top-K Cold Experts của layer tiếp theo vào NVMe controller chỉ với 1 system call `io_uring_enter` (hoặc chế độ SQPOLL không cần system call).
+  - Triệt tiêu chi phí context switch và CPU kernel time khi nạp chuyên gia từ đĩa SSD NVMe.
+
+
 ## 2026-11-03 — Bước 34: Nâng cấp PILOT Lookahead: Routing Momentum EMA & Cumulative Confidence Cutoff (Học hỏi Colibrì)
 
 - **Mục tiêu:**
@@ -2583,6 +2655,74 @@ Kết luận và bước tiếp theo:
   - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
   - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
   - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
+
+## 2026-11-05 — Bước 38: Nâng cấp Bàn điều khiển Trực quan & Live Heatmap Trình diễn Bảo vệ Luận văn (Defense Workbench & Real-Time Skewness Heatmap)
+
+- **Mục tiêu:**
+  - Nâng cấp giao diện trực quan Web Workbench phục vụ buổi bảo vệ đồ án tốt nghiệp trước Hội đồng đánh giá:
+    - Cho phép hội đồng tận mắt chứng kiến và tương tác thời gian thực (interactive live demonstration) các cơ chế phân tầng 3 cấp và tối ưu bộ nhớ.
+    - Bổ sung nút chuyển đổi động A/B KV Cache FP8 E4M3 (`POST /api/kv_fp8/toggle`) ngay trên thanh tiêu đề của Web UI mà không cần khởi động lại máy chủ.
+    - Hiển thị trực quan dung lượng bộ nhớ RAM của KV Cache theo thời gian thực (so sánh trực diện giữa FP32 và FP8 E4M3 với mức tiết kiệm -75%).
+    - Hiển thị trạng thái lưu trữ bền vững SSD NVMe L3 (`SSD L3: ON`).
+    - Nâng cấp chế độ hiển thị Biểu đồ nhiệt tích lũy (Cumulative Heatmap) trên ma trận $16 \times 64 = 1.024$ chuyên gia với bảng màu dải động thích ứng (Crimson/Rose $\rightarrow$ Amber $\rightarrow$ Emerald $\rightarrow$ Sky Blue), làm nổi bật hiện tượng lệch định tuyến (Routing Skewness & Gini inequality) mà luận văn đã chứng minh lý thuyết.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Bổ sung trường `pub kv_fp8: bool` và `pub session_dir: Option<String>` vào `struct ExpertStatusReport`.
+     - Cập nhật hàm `expert_status(&self)` trả về trạng thái nén FP8 và thư mục session disk.
+     - Hiện thực `pub fn toggle_kv_fp8(&mut self) -> bool` đảo trạng thái nén bộ nhớ đệm KV.
+  2. `src/engine.rs`:
+     - Hiện thực phương thức `pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>>` và `pub fn is_kv_fp8(&self) -> bool` trên `InferenceEngine`.
+  3. `src/main.rs`:
+     - Khai báo 2 API endpoints mới:
+       - `POST /api/kv_fp8/toggle`: Đảo trạng thái nén KV FP8 và cập nhật cache trạng thái tức thì.
+       - `GET /api/kv_fp8/status`: Truy vấn trạng thái nén KV FP8 và thư mục lưu trữ NVMe.
+  4. `web/index.html`:
+     - Bổ sung nút bấm công tắc `[KV FP8: ON/OFF]` với hiệu ứng màu ngọc lục bảo (Emerald) trên header.
+     - Bổ sung huy hiệu `[SSD L3: ON]` hiển thị đường dẫn thư mục lưu trữ trạng thái bền vững.
+     - Nâng cấp thước đo Context Meter: Hiển thị song song số lượng tokens và dung lượng RAM của KV Cache (ví dụ `1.71 MB (FP8 E4M3 (-75%))` so với `6.82 MB (FP32 Full)`).
+     - Nâng cấp thuật toán vẽ Canvas Ma trận 1.024 Chuyên gia: Trong chế độ `Cumulative Heatmap`, quét tìm `maxHeat` thích ứng của phiên làm việc và gán màu đa bậc:
+       - $>70\%$ max heat: Đỏ thẫm/Hồng cánh sen (`#f43f5e` - Ultra Hot).
+       - $40\% - 70\%$ max heat: Vàng hổ phách (`#f59e0b` - Hot).
+       - $15\% - 40\%$ max heat: Xanh lục bảo (`#10b981` - Warm).
+       - $<15\%$ max heat: Xanh da trời (`#0284c7` - Cool).
+       - $0$ accesses: Xanh đen (`#0f172a` - Inactive Cold).
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **100% PASS** (kiểm tra testbeds, evidence matrix, benchmarks).
+  - `python3 tools/check.py --web`: **100% PASS** (kiểm tra toàn bộ JavaScript/HTML frontend, SSE client tests).
+
+## Kế hoạch Nâng cấp Tiếp theo (Future Roadmap)
+
+### Bước 39: Speculative Decoding Engine với Fast Draft Router & Parallel Verification (Học hỏi Colibrì `deepseek_v41.c` & `colibri.c` MTP)
+- **Mục tiêu:**
+  - Giải quyết nút thắt cổ chai lớn nhất của kiến trúc MoE trên phần cứng cá nhân: mỗi bước sinh từ phải nạp và tính qua 8 chuyên gia độc lập, khiến tốc độ giải mã bị chặn ở ngưỡng 4–6 tokens/s.
+  - Xây dựng cơ chế **Suy luận suy đoán (Speculative Decoding)** bất đối xứng cho MoE:
+    1. **Tầng Draft siêu nhẹ:** Dự đoán trước chuỗi $K$ tokens ($K = 3 \sim 4$) bằng cơ chế Fast N-gram Speculation hoặc Lightweight Draft Router chỉ mất $<0.5\text{ ms}$.
+    2. **Tầng Parallel Verification:** Đưa toàn bộ $K$ tokens vào MoE Engine để thẩm định song song trong **1 lượt Forward Pass duy nhất** (tận dụng kiến trúc Layer-major Causal Batch Prefill đã có ở Bước 5).
+    3. **Tầng Rejection Sampling & KV Rollback:** So sánh phân phối xác suất giữa Draft và MoE Target. Nếu khớp, chấp thuận (Accept) toàn bộ chuỗi; nếu lệch, rollback con trỏ KV Cache về vị trí token bị từ chối đầu tiên và thay thế bằng token đúng từ Target model.
+- **Kỳ vọng hiệu năng & Giá trị học thuật:**
+  - Tăng thông lượng giải mã từ **$\sim 4.1\text{ tok/s}$ lên $\sim 7.5 - 9.0\text{ tok/s}$ (+80% đến +120%)** hoàn toàn không làm suy hao chất lượng toán học (lossless bit-exact parity).
+  - Trực quan hóa tỷ lệ chấp thuận (`Acceptance Rate: ~75%`) và hệ số tăng tốc (`Speedup: 1.8x`) trực tiếp trên Web Defense Workbench.
+
+### Bước 40: Ràng buộc Cấu trúc GBNF Grammar & JSON Schema Enforcement (`schema_gbnf.h`)
+- **Mục tiêu:**
+  - Tiếp thu bộ giải mã ngữ pháp GBNF từ `colibri/c/schema_gbnf.h` và `grammar.h`.
+  - Tích hợp bộ máy trạng thái hữu hạn (FSM / PDA) trực tiếp vào tầng Logits Filtering / Masking trước Softmax/Argmax.
+  - Che toàn bộ token không thỏa mãn cú pháp JSON Schema tại từng bước sinh.
+  - Hỗ trợ tham số `response_format: { type: "json_object", schema: ... }` trong OpenAI API `/v1/chat/completions`.
+  - Đảm bảo 100% dữ liệu xuất ra chuẩn cú pháp JSON, triệt tiêu hoàn toàn ảo giác cấu trúc khi phục vụ AI Agent.
+
+### Bước 41: Linux `io_uring` Asynchronous NVMe Batch I/O Engine (`uring.h`)
+- **Mục tiêu:**
+  - Tiếp thu cơ chế I/O bất đồng bộ hiệu năng cao từ `colibri/c/uring.h`.
+  - Thay thế lời gọi hệ thống `pread64` đồng bộ bằng cặp hàng đợi vòng dùng chung bộ nhớ giữa User space và Kernel space (Submission Queue SQ & Completion Queue CQ).
+  - Gửi đồng thời toàn bộ yêu cầu nạp Top-K Cold Experts của layer tiếp theo vào NVMe controller chỉ với 1 system call `io_uring_enter` (hoặc chế độ SQPOLL không cần system call).
+  - Triệt tiêu chi phí context switch và CPU kernel time khi nạp chuyên gia từ đĩa SSD NVMe.
+
 
 ## 2026-11-05 — Bước 37: Lưu trữ KV Cache Bền vững Chống Sập Nguồn (`.moekv`) & Phục hồi Trạng thái Lạnh (Học hỏi Colibrì `kv_persist.h` & `kv_prefix.h`)
 
@@ -2633,6 +2773,74 @@ Kết luận và bước tiếp theo:
   - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
   - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
   - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
+
+## 2026-11-05 — Bước 38: Nâng cấp Bàn điều khiển Trực quan & Live Heatmap Trình diễn Bảo vệ Luận văn (Defense Workbench & Real-Time Skewness Heatmap)
+
+- **Mục tiêu:**
+  - Nâng cấp giao diện trực quan Web Workbench phục vụ buổi bảo vệ đồ án tốt nghiệp trước Hội đồng đánh giá:
+    - Cho phép hội đồng tận mắt chứng kiến và tương tác thời gian thực (interactive live demonstration) các cơ chế phân tầng 3 cấp và tối ưu bộ nhớ.
+    - Bổ sung nút chuyển đổi động A/B KV Cache FP8 E4M3 (`POST /api/kv_fp8/toggle`) ngay trên thanh tiêu đề của Web UI mà không cần khởi động lại máy chủ.
+    - Hiển thị trực quan dung lượng bộ nhớ RAM của KV Cache theo thời gian thực (so sánh trực diện giữa FP32 và FP8 E4M3 với mức tiết kiệm -75%).
+    - Hiển thị trạng thái lưu trữ bền vững SSD NVMe L3 (`SSD L3: ON`).
+    - Nâng cấp chế độ hiển thị Biểu đồ nhiệt tích lũy (Cumulative Heatmap) trên ma trận $16 \times 64 = 1.024$ chuyên gia với bảng màu dải động thích ứng (Crimson/Rose $\rightarrow$ Amber $\rightarrow$ Emerald $\rightarrow$ Sky Blue), làm nổi bật hiện tượng lệch định tuyến (Routing Skewness & Gini inequality) mà luận văn đã chứng minh lý thuyết.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Bổ sung trường `pub kv_fp8: bool` và `pub session_dir: Option<String>` vào `struct ExpertStatusReport`.
+     - Cập nhật hàm `expert_status(&self)` trả về trạng thái nén FP8 và thư mục session disk.
+     - Hiện thực `pub fn toggle_kv_fp8(&mut self) -> bool` đảo trạng thái nén bộ nhớ đệm KV.
+  2. `src/engine.rs`:
+     - Hiện thực phương thức `pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>>` và `pub fn is_kv_fp8(&self) -> bool` trên `InferenceEngine`.
+  3. `src/main.rs`:
+     - Khai báo 2 API endpoints mới:
+       - `POST /api/kv_fp8/toggle`: Đảo trạng thái nén KV FP8 và cập nhật cache trạng thái tức thì.
+       - `GET /api/kv_fp8/status`: Truy vấn trạng thái nén KV FP8 và thư mục lưu trữ NVMe.
+  4. `web/index.html`:
+     - Bổ sung nút bấm công tắc `[KV FP8: ON/OFF]` với hiệu ứng màu ngọc lục bảo (Emerald) trên header.
+     - Bổ sung huy hiệu `[SSD L3: ON]` hiển thị đường dẫn thư mục lưu trữ trạng thái bền vững.
+     - Nâng cấp thước đo Context Meter: Hiển thị song song số lượng tokens và dung lượng RAM của KV Cache (ví dụ `1.71 MB (FP8 E4M3 (-75%))` so với `6.82 MB (FP32 Full)`).
+     - Nâng cấp thuật toán vẽ Canvas Ma trận 1.024 Chuyên gia: Trong chế độ `Cumulative Heatmap`, quét tìm `maxHeat` thích ứng của phiên làm việc và gán màu đa bậc:
+       - $>70\%$ max heat: Đỏ thẫm/Hồng cánh sen (`#f43f5e` - Ultra Hot).
+       - $40\% - 70\%$ max heat: Vàng hổ phách (`#f59e0b` - Hot).
+       - $15\% - 40\%$ max heat: Xanh lục bảo (`#10b981` - Warm).
+       - $<15\%$ max heat: Xanh da trời (`#0284c7` - Cool).
+       - $0$ accesses: Xanh đen (`#0f172a` - Inactive Cold).
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **100% PASS** (kiểm tra testbeds, evidence matrix, benchmarks).
+  - `python3 tools/check.py --web`: **100% PASS** (kiểm tra toàn bộ JavaScript/HTML frontend, SSE client tests).
+
+## Kế hoạch Nâng cấp Tiếp theo (Future Roadmap)
+
+### Bước 39: Speculative Decoding Engine với Fast Draft Router & Parallel Verification (Học hỏi Colibrì `deepseek_v41.c` & `colibri.c` MTP)
+- **Mục tiêu:**
+  - Giải quyết nút thắt cổ chai lớn nhất của kiến trúc MoE trên phần cứng cá nhân: mỗi bước sinh từ phải nạp và tính qua 8 chuyên gia độc lập, khiến tốc độ giải mã bị chặn ở ngưỡng 4–6 tokens/s.
+  - Xây dựng cơ chế **Suy luận suy đoán (Speculative Decoding)** bất đối xứng cho MoE:
+    1. **Tầng Draft siêu nhẹ:** Dự đoán trước chuỗi $K$ tokens ($K = 3 \sim 4$) bằng cơ chế Fast N-gram Speculation hoặc Lightweight Draft Router chỉ mất $<0.5\text{ ms}$.
+    2. **Tầng Parallel Verification:** Đưa toàn bộ $K$ tokens vào MoE Engine để thẩm định song song trong **1 lượt Forward Pass duy nhất** (tận dụng kiến trúc Layer-major Causal Batch Prefill đã có ở Bước 5).
+    3. **Tầng Rejection Sampling & KV Rollback:** So sánh phân phối xác suất giữa Draft và MoE Target. Nếu khớp, chấp thuận (Accept) toàn bộ chuỗi; nếu lệch, rollback con trỏ KV Cache về vị trí token bị từ chối đầu tiên và thay thế bằng token đúng từ Target model.
+- **Kỳ vọng hiệu năng & Giá trị học thuật:**
+  - Tăng thông lượng giải mã từ **$\sim 4.1\text{ tok/s}$ lên $\sim 7.5 - 9.0\text{ tok/s}$ (+80% đến +120%)** hoàn toàn không làm suy hao chất lượng toán học (lossless bit-exact parity).
+  - Trực quan hóa tỷ lệ chấp thuận (`Acceptance Rate: ~75%`) và hệ số tăng tốc (`Speedup: 1.8x`) trực tiếp trên Web Defense Workbench.
+
+### Bước 40: Ràng buộc Cấu trúc GBNF Grammar & JSON Schema Enforcement (`schema_gbnf.h`)
+- **Mục tiêu:**
+  - Tiếp thu bộ giải mã ngữ pháp GBNF từ `colibri/c/schema_gbnf.h` và `grammar.h`.
+  - Tích hợp bộ máy trạng thái hữu hạn (FSM / PDA) trực tiếp vào tầng Logits Filtering / Masking trước Softmax/Argmax.
+  - Che toàn bộ token không thỏa mãn cú pháp JSON Schema tại từng bước sinh.
+  - Hỗ trợ tham số `response_format: { type: "json_object", schema: ... }` trong OpenAI API `/v1/chat/completions`.
+  - Đảm bảo 100% dữ liệu xuất ra chuẩn cú pháp JSON, triệt tiêu hoàn toàn ảo giác cấu trúc khi phục vụ AI Agent.
+
+### Bước 41: Linux `io_uring` Asynchronous NVMe Batch I/O Engine (`uring.h`)
+- **Mục tiêu:**
+  - Tiếp thu cơ chế I/O bất đồng bộ hiệu năng cao từ `colibri/c/uring.h`.
+  - Thay thế lời gọi hệ thống `pread64` đồng bộ bằng cặp hàng đợi vòng dùng chung bộ nhớ giữa User space và Kernel space (Submission Queue SQ & Completion Queue CQ).
+  - Gửi đồng thời toàn bộ yêu cầu nạp Top-K Cold Experts của layer tiếp theo vào NVMe controller chỉ với 1 system call `io_uring_enter` (hoặc chế độ SQPOLL không cần system call).
+  - Triệt tiêu chi phí context switch và CPU kernel time khi nạp chuyên gia từ đĩa SSD NVMe.
+
 
 ## 2026-11-03 — Bước 36: Nén Bộ nhớ Đệm KV Cache bằng Định dạng FP8 E4M3 & Giải mã O(1) LUT Attention (Học hỏi Colibrì)
 
@@ -2690,6 +2898,74 @@ Kết luận và bước tiếp theo:
   - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
   - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
 
+## 2026-11-05 — Bước 38: Nâng cấp Bàn điều khiển Trực quan & Live Heatmap Trình diễn Bảo vệ Luận văn (Defense Workbench & Real-Time Skewness Heatmap)
+
+- **Mục tiêu:**
+  - Nâng cấp giao diện trực quan Web Workbench phục vụ buổi bảo vệ đồ án tốt nghiệp trước Hội đồng đánh giá:
+    - Cho phép hội đồng tận mắt chứng kiến và tương tác thời gian thực (interactive live demonstration) các cơ chế phân tầng 3 cấp và tối ưu bộ nhớ.
+    - Bổ sung nút chuyển đổi động A/B KV Cache FP8 E4M3 (`POST /api/kv_fp8/toggle`) ngay trên thanh tiêu đề của Web UI mà không cần khởi động lại máy chủ.
+    - Hiển thị trực quan dung lượng bộ nhớ RAM của KV Cache theo thời gian thực (so sánh trực diện giữa FP32 và FP8 E4M3 với mức tiết kiệm -75%).
+    - Hiển thị trạng thái lưu trữ bền vững SSD NVMe L3 (`SSD L3: ON`).
+    - Nâng cấp chế độ hiển thị Biểu đồ nhiệt tích lũy (Cumulative Heatmap) trên ma trận $16 \times 64 = 1.024$ chuyên gia với bảng màu dải động thích ứng (Crimson/Rose $\rightarrow$ Amber $\rightarrow$ Emerald $\rightarrow$ Sky Blue), làm nổi bật hiện tượng lệch định tuyến (Routing Skewness & Gini inequality) mà luận văn đã chứng minh lý thuyết.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Bổ sung trường `pub kv_fp8: bool` và `pub session_dir: Option<String>` vào `struct ExpertStatusReport`.
+     - Cập nhật hàm `expert_status(&self)` trả về trạng thái nén FP8 và thư mục session disk.
+     - Hiện thực `pub fn toggle_kv_fp8(&mut self) -> bool` đảo trạng thái nén bộ nhớ đệm KV.
+  2. `src/engine.rs`:
+     - Hiện thực phương thức `pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>>` và `pub fn is_kv_fp8(&self) -> bool` trên `InferenceEngine`.
+  3. `src/main.rs`:
+     - Khai báo 2 API endpoints mới:
+       - `POST /api/kv_fp8/toggle`: Đảo trạng thái nén KV FP8 và cập nhật cache trạng thái tức thì.
+       - `GET /api/kv_fp8/status`: Truy vấn trạng thái nén KV FP8 và thư mục lưu trữ NVMe.
+  4. `web/index.html`:
+     - Bổ sung nút bấm công tắc `[KV FP8: ON/OFF]` với hiệu ứng màu ngọc lục bảo (Emerald) trên header.
+     - Bổ sung huy hiệu `[SSD L3: ON]` hiển thị đường dẫn thư mục lưu trữ trạng thái bền vững.
+     - Nâng cấp thước đo Context Meter: Hiển thị song song số lượng tokens và dung lượng RAM của KV Cache (ví dụ `1.71 MB (FP8 E4M3 (-75%))` so với `6.82 MB (FP32 Full)`).
+     - Nâng cấp thuật toán vẽ Canvas Ma trận 1.024 Chuyên gia: Trong chế độ `Cumulative Heatmap`, quét tìm `maxHeat` thích ứng của phiên làm việc và gán màu đa bậc:
+       - $>70\%$ max heat: Đỏ thẫm/Hồng cánh sen (`#f43f5e` - Ultra Hot).
+       - $40\% - 70\%$ max heat: Vàng hổ phách (`#f59e0b` - Hot).
+       - $15\% - 40\%$ max heat: Xanh lục bảo (`#10b981` - Warm).
+       - $<15\%$ max heat: Xanh da trời (`#0284c7` - Cool).
+       - $0$ accesses: Xanh đen (`#0f172a` - Inactive Cold).
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **100% PASS** (kiểm tra testbeds, evidence matrix, benchmarks).
+  - `python3 tools/check.py --web`: **100% PASS** (kiểm tra toàn bộ JavaScript/HTML frontend, SSE client tests).
+
+## Kế hoạch Nâng cấp Tiếp theo (Future Roadmap)
+
+### Bước 39: Speculative Decoding Engine với Fast Draft Router & Parallel Verification (Học hỏi Colibrì `deepseek_v41.c` & `colibri.c` MTP)
+- **Mục tiêu:**
+  - Giải quyết nút thắt cổ chai lớn nhất của kiến trúc MoE trên phần cứng cá nhân: mỗi bước sinh từ phải nạp và tính qua 8 chuyên gia độc lập, khiến tốc độ giải mã bị chặn ở ngưỡng 4–6 tokens/s.
+  - Xây dựng cơ chế **Suy luận suy đoán (Speculative Decoding)** bất đối xứng cho MoE:
+    1. **Tầng Draft siêu nhẹ:** Dự đoán trước chuỗi $K$ tokens ($K = 3 \sim 4$) bằng cơ chế Fast N-gram Speculation hoặc Lightweight Draft Router chỉ mất $<0.5\text{ ms}$.
+    2. **Tầng Parallel Verification:** Đưa toàn bộ $K$ tokens vào MoE Engine để thẩm định song song trong **1 lượt Forward Pass duy nhất** (tận dụng kiến trúc Layer-major Causal Batch Prefill đã có ở Bước 5).
+    3. **Tầng Rejection Sampling & KV Rollback:** So sánh phân phối xác suất giữa Draft và MoE Target. Nếu khớp, chấp thuận (Accept) toàn bộ chuỗi; nếu lệch, rollback con trỏ KV Cache về vị trí token bị từ chối đầu tiên và thay thế bằng token đúng từ Target model.
+- **Kỳ vọng hiệu năng & Giá trị học thuật:**
+  - Tăng thông lượng giải mã từ **$\sim 4.1\text{ tok/s}$ lên $\sim 7.5 - 9.0\text{ tok/s}$ (+80% đến +120%)** hoàn toàn không làm suy hao chất lượng toán học (lossless bit-exact parity).
+  - Trực quan hóa tỷ lệ chấp thuận (`Acceptance Rate: ~75%`) và hệ số tăng tốc (`Speedup: 1.8x`) trực tiếp trên Web Defense Workbench.
+
+### Bước 40: Ràng buộc Cấu trúc GBNF Grammar & JSON Schema Enforcement (`schema_gbnf.h`)
+- **Mục tiêu:**
+  - Tiếp thu bộ giải mã ngữ pháp GBNF từ `colibri/c/schema_gbnf.h` và `grammar.h`.
+  - Tích hợp bộ máy trạng thái hữu hạn (FSM / PDA) trực tiếp vào tầng Logits Filtering / Masking trước Softmax/Argmax.
+  - Che toàn bộ token không thỏa mãn cú pháp JSON Schema tại từng bước sinh.
+  - Hỗ trợ tham số `response_format: { type: "json_object", schema: ... }` trong OpenAI API `/v1/chat/completions`.
+  - Đảm bảo 100% dữ liệu xuất ra chuẩn cú pháp JSON, triệt tiêu hoàn toàn ảo giác cấu trúc khi phục vụ AI Agent.
+
+### Bước 41: Linux `io_uring` Asynchronous NVMe Batch I/O Engine (`uring.h`)
+- **Mục tiêu:**
+  - Tiếp thu cơ chế I/O bất đồng bộ hiệu năng cao từ `colibri/c/uring.h`.
+  - Thay thế lời gọi hệ thống `pread64` đồng bộ bằng cặp hàng đợi vòng dùng chung bộ nhớ giữa User space và Kernel space (Submission Queue SQ & Completion Queue CQ).
+  - Gửi đồng thời toàn bộ yêu cầu nạp Top-K Cold Experts của layer tiếp theo vào NVMe controller chỉ với 1 system call `io_uring_enter` (hoặc chế độ SQPOLL không cần system call).
+  - Triệt tiêu chi phí context switch và CPU kernel time khi nạp chuyên gia từ đĩa SSD NVMe.
+
+
 ## 2026-11-05 — Bước 37: Lưu trữ KV Cache Bền vững Chống Sập Nguồn (`.moekv`) & Phục hồi Trạng thái Lạnh (Học hỏi Colibrì `kv_persist.h` & `kv_prefix.h`)
 
 - **Mục tiêu:**
@@ -2739,3 +3015,71 @@ Kết luận và bước tiếp theo:
   - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
   - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
   - `python3 tools/check.py --rust` & `python3 tools/check.py --web`: **PASS toàn bộ 100%**.
+
+## 2026-11-05 — Bước 38: Nâng cấp Bàn điều khiển Trực quan & Live Heatmap Trình diễn Bảo vệ Luận văn (Defense Workbench & Real-Time Skewness Heatmap)
+
+- **Mục tiêu:**
+  - Nâng cấp giao diện trực quan Web Workbench phục vụ buổi bảo vệ đồ án tốt nghiệp trước Hội đồng đánh giá:
+    - Cho phép hội đồng tận mắt chứng kiến và tương tác thời gian thực (interactive live demonstration) các cơ chế phân tầng 3 cấp và tối ưu bộ nhớ.
+    - Bổ sung nút chuyển đổi động A/B KV Cache FP8 E4M3 (`POST /api/kv_fp8/toggle`) ngay trên thanh tiêu đề của Web UI mà không cần khởi động lại máy chủ.
+    - Hiển thị trực quan dung lượng bộ nhớ RAM của KV Cache theo thời gian thực (so sánh trực diện giữa FP32 và FP8 E4M3 với mức tiết kiệm -75%).
+    - Hiển thị trạng thái lưu trữ bền vững SSD NVMe L3 (`SSD L3: ON`).
+    - Nâng cấp chế độ hiển thị Biểu đồ nhiệt tích lũy (Cumulative Heatmap) trên ma trận $16 \times 64 = 1.024$ chuyên gia với bảng màu dải động thích ứng (Crimson/Rose $\rightarrow$ Amber $\rightarrow$ Emerald $\rightarrow$ Sky Blue), làm nổi bật hiện tượng lệch định tuyến (Routing Skewness & Gini inequality) mà luận văn đã chứng minh lý thuyết.
+
+- **Các thay đổi mã nguồn:**
+  1. `src/olmoe.rs`:
+     - Bổ sung trường `pub kv_fp8: bool` và `pub session_dir: Option<String>` vào `struct ExpertStatusReport`.
+     - Cập nhật hàm `expert_status(&self)` trả về trạng thái nén FP8 và thư mục session disk.
+     - Hiện thực `pub fn toggle_kv_fp8(&mut self) -> bool` đảo trạng thái nén bộ nhớ đệm KV.
+  2. `src/engine.rs`:
+     - Hiện thực phương thức `pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>>` và `pub fn is_kv_fp8(&self) -> bool` trên `InferenceEngine`.
+  3. `src/main.rs`:
+     - Khai báo 2 API endpoints mới:
+       - `POST /api/kv_fp8/toggle`: Đảo trạng thái nén KV FP8 và cập nhật cache trạng thái tức thì.
+       - `GET /api/kv_fp8/status`: Truy vấn trạng thái nén KV FP8 và thư mục lưu trữ NVMe.
+  4. `web/index.html`:
+     - Bổ sung nút bấm công tắc `[KV FP8: ON/OFF]` với hiệu ứng màu ngọc lục bảo (Emerald) trên header.
+     - Bổ sung huy hiệu `[SSD L3: ON]` hiển thị đường dẫn thư mục lưu trữ trạng thái bền vững.
+     - Nâng cấp thước đo Context Meter: Hiển thị song song số lượng tokens và dung lượng RAM của KV Cache (ví dụ `1.71 MB (FP8 E4M3 (-75%))` so với `6.82 MB (FP32 Full)`).
+     - Nâng cấp thuật toán vẽ Canvas Ma trận 1.024 Chuyên gia: Trong chế độ `Cumulative Heatmap`, quét tìm `maxHeat` thích ứng của phiên làm việc và gán màu đa bậc:
+       - $>70\%$ max heat: Đỏ thẫm/Hồng cánh sen (`#f43f5e` - Ultra Hot).
+       - $40\% - 70\%$ max heat: Vàng hổ phách (`#f59e0b` - Hot).
+       - $15\% - 40\%$ max heat: Xanh lục bảo (`#10b981` - Warm).
+       - $<15\%$ max heat: Xanh da trời (`#0284c7` - Cool).
+       - $0$ accesses: Xanh đen (`#0f172a` - Inactive Cold).
+
+- **Kết quả Thực nghiệm & Kiểm chứng:**
+  - `cargo test --all-targets --locked`: **90/90 lib tests PASS** (tổng cộng 106 tests toàn hệ thống PASS 100%).
+  - `cargo clippy --all-targets --locked -- -D warnings`: **0 warnings** (Đạt chuẩn nghiêm ngặt).
+  - `cargo fmt --all -- --check`: **Đạt chuẩn formatting**.
+  - `python3 tools/check.py --rust`: **100% PASS** (kiểm tra testbeds, evidence matrix, benchmarks).
+  - `python3 tools/check.py --web`: **100% PASS** (kiểm tra toàn bộ JavaScript/HTML frontend, SSE client tests).
+
+## Kế hoạch Nâng cấp Tiếp theo (Future Roadmap)
+
+### Bước 39: Speculative Decoding Engine với Fast Draft Router & Parallel Verification (Học hỏi Colibrì `deepseek_v41.c` & `colibri.c` MTP)
+- **Mục tiêu:**
+  - Giải quyết nút thắt cổ chai lớn nhất của kiến trúc MoE trên phần cứng cá nhân: mỗi bước sinh từ phải nạp và tính qua 8 chuyên gia độc lập, khiến tốc độ giải mã bị chặn ở ngưỡng 4–6 tokens/s.
+  - Xây dựng cơ chế **Suy luận suy đoán (Speculative Decoding)** bất đối xứng cho MoE:
+    1. **Tầng Draft siêu nhẹ:** Dự đoán trước chuỗi $K$ tokens ($K = 3 \sim 4$) bằng cơ chế Fast N-gram Speculation hoặc Lightweight Draft Router chỉ mất $<0.5\text{ ms}$.
+    2. **Tầng Parallel Verification:** Đưa toàn bộ $K$ tokens vào MoE Engine để thẩm định song song trong **1 lượt Forward Pass duy nhất** (tận dụng kiến trúc Layer-major Causal Batch Prefill đã có ở Bước 5).
+    3. **Tầng Rejection Sampling & KV Rollback:** So sánh phân phối xác suất giữa Draft và MoE Target. Nếu khớp, chấp thuận (Accept) toàn bộ chuỗi; nếu lệch, rollback con trỏ KV Cache về vị trí token bị từ chối đầu tiên và thay thế bằng token đúng từ Target model.
+- **Kỳ vọng hiệu năng & Giá trị học thuật:**
+  - Tăng thông lượng giải mã từ **$\sim 4.1\text{ tok/s}$ lên $\sim 7.5 - 9.0\text{ tok/s}$ (+80% đến +120%)** hoàn toàn không làm suy hao chất lượng toán học (lossless bit-exact parity).
+  - Trực quan hóa tỷ lệ chấp thuận (`Acceptance Rate: ~75%`) và hệ số tăng tốc (`Speedup: 1.8x`) trực tiếp trên Web Defense Workbench.
+
+### Bước 40: Ràng buộc Cấu trúc GBNF Grammar & JSON Schema Enforcement (`schema_gbnf.h`)
+- **Mục tiêu:**
+  - Tiếp thu bộ giải mã ngữ pháp GBNF từ `colibri/c/schema_gbnf.h` và `grammar.h`.
+  - Tích hợp bộ máy trạng thái hữu hạn (FSM / PDA) trực tiếp vào tầng Logits Filtering / Masking trước Softmax/Argmax.
+  - Che toàn bộ token không thỏa mãn cú pháp JSON Schema tại từng bước sinh.
+  - Hỗ trợ tham số `response_format: { type: "json_object", schema: ... }` trong OpenAI API `/v1/chat/completions`.
+  - Đảm bảo 100% dữ liệu xuất ra chuẩn cú pháp JSON, triệt tiêu hoàn toàn ảo giác cấu trúc khi phục vụ AI Agent.
+
+### Bước 41: Linux `io_uring` Asynchronous NVMe Batch I/O Engine (`uring.h`)
+- **Mục tiêu:**
+  - Tiếp thu cơ chế I/O bất đồng bộ hiệu năng cao từ `colibri/c/uring.h`.
+  - Thay thế lời gọi hệ thống `pread64` đồng bộ bằng cặp hàng đợi vòng dùng chung bộ nhớ giữa User space và Kernel space (Submission Queue SQ & Completion Queue CQ).
+  - Gửi đồng thời toàn bộ yêu cầu nạp Top-K Cold Experts của layer tiếp theo vào NVMe controller chỉ với 1 system call `io_uring_enter` (hoặc chế độ SQPOLL không cần system call).
+  - Triệt tiêu chi phí context switch và CPU kernel time khi nạp chuyên gia từ đĩa SSD NVMe.
+

@@ -137,6 +137,8 @@ pub struct ExpertStatusReport {
     pub layers: Vec<LayerExpertStatus>,
     pub system_telemetry: SystemTelemetry,
     pub gpu: crate::gpu::GpuTierStatus,
+    pub kv_fp8: bool,
+    pub session_dir: Option<String>,
 }
 
 /// Thước đo độ phức tạp ngôn ngữ (Perplexity & Cross-Entropy) phục vụ đánh giá học thuật
@@ -986,6 +988,11 @@ impl OlmoeModel {
             layers,
             system_telemetry,
             gpu: gpu_status,
+            kv_fp8: self.kv_fp8,
+            session_dir: self
+                .session_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
         }
     }
 
@@ -1003,6 +1010,12 @@ impl OlmoeModel {
     /// Thiết lập chế độ nén KV Cache bằng FP8 E4M3 (tiết kiệm 75% RAM KV Cache)
     pub fn set_kv_fp8(&mut self, enabled: bool) {
         self.kv_fp8 = enabled;
+    }
+
+    /// Đảo trạng thái Bật / Tắt nén KV Cache FP8 E4M3
+    pub fn toggle_kv_fp8(&mut self) -> bool {
+        self.kv_fp8 = !self.kv_fp8;
+        self.kv_fp8
     }
 
     /// Trạng thái kích hoạt nén KV Cache FP8

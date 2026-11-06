@@ -169,6 +169,41 @@ impl InferenceEngine {
             }
         }
     }
+    pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>> {
+        match &self.model {
+            Model::Tiny(_) => Ok(None),
+            Model::Olmoe(model) => {
+                let mut model = model.try_lock().map_err(|e| match e {
+                    std::sync::TryLockError::WouldBlock => io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "model is busy generating; retry after current request completes",
+                    ),
+                    std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
+                })?;
+                let state = model.toggle_kv_fp8();
+                if let Ok(mut cache) = self.cached_status.write() {
+                    *cache = Some(model.expert_status());
+                }
+                Ok(Some(state))
+            }
+        }
+    }
+    pub fn is_kv_fp8(&self) -> bool {
+        match &self.model {
+            Model::Tiny(_) => false,
+            Model::Olmoe(model) => {
+                if let Ok(model) = model.try_lock() {
+                    model.is_kv_fp8()
+                } else {
+                    self.cached_status
+                        .read()
+                        .ok()
+                        .and_then(|c| c.as_ref().map(|s| s.kv_fp8))
+                        .unwrap_or(false)
+                }
+            }
+        }
+    }
     /// Xóa toàn bộ bộ đệm trong hệ thống (KV cache, RAM cache, VRAM cache) để đưa về Cold Start
     pub fn reset_cache(&self) -> io::Result<()> {
         self.reset_cache_with_policy(None)

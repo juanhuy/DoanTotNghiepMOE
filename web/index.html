@@ -163,6 +163,29 @@
       background: rgba(51, 65, 85, 0.3);
       color: var(--text-muted);
     }
+    .kv-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      transition: all 0.2s ease;
+    }
+    .kv-toggle-btn:hover {
+      background: rgba(16, 185, 129, 0.28);
+    }
+    .kv-toggle-btn.off {
+      border-color: var(--border-strong);
+      background: rgba(51, 65, 85, 0.3);
+      color: var(--text-muted);
+    }
 
     /* Tab Page Containers */
     .main-viewport {
@@ -898,6 +921,10 @@
       <button class="gpu-toggle-btn" id="btn-header-gpu-toggle" title="A/B Toggle cuBLAS Dense Offloading">
         <span id="header-gpu-label">GPU cuBLAS: ON</span>
       </button>
+      <button class="kv-toggle-btn" id="btn-header-kv-toggle" title="A/B Toggle FP8 E4M3 KV Cache Quantization (-75% RAM savings)">
+        <span id="header-kv-label">KV FP8: ON</span>
+      </button>
+      <span class="tech-pill tech-pill-cyan" id="header-persist-badge" title="Crash-Safe KV Cache Session Persistence (.moekv)">SSD L3: ON</span>
       <div class="badge-status ready" id="header-status-badge">Engine Ready</div>
     </div>
   </header>
@@ -918,7 +945,7 @@
               <span>SESSION: <span id="session-display" style="color:var(--text-main);">local-session</span></span>
               <span class="header-divider">|</span>
               <div class="context-meter" title="Dung lượng Context Window (tối đa 512 tokens)">
-                <span>CONTEXT: <strong id="context-used-val">0</strong>/512 tokens</span>
+                <span>CONTEXT: <strong id="context-used-val">0</strong>/512 tokens (<span id="kv-cache-mem-val" style="color:var(--accent-cyan); font-weight:700;">0.00 MB</span>)</span>
                 <div class="context-bar-track">
                   <div class="context-bar-fill" id="context-bar-fill" style="width: 0%;"></div>
                 </div>
@@ -1272,6 +1299,7 @@
     const sessionDisplay = document.querySelector('#session-display');
     const contextUsedVal = document.querySelector('#context-used-val');
     const contextBarFill = document.querySelector('#context-bar-fill');
+    const kvCacheMemVal = document.querySelector('#kv-cache-mem-val');
 
     // Header & Workbench GPU Status Elements
     const headerStatusDot = document.querySelector('#header-status-dot');
@@ -1280,6 +1308,9 @@
     const headerVramVal = document.querySelector('#header-vram-val');
     const btnHeaderGpuToggle = document.querySelector('#btn-header-gpu-toggle');
     const headerGpuLabel = document.querySelector('#header-gpu-label');
+    const btnHeaderKvToggle = document.querySelector('#btn-header-kv-toggle');
+    const headerKvLabel = document.querySelector('#header-kv-label');
+    const headerPersistBadge = document.querySelector('#header-persist-badge');
     const btnWorkbenchGpuToggle = document.querySelector('#btn-workbench-gpu-toggle');
     const workbenchGpuLabel = document.querySelector('#workbench-gpu-label');
 
@@ -1425,6 +1456,17 @@
         ctx.fillText(`E${c}`, x, 12);
       }
 
+      // 1.5 Find max heat for adaptive color mapping in cumulative view
+      let maxHeat = 1;
+      if (matrixViewMode === 'cumulative' && expertData?.layers) {
+        for (let r = 0; r < ROWS; r++) {
+          const heats = expertData.layers[r]?.heat || [];
+          for (let c = 0; c < COLS; c++) {
+            if (heats[c] && heats[c] > maxHeat) maxHeat = heats[c];
+          }
+        }
+      }
+
       // 2. Draw Layer Rows
       for (let r = 0; r < ROWS; r++) {
         const role = getLayerRole(r);
@@ -1471,17 +1513,24 @@
               ctx.fillStyle = '#141c2b';
             }
           } else {
-            // Cumulative Heatmap
+            // Cumulative Heatmap: Real gradient showing activation skewness
             if (pulse > 0.05) {
               ctx.fillStyle = '#34d399';
-            } else if (active > 0.05) {
-              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.4 + active * 0.6)})`;
             } else if (heat > 0) {
-              ctx.fillStyle = '#10b981';
+              const ratio = Math.min(1.0, heat / maxHeat);
+              if (ratio > 0.7) {
+                ctx.fillStyle = '#f43f5e'; // Ultra hot: Crimson / Rose
+              } else if (ratio > 0.4) {
+                ctx.fillStyle = '#f59e0b'; // Hot: Amber
+              } else if (ratio > 0.15) {
+                ctx.fillStyle = '#10b981'; // Warm: Emerald
+              } else {
+                ctx.fillStyle = '#0284c7'; // Cool: Sky Blue
+              }
             } else if (isResident) {
-              ctx.fillStyle = '#2563eb';
+              ctx.fillStyle = '#1e3a8a';
             } else {
-              ctx.fillStyle = '#1e293b';
+              ctx.fillStyle = '#0f172a';
             }
           }
 
@@ -1603,6 +1652,28 @@
         topoVramBar.style.width = '0%';
       }
 
+      // KV FP8 & Persistence Badges
+      if (btnHeaderKvToggle && headerKvLabel) {
+        if (data.kv_fp8) {
+          btnHeaderKvToggle.classList.remove('off');
+          headerKvLabel.textContent = 'KV FP8: ON (-75%)';
+        } else {
+          btnHeaderKvToggle.classList.add('off');
+          headerKvLabel.textContent = 'KV FP8: OFF (FP32)';
+        }
+      }
+      if (headerPersistBadge) {
+        if (data.session_dir) {
+          headerPersistBadge.textContent = 'SSD L3: ON';
+          headerPersistBadge.className = 'tech-pill tech-pill-cyan';
+          headerPersistBadge.title = `Crash-Safe NVMe Persistence Active at ${data.session_dir}`;
+        } else {
+          headerPersistBadge.textContent = 'SSD L3: OFF';
+          headerPersistBadge.className = 'tech-pill';
+          headerPersistBadge.title = 'In-Memory Only (No SSD persistence configured)';
+        }
+      }
+
       // Update Data Flow Pipeline
       updateDataFlowUI(gpu, telem);
     }
@@ -1675,6 +1746,26 @@
     btnHeaderGpuToggle.addEventListener('click', toggleGPUAction);
     btnWorkbenchGpuToggle?.addEventListener('click', toggleGPUAction);
 
+    // Toggle KV FP8 Switch Handler
+    async function toggleKvFp8Action() {
+      if (!btnHeaderKvToggle) return;
+      btnHeaderKvToggle.style.opacity = '0.5';
+      try {
+        const res = await fetch('/api/kv_fp8/toggle', { method: 'POST' });
+        if (res.ok) {
+          const resp = await res.json();
+          showToast(resp.message || '✓ Đã cập nhật chế độ KV Cache');
+          await fetchTelemetry();
+          updateContextMeter();
+        }
+      } catch (err) {
+        showToast('Lỗi khi đổi chế độ KV FP8: ' + err.message, 'warn');
+      } finally {
+        btnHeaderKvToggle.style.opacity = '1';
+      }
+    }
+    btnHeaderKvToggle?.addEventListener('click', toggleKvFp8Action);
+
     // Reset Cache Handler (Cold Start 0-cache test)
     btnResetCache?.addEventListener('click', async () => {
       btnResetCache.disabled = true;
@@ -1709,6 +1800,19 @@
       totalChars += (chatInput.value ? chatInput.value.length : 0);
       const estTokens = history.length > 0 ? Math.max(12, Math.round(totalChars / 3.6)) : Math.round(totalChars / 3.6);
       contextUsedVal.textContent = estTokens;
+
+      // KV Cache Memory estimation (16 layers * 2(K+V) * 1024 dim * 4 bytes for FP32, or 1 byte + scales for FP8)
+      if (kvCacheMemVal) {
+        const isFp8 = expertData?.kv_fp8 !== undefined ? expertData.kv_fp8 : true;
+        // FP32: 16 * 2 * 1024 * 4 = 131,072 bytes per token
+        // FP8:  16 * 2 * 1024 * 1 + scale headers = ~33,000 bytes per token (~75% saving)
+        const bytesPerToken = isFp8 ? 33024 : 131072;
+        const totalKvBytes = estTokens * bytesPerToken;
+        const kvMb = (totalKvBytes / (1024 * 1024)).toFixed(2);
+        const formatLabel = isFp8 ? 'FP8 E4M3 (-75%)' : 'FP32 Full';
+        kvCacheMemVal.textContent = `${kvMb} MB (${formatLabel})`;
+      }
+
       const maxTok = Number(selectMaxTokens?.value || 128);
       const totalEstimated = estTokens + maxTok;
       const pct = Math.min(100, Math.round((totalEstimated / 512) * 100));

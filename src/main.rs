@@ -126,6 +126,8 @@ fn app(state: AppState) -> Router {
         .route("/v1/engine/experts", get(get_experts))
         .route("/api/gpu/toggle", post(toggle_gpu))
         .route("/api/gpu/status", get(get_gpu_status))
+        .route("/api/kv_fp8/toggle", post(toggle_kv_fp8))
+        .route("/api/kv_fp8/status", get(get_kv_fp8_status))
         .route("/api/cache/reset", post(reset_cache))
         .route("/v1/models", get(get_models))
         .route("/models", get(get_models))
@@ -198,6 +200,47 @@ async fn get_gpu_status(
         .engine
         .expert_status()
         .map(|s| Json(s.gpu))
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+async fn toggle_kv_fp8(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    tokio::task::spawn_blocking(move || state.engine.toggle_kv_fp8())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::WouldBlock {
+                StatusCode::TOO_MANY_REQUESTS
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        })?
+        .map(|enabled| {
+            Json(serde_json::json!({
+                "kv_fp8": enabled,
+                "message": if enabled {
+                    "KV Cache compressed to FP8 E4M3 (-75% RAM usage, 0.5 bytes/elem)"
+                } else {
+                    "KV Cache in FP32 uncompressed precision (full fidelity)"
+                }
+            }))
+        })
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
+async fn get_kv_fp8_status(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    state
+        .engine
+        .expert_status()
+        .map(|s| {
+            Json(serde_json::json!({
+                "kv_fp8": s.kv_fp8,
+                "session_dir": s.session_dir
+            }))
+        })
         .ok_or(StatusCode::NOT_FOUND)
 }
 
