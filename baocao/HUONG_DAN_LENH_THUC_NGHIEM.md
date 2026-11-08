@@ -6,6 +6,8 @@ Tài liệu này giúp đi từ **câu hỏi cần kiểm tra → lệnh → d�
 
 Chạy lại có thể tạo kết quả mới cùng phương pháp, **không bảo đảm số giây giống từng mẫu cũ**. Muốn kiểm chứng một con số trong báo cáo, trước hết đọc dữ liệu cũ; muốn đối chứng một thay đổi, còn phải khớp phiên bản mã, trọng số, đầu vào, ngân sách và điều kiện đo.
 
+> Tài liệu này giải thích hồ sơ **báo cáo lần 1**. Để chọn việc đo tiếp, đọc [hướng dẫn benchmark hiện hành](../benchmarks/SCENARIOS.md). Không cần chạy lại toàn bộ lệnh dưới đây. Từ 27/10/2026, wrapper mặc định một policy và cache 64 MiB/lớp; các lệnh hồi cứu ghi cấu hình tường minh vẫn giữ nguyên ý nghĩa.
+
 ## 1. Bản đồ các phép kiểm có thật
 
 | Phần báo cáo | Câu hỏi kiểm tra | Bằng chứng đã lưu | Lệnh/công cụ tương ứng |
@@ -165,7 +167,7 @@ Runner tự build và mở server riêng cho từng kịch bản; không cần m
 | `--context 512` | Tổng token đầu vào và giới hạn sinh phải nằm trong cửa sổ 512 |
 | `--max-tokens 128` | Sinh tối đa 128 token; EOS có thể làm dừng sớm |
 | `--runs 5` | 5 vòng; số request mỗi vòng phụ thuộc kịch bản |
-| `--single-policy` | Chỉ dùng victim, không xen kẽ hai chính sách |
+| `--single-policy` | Chỉ dùng policy đã chọn bằng `--expert-cache-policy`; hiện cũng là mặc định |
 | `--output-root` | Tạo run mới riêng dưới nhãn máy; không ghi lại vào hồ sơ thực nghiệm đã chốt |
 
 **Cold:** đặt lại bộ đệm ứng dụng trước mỗi vòng rồi hỏi `Where is Mars`. Không khởi động lại server mỗi mẫu và không xóa bộ đệm tệp của hệ điều hành.

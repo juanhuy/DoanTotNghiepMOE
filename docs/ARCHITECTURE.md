@@ -65,3 +65,75 @@ Guard mặc định RSS limit=min(6GiB,1/2 RAM hiệu dụng), system headroom=m
 Generation kiểm reserve trước tokenization/clone/scratch, sau đó lấy mẫu tối đa mỗi25ms tại cancellation boundaries (cancel vẫn kiểm mọi lần). Áp lực RAM trả OutOfMemory: trước SSE là503, sau ready là generation_error; worker bỏ session/cache/recycled host sau khi ngừng dùng. Giữ dense và VRAM cache, không force allocator trả trang; retry chỉ thành công nếu headroom thực đủ. Guard là kiểm hợp tác, có thể overshoot giữa samples/cấp phát/driver khác, không phải hard RSS cap và chưa chứng minh hết leak/OOM. `logits()` chẩn đoán trực tiếp chưa dùng wrapper generation này.
 
 Status bổ sung limit/headroom, session capacity/budget, VmSwap và MemAvailable; khi model bận status có thể là snapshot cũ. Đo ổn định dùng sampler /proc độc lập và watchdog, không dựa vào polling status như peak RSS.
+
+### Vòng đời bộ nhớ request (rà tĩnh 04/11/2026)
+
+| Vùng | Ownership/lifetime xác định từ mã | Giới hạn accounting |
+| --- | --- | --- |
+| KV dùng lại đúng session | take_prefix_kv remove state khỏi sessions, truncate length nhưng giữ capacity rồi chuyển KV vào request | Khi đang chạy, state không còn nằm trong tổng session status |
+| KV phiên mới | Cấp theo context_limit sau lookup không dùng lại được; các session khác vẫn có thể còn sống | KV request có thể cùng tồn tại KV các phiên được giữ; admission/eviction diễn ra sau generation |
+| Admission session | KV chuyển vào SessionState; evict session cũ tới khi vừa budget, rồi insert. State quá budget bị drop | Tổng cuối request không phải peak trong request, chưa gồm HashMap buckets/allocator |
+| StepScratch và buffer prefill | StepScratch local trong generate_inner; batch Q/K/V, contributions và các buffer prefill local trong prefill | Drop khi thoát scope thành công/lỗi, không nằm trong session capacity |
+| Tokenizer phục vụ SSE | Bản clone và decoder local theo request streaming | Chưa có allocation trace cho nội bộ clone; không suy lượng RSS từ tên thao tác |
+| Lỗi OutOfMemory | Sau khi generate_inner trả lỗi và local đã ra scope, wrapper xóa sessions/cache/recycled host | Drop trả ownership cho allocator, không bảo đảm RSS giảm hoặc OS thu hồi ngay |
+
+Đây là rà source, chưa đo byte cấp phát/giải phóng theo mốc hoặc chứng minh nguyên nhân RSS tăng. Muốn tách phần live allocation với allocator giữ trang cần quan sát riêng sau lookup KV, sau prefill, trước/sau session admission và sau generate_inner trả về; không suy ra từ một snapshot cuối request hoặc thêm malloc_trim như bản vá khi chưa có bằng chứng.
+
+Runner RAM/HTTP hiện ghi telemetry reclaim/swap/PSI và cgroup của child trong `memory.jsonl`, không đổi guard engine. Schema, đơn vị và phạm vi namespace ở [SCENARIOS3.4](../benchmarks/SCENARIOS.md#34-đọc-telemetry-reclaim-mới-04112026). Dữ liệu mới hỗ trợ phân biệt reclaim với allocation; chưa xác định tác nhân swap của lượt cũ.
+
+### Trace capacity theo mốc request (05/11/2026)
+
+`MOE_MEMORY_TRACE=on|off` chọn tại load, mặc định off; giá trị sai báo lỗi. Khi tắt không quét capacity hoặc đọc RSS tại các mốc này. Khi bật, metrics của Generation thành công có `memory_trace`; `/experts` có `memory_trace_enabled` và `last_memory_trace` của request đã kết thúc (kể cả lỗi). Status khi busy vẫn có thể là snapshot cũ. Reset xóa last trace, giữ chế độ và ngân sách như trước. Trace chỉ giữ số liệu, không giữ tham chiếu/ownership của KV, scratch hay expert.
+
+Bảy mốc thành công: before_request, after_kv_lookup (trước cấp StepScratch), prefill_buffers_live (các buffer chính đã cấp, trước vòng layer), after_prefill (buffer local đã ra scope), before_session_admission, after_session_admission và after_generate_inner (mọi local của inner đã ra scope). Lỗi có thể dừng sớm; OutOfMemory thêm after_error_cleanup sau khi xóa host cache/session/recycled. Không tạo Generation thành công để biểu diễn lỗi; trace lỗi đọc qua status. Đây là các boundary, không phải peak allocator hoặc mọi thời điểm ở từng layer/expert.
+
+Mỗi sample ghi elapsed_ms tính từ wrapper, RSS/VmSwap byte (null nếu không đọc được), dense decoded weight payload, expert cache/recycled capacity, retained session capacity, active KV (keys/values và backing Vec<Kv>), StepScratch và các vector prefill chính. `retained_kv_capacity_bytes` là phần nằm trong retained_session_capacity_bytes, chỉ dùng phân tích ownership, không cộng lại vào `tracked_host_bytes`. KV đã chuyển vào session hoặc đã bị drop không còn tính ở active; sessionless KV vẫn active sau admission cho tới khi inner kết thúc.
+
+`tracked_host_bytes` cộng dense payload và các capacity được liệt kê, không phải RSS/budget mới/hard cap. Chưa bao phủ tokenizer/clone/encoding, request token/text/output, container metadata ngoài accounting session hiện có, allocator bookkeeping/trang giữ lại, trace tự thân, index/heat/transitions hoặc GPU/driver/pinned và mọi expert tạm giữa các mốc. Prefill đếm batch/hidden/QKV/norm/context/projected/contributions và expert_uses, chưa bao phủ mọi allocation sâu bên trong loader/kernel. Không lấy RSS trừ tổng này để kết luận leak hoặc gán riêng vùng chưa tính. Không đổi guard/admission, thứ tự tính toán, routing/reduction hay chính sách cache.
+
+### Candidate tái sử dụng buffer KV (05/11/2026)
+
+`MOE_KV_BUFFER_REUSE=on|off` chọn tại load, mặc định off, giá trị sai bị từ chối. Chỉ điều khiển tái sử dụng vùng cấp phát khi không có prefix hợp lệ; valid prefix KV vẫn được dùng lại ở cả hai mode. Đường mặc định/fallback giữ thời điểm cấp KV/admission như bảng lifetime phía trên.
+
+Khi bật, cùng session nhưng prefix0 có thể clear length keys/values và dùng lại buffers của chính nó; không dùng nội dung cũ làm KV hợp lệ. Với ID mới, candidate chỉ lấy từ session LRU khi:
+
+- Ngay cả lower bound state mới cộng phần đang giữ cũng vượt session budget; không lấy cache khi còn chỗ hoặc request không có session.
+- Donor có đúng số layer và từng buffer đủ capacity cho context hiện tại; không mượn donor thiếu capacity.
+- Metadata chuẩn bị của ID/token buffer và KV donor tính chính xác vẫn vừa budget sau khi loại đúng một donor. Token buffer được reserve trước theo giới hạn sinh, tránh tăng capacity làm admission vượt dự tính; nếu EOS sớm, capacity token này có thể lớn hơn đường cũ và vẫn được tính đầy đủ vào budget. Nếu cần hơn một evict hoặc donor quá lớn thì fallback, không tạo pool ngoài ngân sách.
+
+Map bỏ ID cũ trước khi clear/ghi đè; KV chuyển sang ownership của request, không có alias với session cũ. Clear length không zero toàn bộ capacity nhưng mọi vị trí sử dụng được ghi lại trước attention; prefix0 bảo đảm recompute từ đầu. Các session khác giữ nguyên; admission cuối vẫn kiểm budget thực và dùng LRU như cũ. Không đổi weights/router/reduction, không thêm unsafe/dependency hoặc nới guard.
+
+Evict sớm có tác động có chủ đích: nếu request mới hủy/lỗi sau handoff, ID cũ đã mất KV cache và không được phục hồi bằng buffer đã ghi đè. Retry phiên cũ phải recompute từ lịch sử client gửi đầy đủ. Buffer request ra scope được drop; OOM vẫn áp cleanup host hiện hành. Đây là thay đổi trạng thái cache, không thay nội dung hội thoại hoặc dùng chéo KV. Candidate còn off mặc định để đối chứng trước khi chốt cấu hình vận hành.
+
+Metrics có `kv_buffer_reuse`: enabled, reused_capacity_bytes (KV và backing Vec<Kv>), early_evicted_sessions, source (`same_session_reset`/`evicted_session`/null). Prefix hợp lệ chỉ báo qua cached_prompt_tokens như trước, không tăng counter candidate. Status có kv_buffer_reuse_enabled và last_kv_buffer_reuse của request kết thúc kể cả lỗi; reset xóa last counters, giữ mode. Các counter không chứa ID hoặc địa chỉ buffer. Fixture MHA/GQA kiểm pointer reuse, logits tolerance2e-5, budget/LRU và hủy/lỗi/retry. Cặp model thật05/11 đã xác nhận handoff và capacityKV256→128MiB/outputHTTP2/2khớp; RSS có tín hiệu thuận lợi nhưng một cặp chịu pressure khác, chưa chứng minh mức giảm tổng quát/hếtOOM hoặc speedup.
+
+
+## Điều khiển và đo lookahead (03/11/2026)
+
+`MOE_LOOKAHEAD_PREFETCH=on|off` chọn tại load, mặc định on, giá trị khác báo lỗi. Chỉ điều khiển dự đoán expert lớp kế tiếp ở decode; giữ cập nhật transition/heat, nạp theo nhu cầu và nạp trước expert đã biết trong prefill. `/experts` và metrics báo `lookahead_enabled`; reset không đổi chế độ.
+
+Metrics request bổ sung `lookahead` với đề xuất/tải thành công/lỗi/được chọn/không dùng/bỏ khi lỗi/còn chờ, payload byte thành công và capacity buffer đỉnh. Payload còn chờ bị drop khi step lỗi, ghi cảnh báo và accounting abandoned trong profile; HTTP lỗi không trả một Generation thành công có metrics. `decode_expert_active_peak_bytes`/`decode_expert_host_peak_bytes` là mẫu capacity payload tại mốc decode, host gồm cache+recycled và active; không gồm prefill/dense/KV/scratch/pinned/metadata/allocator, không thay RSS hay hard cap. Budget/dự phòng không tăng khi bật lookahead. Thiết kế/lệnh đối chứng duy nhất ở [SCENARIOS mục3.1](../benchmarks/SCENARIOS.md#31-thiết-kế-đối-chứng-prefetch-dự-đoán-03112026).
+
+
+## Chọn CPU trước khởi tạo GPU (04/11/2026)
+
+`MOE_GPU_MODE=auto|cpu` được đọc trước load, mặc định auto. API typed `OlmoeModel::load_with_gpu_mode` và `InferenceEngine::load_with_gpu_mode` cho phép caller truyền `GpuMode` trực tiếp; hai example benchmark áp lựa chọnCLI qua API này. CPU tạo tier không có driver/device/budget, bỏ probeCUDA và không tạo denseVRAM/pool/pinned. `/experts.gpu_mode_at_load` ghi lựa chọn ban đầu. GPU toggle/set không khởi tạo muộn khi đã chọnCPU; cần restart bằng auto. Auto giữ đường probe/fallback hiện có.
+
+RunnerHTTP/RAM pin MOE_GPU_MODE theo --gpu và kiểm trạng thái trước sinh. CPUmode của lượt cũ khác CPU trướcload; protocol lookahead mới làv2. Không suy bỏGPUinit đã chữa nguyênnhânswap nếu chưa kiểmRAM có giám sát.
+
+
+## Lý do không kích hoạt lookahead
+
+Metrics request có evaluated_layers/no_next_layer, histogram miss chỉ ở lớp có lớp kế tiếp, blocked_by_misses và disabled_eligible_layers. Điều kiện “không có demand miss” và cửa sổ tối đa2 không đổi. prediction_calls chỉ tăng khi thực sự gọi predictor; không chấm điểm shadow khi bị chặn/tắt. Phân loại positive candidates thành in_ram/in_vram/available theo cùng thứ tự lọc cũ; no_positive_score_calls và all_candidates_cached_calls phân biệt hai lý do không có đề xuất. Bộ đếm không thay route, cập nhật heat/transition, admission hoặc thứ tự cộng kết quả. Runner kiểm tổng nhất quán trước khi nhận request/cặp. Định nghĩa và giới hạn ở SCENARIOS3.2; lỗi/hủy giữa request không tạo metric hoàn tất hồi tố.
+
+### Allocator và thread trong memory trace (08/11/2026)
+
+MemoryStageSample bổ sung additive `thread_id` và `allocator`; schema_version1 và các trường capacity cũ giữ nghĩa. Chỉ thu khi memory trace bật, sau kiểm tra early-return; không thêm allocator guard/policy mới.
+
+`thread_id` đọc Linux /proc/thread-self, null nếu thiếu/ngoàiLinux; đây là thread gọi boundary, không phải danh sách workerRayon. `allocator.status` là glibc_mallinfo2, symbol_unavailable hoặc unsupported_platform. Trường libc_version có khiLinuxGNU; preload_env_present chỉ báo biếnLD_PRELOAD hiện diện, không chứng minh activeallocator hay mọiinterposition.
+
+TrênLinuxGNU, dlsymRTLD_DEFAULT tra mallinfo2 một lần quaOnceLock; không liên kết trực tiếp symbolGLIBC_2.33 nên libcGNU thiếuAPI có thể báo unavailable. ABIrepr(C) gồm đúng10size_t nhưmalloc.h, fn trảstruct byvalue; symbol và versionstring thuộc processlibc, không giữpointer vàoheaparena, không free/mutateallocator. Tính tương thích nền tảng khác chỉ là cfgfallback, chưa kiểm chạy trên mọiOS/libc. NgoàiGNU/Linux không gọiGNUFFI.
+
+Allocator fields đều Option/byte: arena_bytes, in_use_bytes(uordblks), free_bytes(fordblks), mmap_bytes(hblkhd); null khiunavailable, không thay bằng0. query_ns đo thời gian chính lời gọi mallinfo2, không gồm /proc/capacityscan/serialize/dlsyminit/versionclone và toàn traceoverhead. Các phép đo này tự có allocation/overhead, không cam kết<1ms.
+
+in_use_bytes+mmap_bytes là chỉ báo bookkeepingallocator, không exactliveRustpayload. Tcache/metadata/nonmallocmapping/interposition/cácarenađọc tuần tự giới hạn diễn giải. RSS và allocator không snapshotđồngthời, không cộng hai nguồn vào tracked_host_bytes; trackedcapacity cũ không gồm chỉbáoallocator để tránhđếmtrùng. Không gọi mallopt/malloc_trim hoặc đổi routing/session/cachebudget. Phép đo cũ không có trường mới không được điền hồi tố.

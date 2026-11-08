@@ -1,0 +1,4 @@
+2026-11-08T09:44:43.788365Z  INFO moe_tier_engine::ram: Cooperative RAM guard; limit includes dense/cache/request/allocator RSS, not a kernel cap rss_limit_bytes=5368709120 system_headroom_bytes=1073741824
+2026-11-08T09:44:44.851646Z  INFO moe_tier_engine::olmoe: CPU selected at load; skipping CUDA probe and GPU allocation
+2026-11-08T09:44:44.854025Z  INFO moe_tier_engine: Chạy chế độ CPU/RAM/SSD
+2026-11-08T09:44:44.854037Z  INFO moe_tier_engine: MoE server ready address="127.0.0.1:53421" directory="/home/son/son/DATN/Models/olmoe_merged" model_name="olmoe"

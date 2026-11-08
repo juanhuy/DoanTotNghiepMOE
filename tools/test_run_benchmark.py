@@ -294,6 +294,24 @@ class HttpSessionStreamTests(unittest.TestCase):
 
 
 class HttpScenarioTests(unittest.TestCase):
+    def test_ram_kv_switch_uses_distinct_sessions_and_preserves_mixed_protocol(self):
+        import check_ram_stability as ram
+        args = ram.parser().parse_args(['--testbed', 'i5', '--gpu', 'cpu', '--cache', '64'])
+        self.assertEqual(args.workload, 'mixed')
+        mixed = ram.workload_spec('mixed')
+        for turn in range(8):
+            phase = turn % 4
+            _, new_session, reset = ram.turn_plan(mixed, turn, True)
+            self.assertEqual(new_session, phase != 1)
+            self.assertEqual(reset, turn == 0)
+            self.assertEqual(ram.turn_plan(mixed, turn, False)[2], phase in (0, 3))
+        narrow = ram.workload_spec('kv-switch')
+        self.assertEqual([ram.turn_plan(narrow, i, True) for i in range(2)], [
+            ('Where is Mars', True, True), ('Explain a Python dictionary.', True, False)])
+        self.assertTrue(ram.turn_plan(narrow, 1, False)[2])
+        with self.assertRaises(ValueError):
+            ram.workload_spec('invalid')
+
     def test_http_watchdog_terminates_only_owned_child_and_keeps_failure(self):
         import benchmark_http_session as session
         from unittest.mock import Mock
@@ -402,18 +420,38 @@ class HttpScenarioTests(unittest.TestCase):
     def test_cache_sweep_forwards_settings_and_stops_on_failure(self):
         import run_scenarios as scenarios
         args = scenarios.parser().parse_args(["cache-sweep", "--testbed", "i5", "--gpu", "cpu",
-                                             "--threads", "2", "--runs", "1", "--allow-dirty"])
+                                             "--threads", "2", "--runs", "1", "--allow-dirty",
+                                             "--cache-levels", "64", "32"])
         commands = scenarios.commands(args)
-        self.assertEqual([c[c.index("--cache") + 1] for c in commands], ["128", "192", "256"])
+        self.assertEqual([c[c.index("--cache") + 1] for c in commands], ["64", "32"])
         for command in commands:
             forwarded = runner.parser().parse_args(command[2:])
             self.assertEqual((forwarded.http_scenario, forwarded.threads, forwarded.max_tokens),
                              ("conversation", 2, 128))
-            self.assertTrue(forwarded.compare_cache_policies)
+            self.assertFalse(forwarded.compare_cache_policies)
         with patch.object(scenarios.subprocess, "run", side_effect=[subprocess.CompletedProcess([], 0),
                                                                   subprocess.CompletedProcess([], 1)]) as run:
             self.assertEqual(scenarios.execute(args), 1)
             self.assertEqual(run.call_count, 2)
+
+    def test_default_does_not_double_workload_and_policy_comparison_is_explicit(self):
+        import run_scenarios as scenarios
+        base = ["cold", "--testbed", "i5", "--gpu", "cpu"]
+        command = scenarios.commands(scenarios.parser().parse_args(base))[0]
+        forwarded = runner.parser().parse_args(command[2:])
+        self.assertFalse(forwarded.compare_cache_policies)
+        self.assertEqual(forwarded.cache, 64)
+        explicit = scenarios.parser().parse_args(base + ["--compare-cache-policies"])
+        self.assertIn("--compare-cache-policies", scenarios.commands(explicit)[0])
+
+    def test_cache_sweep_requires_explicit_budgets(self):
+        import run_scenarios as scenarios
+        base = ["--testbed", "i5", "--gpu", "cpu"]
+        with self.assertRaisesRegex(ValueError, "requires --cache-levels"):
+            scenarios.commands(scenarios.parser().parse_args(["cache-sweep"] + base))
+        with self.assertRaisesRegex(ValueError, "only valid for cache-sweep"):
+            scenarios.commands(scenarios.parser().parse_args(["cold"] + base +
+                                                            ["--cache-levels", "32", "64"]))
 
     def test_single_policy_and_custom_workload_guard(self):
         import run_scenarios as scenarios
@@ -423,6 +461,132 @@ class HttpScenarioTests(unittest.TestCase):
         for extra in (["--prompt", "custom"], ["--tag", "custom"], ["--suite", "custom.json"]):
             with self.assertRaises(ValueError):
                 scenarios.commands(scenarios.parser().parse_args(base + extra))
+
+
+class LookaheadProtocolTests(unittest.TestCase):
+    def args(self, *extra):
+        return runner.parser().parse_args([
+            '--http-session', '--http-scenario', 'topics', '--compare-lookahead',
+            '--testbed', 'i5', '--gpu', 'cpu', '--cache', '64', '--max-tokens', '64',
+            '--runs', '2', *extra])
+
+    def sample(self, mode, turn=0):
+        enabled = mode == 'on'
+        counts = dict.fromkeys(('eligible_layers', 'proposed', 'loaded', 'load_errors', 'used',
+                               'unused', 'abandoned', 'pending', 'file_bytes', 'buffer_peak_bytes'), 0)
+        counts.update(evaluated_layers=2, no_next_layer=1, blocked_by_misses=0, eligible_layers=1,
+                      disabled_eligible_layers=0 if enabled else 1, miss_histogram=[1, 0, 0],
+                      prediction_calls=1 if enabled else 0, no_positive_score_calls=0,
+                      all_candidates_cached_calls=0, positive_candidates=1 if enabled else 0,
+                      candidates_in_ram=0, candidates_in_vram=0, candidates_available=1 if enabled else 0)
+        if enabled:
+            counts.update(proposed=1, loaded=1, used=1, file_bytes=512, buffer_peak_bytes=512)
+        prompt = ['Where is Mars', 'What is love ?', 'Explain a Python dictionary.',
+                  'Why did the Roman Republic end?'][turn]
+        return {'prompt': prompt, 'turn': turn, 'messages': [{'role': 'user', 'content': prompt}],
+                'response': {'text': 'same', 'usage': {'prompt_tokens': 3, 'completion_tokens': 4,
+                                                       'total_tokens': 7}, 'finish_reason': 'length',
+                             'metrics': {'lookahead_enabled': enabled, 'lookahead': counts,
+                                         'decode_ms': 10, 'total_ms': 12, 'time_to_first_token_ms': 2,
+                                         'decode_tokens_per_second': 300, 'cached_prompt_tokens': 0,
+                                         'decode_expert_active_peak_bytes': 512,
+                                         'decode_expert_host_peak_bytes': 1024}}}
+
+    def status(self, mode):
+        return {'gpu_mode_at_load': 'cpu', 'lookahead_enabled': mode == 'on', 'expert_request_payload_limit_bytes': 2048,
+                'cache_bytes_per_layer': 64 * 1024**2, 'num_layers': 2,
+                'gpu': {'enabled': False}, 'layers': [{'cache_bytes': 512, 'recycled_bytes': 512}]}
+
+    def test_plan_and_protocol_guards(self):
+        import benchmark_lookahead as paired
+        self.assertEqual([b['mode'] for b in paired.block_plan(2)], ['off', 'on', 'on', 'off'])
+        paired.validate_protocol(self.args())
+        for extra in (['--http-scenario', 'conversation'], ['--compare-cache-policies'],
+                      ['--expert-cache-policy', 'inclusive'], ['--gpu', 'auto']):
+            with self.assertRaises(ValueError):
+                paired.validate_protocol(self.args(*extra))
+        with self.assertRaisesRegex(ValueError, 'requires --http-session'):
+            args = self.args()
+            args.http_session = False
+            runner.execute(args)
+
+    def test_metrics_reject_false_parity_or_hidden_work(self):
+        import benchmark_lookahead as paired
+        for mode in ('off', 'on'):
+            self.assertEqual(paired.validate_sample(self.sample(mode), mode == 'on', self.status(mode), 64),
+                             int(mode == 'on'))
+        sample = self.sample('on')
+        sample['response']['metrics']['lookahead']['loaded'] = 2
+        with self.assertRaisesRegex(ValueError, 'accounting'):
+            paired.validate_sample(sample, True, self.status('on'), 64)
+        sample = self.sample('on')
+        sample['response']['metrics']['decode_expert_active_peak_bytes'] = 2049
+        with self.assertRaisesRegex(ValueError, 'capacity'):
+            paired.validate_sample(sample, True, self.status('on'), 64)
+        sample = self.sample('on')
+        sample['response']['text'] = 'different'
+        with self.assertRaisesRegex(ValueError, 'mismatch'):
+            paired.compare_pair([self.sample('off')], [sample])
+        sample = self.sample('off')
+        sample['response']['metrics']['lookahead']['file_bytes'] = 512
+        with self.assertRaisesRegex(ValueError, 'disabled'):
+            paired.validate_sample(sample, False, self.status('off'), 64)
+
+    def test_gate_counter_mismatch_is_rejected(self):
+        import benchmark_lookahead as paired
+        sample = self.sample('on')
+        sample['response']['metrics']['lookahead']['miss_histogram'] = [0, 1, 0]
+        with self.assertRaisesRegex(ValueError, 'gate accounting'):
+            paired.validate_sample(sample, True, self.status('on'), 64)
+        sample = self.sample('off')
+        sample['response']['metrics']['lookahead']['prediction_calls'] = 1
+        with self.assertRaisesRegex(ValueError, 'prediction-call'):
+            paired.validate_sample(sample, False, self.status('off'), 64)
+
+    def test_paired_blocks_are_sequential_preserved_and_summarized(self):
+        import benchmark_lookahead as paired
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / 'binary'
+            binary.write_bytes(b'fixture binary')
+            model = root / 'model'
+            model.mkdir()
+            (model / 'config.json').write_text('{}')
+            output = root / 'output'
+            output.mkdir()
+            calls = []
+            def measure(binary, model, args, env, directory):
+                calls.append((args.lookahead, args.runs))
+                status = self.status(args.lookahead)
+                return {'runs': [self.sample(args.lookahead, t) for t in range(4)], 'warmups': [],
+                        'status_start': status, 'status_end': status}
+            result = paired.measure_paired(binary, model, self.args(), {}, output, root, measure)
+            self.assertEqual(calls, [('off', 1), ('on', 1), ('on', 1), ('off', 1)])
+            self.assertEqual(len(list(output.glob('block-*/result.json'))), 4)
+            self.assertEqual(len(list(output.glob('pair-*.json'))), 2)
+            self.assertEqual(result['activation'], 'observed')
+            self.assertEqual(len(result['summary']), 4)
+            with self.assertRaises(FileExistsError):
+                paired.measure_paired(binary, model, self.args(), {}, output, root, measure)
+
+    def test_drift_stops_before_next_model(self):
+        import benchmark_lookahead as paired
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / 'binary'
+            binary.write_bytes(b'before')
+            model = root / 'model'
+            model.mkdir()
+            output = root / 'output'
+            output.mkdir()
+            def measure(binary, model, args, env, directory):
+                binary.write_bytes(b'changed')
+                status = self.status(args.lookahead)
+                return {'runs': [self.sample(args.lookahead, t) for t in range(4)], 'warmups': [],
+                        'status_start': status, 'status_end': status}
+            with self.assertRaisesRegex(ValueError, 'drift'):
+                paired.measure_paired(binary, model, self.args(), {}, output, root, measure)
+            self.assertEqual(len(list(output.glob('block-*/result.json'))), 1)
 
 
 if __name__ == "__main__":

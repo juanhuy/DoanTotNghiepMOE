@@ -1,6 +1,26 @@
 # Ma trận luận điểm và bằng chứng
 
-Cập nhật sau review 2026-10-22. Raw lịch sử bất biến được liệt kê tại [catalog](../BENCHMARKS.md); thiếu revision/hash/điều kiện không được tự điền. Mọi số đo cũ dưới đây là **hồi cứu**, không phải kết quả mới của lần chuẩn hóa.
+Cập nhật phân loại đóng góp08/11/2026; bảng chi tiết lịch sử phía dưới giữ nguồn review22/10. Raw lịch sử bất biến được liệt kê tại [catalog](../BENCHMARKS.md); thiếu revision/hash/điều kiện không được tự điền. Mọi số đo cũ dưới đây là **hồi cứu**, không phải kết quả mới của lần chuẩn hóa.
+
+## Đóng góp trực tiếp cho câu hỏi đồ án (rà08/11)
+
+Câu hỏi chính: **trong ngân sách bộ nhớ cho trước, cách quản lý/di chuyển expert ảnh hưởng thế nào đến độ trễ, tốc độ sinh và dữ liệu phải truyền?** Ba nhánh bằng chứng là tính đúng/vận hành, đánh đổi cache/I/O, và giới hạn bộ nhớ. Đã có dữ liệu hữu ích; chưa có chuỗi chứng minh mọi tối ưu cộng dồn hoặc một cấu hình tốt nhất.
+
+| Hồ sơ / nhóm | Đóng góp được dùng trong báo cáo | Giới hạn và việc còn thiếu |
+| --- | --- | --- |
+| [Vận hành i5 kỳ1](../../benchmarks/experiments/2026-10-22-phase1-i5/README.md), [i7 kỳ1](../../benchmarks/experiments/2026-10-23-phase1-i7/README.md) | Chứng minh prototype chạy workload thật với cacheexpert giới hạn; mô tả cold/warm/conversation trên từng cấu hình. | Kháccheckpoint; không soCPU hoặc suy speedupcode. Chạy với cache nhỏ không tự chứng minh tổngtrọngsố vượtRAMkhảdụng. |
+| [Inclusive/victim](../../benchmarks/experiments/2026-10-22-web-session-i5-081202/README.md) | Đối chứng trực tiếp cách phối hợpRAM/VRAM; liên hệ file/PCIepayload với thời gian trên cấu hình đã thử. Là bằng chứng sát câu hỏi chính. | Sốmẫu nhỏ/tải nền/OS-cache; không khái quát phầntrăm cốđịnh; không đem CPU-only hiện tại làm baseline của policyVRAM. |
+| [PrefixKV và dispatch](../../benchmarks/experiments/2026-10-22-prefill-i5/README.md) | PrefixKV giảm phần cầnprefill khi tiền tốkhớp trongworkloadđó; tokenđầu5/5cặp khớp. Dispatchcandidate chậm hơn7/9cặp là kếtquảâm giúp loạihướng. | max_tokens1 trongđốichứngprefix; không chứng minh decode dài. Không cần triểnkhai lại candidate đã thua chỉ để có thêm kếtquả. |
+| [KVbufferreuse05/11](../../benchmarks/experiments/2026-11-05-kv-reuse-narrow-i5/README.md) | Đónggóp phụ vềvòngđời: capacityKVđồngthời256→128MiB trongcasebuộcevict, outputHTTP2/2khớp. | Mộtcặp/on cóswap/pressurekhác; không quy RSSgiảm51,910MiB thành lợiích tổngquát. Mặcđịnhoff, không chứngminhlogits7B. |
+| [Allocator08/11](../../benchmarks/experiments/2026-11-08-allocator-i5/README.md) | 12request: RSS+284,547MiB, allocatorindicator+0,234MiB; admission chuyển128MiB sangfree màRSSkhônggiảm. Bằng chứng mạnh cho retainedmemory, thu hẹp giả thuyết leak lớn. | Bookkeeping không exactliveheap, chưa loại trừ leaknhỏ/nonmalloc hoặc chứngminh plateau. Instrumentationrun khác source, khôngsospeedvớicũ. |
+| [RAMguard22/10](../../benchmarks/experiments/2026-10-22-ram-guard-i5/README.md), [RAM08/11](../../benchmarks/experiments/2026-11-08-ram-budget-i5/README.md) | Kiểmgiới hạn/hoàntất hữu hạn, cho thấy budgetcachekhácRSS;08/11hoàntất12request/swap0 nhưngRSStăng271MiB. | Chưa hardcap/plateau/hếtOOM; khôngphải phépđotăngtốc. Là giới hạn cầncôngbố, chưa phủđịnh toànbộgiátrịđồán. |
+| [Lookahead03/11](../../benchmarks/experiments/2026-11-03-lookahead-i5/README.md), [chẩnđoán04/11](../../benchmarks/experiments/2026-11-04-cpu-load-i5/README.md) | Giải thích cơ chế ít đượcgọi trongworkloadđãđo, căn cứ tạmgác nhánh. | Lượtđốichứng dừng/không có predictorcall phùhợp; không kếtluận predictor tốt/xấu hoặc tăngtốc. |
+| [ChuỗiRAM04/11](../../benchmarks/experiments/2026-11-04-ram-sequence-i5/README.md), [reclaim05/11](../../benchmarks/experiments/2026-11-05-ram-reclaim-i5/README.md), [trace05/11](../../benchmarks/experiments/2026-11-05-memory-stage-i5/README.md), [cặpthấtbại](../../benchmarks/experiments/2026-11-05-kv-reuse-ab-i5/README.md) | Hồsơchẩnđoán: táihiệnswap, phát hiệnKVoverlap, đặt giảthuyết cầnprofiler; giữcảthấtbại để không chọnlọckếtquả. | Khôngghépngàykhác thànhcausalspeedup; không để sốlượtchẩnđoán thành thướctiếnđộ hoặc yêu cầu mọi nhánh đều “đã giải quyết”. |
+| Raw09–10/2026 trongmanifest | Bối cảnh thiết kế/các điểm cache, threads, kernel đãkhảosát. | Nhãn historical_unverified; chỉ tríchkếtluậnhẹp cónguồn vàgiớihạn, khôngbiến thànhbảngtăngtốc đãnghiệmthu. |
+
+Điểm còn thiếu cho claim mạnh trên source hiện hành là revision/config được chốt, phạmviRAM được kiểm, và đối chứng đúng mộtcơchế nếu muốn khẳngđịnh lợiíchhiệunăng của bản hiện tại. Không bắt buộc lặp mọi benchmark; nếu không bổ sung thì thu hẹp lời kết luận đúng với hồ sơ cũ. Nghiệm thu tổngRAM/giaiđoạn1 vẫn mở. [Lộ trình hữu hạn](../PLAN.md).
+
+## Chi tiết luận điểm và nguồn lịch sử
 
 | Luận điểm có thể trình bày | Mã/bằng chứng | Phạm vi và giới hạn |
 | --- | --- | --- |

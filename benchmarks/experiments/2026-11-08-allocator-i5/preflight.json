@@ -1,0 +1,32 @@
+{
+  "source_matches_fixture44": true,
+  "binary_sha256": "4b3fa13ffd8526e0234d50caaedb6e756a8eb112ef0bf97019d805cb563bb8c3",
+  "related_processes": [],
+  "samples": [
+    {
+      "utc": "2026-11-08T09:44:06.741645+00:00",
+      "memavailable_kib": 11218868,
+      "swap_used_kib": 3616,
+      "pswpin_pages": 5,
+      "pswpout_pages": 912,
+      "pressure_memory": "some avg10=0.00 avg60=0.00 avg300=0.00 total=257609\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=255897\n"
+    },
+    {
+      "utc": "2026-11-08T09:44:11.742123+00:00",
+      "memavailable_kib": 11435784,
+      "swap_used_kib": 3616,
+      "pswpin_pages": 5,
+      "pswpout_pages": 912,
+      "pressure_memory": "some avg10=0.00 avg60=0.00 avg300=0.00 total=257609\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=255897\n"
+    },
+    {
+      "utc": "2026-11-08T09:44:16.743388+00:00",
+      "memavailable_kib": 11306888,
+      "swap_used_kib": 3616,
+      "pswpin_pages": 5,
+      "pswpout_pages": 912,
+      "pressure_memory": "some avg10=0.00 avg60=0.00 avg300=0.00 total=257609\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=255897\n"
+    }
+  ],
+  "eligible": true
+}

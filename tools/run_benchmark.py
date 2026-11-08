@@ -59,6 +59,10 @@ def parser():
                      help="Expert storage policy; inclusive is the previous reference")
     cli.add_argument("--compare-cache-policies", action="store_true",
                      help="HTTP-only: alternate inclusive/victim within one loaded server")
+    cli.add_argument("--lookahead", choices=("on", "off"), default="on",
+                     help="Decode speculative next-layer prefetch; demand/prefill unchanged")
+    cli.add_argument("--compare-lookahead", action="store_true",
+                     help="HTTP topics only: paired on/off blocks in alternating order")
     cli.add_argument("--case", help="Suite case ID (requires --suite); omitted means all")
     cli.add_argument("--allow-dirty", action="store_true")
     cli.add_argument("--output-root", type=Path, default=Path("benchmarks/runs"))
@@ -252,6 +256,8 @@ def write_exclusive_json(path, data):
 
 
 def execute(args, root=WORKSPACE_DIR):
+    if args.compare_lookahead and not args.http_session:
+        raise ValueError("--compare-lookahead requires --http-session")
     if args.http_scenario and not args.http_session:
         raise ValueError("--http-scenario requires --http-session")
     if args.compare_cache_policies and not args.http_session:
@@ -261,7 +267,9 @@ def execute(args, root=WORKSPACE_DIR):
         return execute_http(args, root)
     root = Path(root).resolve()
     env = os.environ.copy()
+    env["MOE_GPU_MODE"] = args.gpu
     env["MOE_EXPERT_CACHE_POLICY"] = args.expert_cache_policy
+    env["MOE_LOOKAHEAD_PREFETCH"] = args.lookahead
     threads = args.threads if args.threads is not None else (4 if args.testbed == "i5" else 8)
     env["RAYON_NUM_THREADS"] = str(threads)
     model = absolute(args.model_dir, root)
@@ -301,7 +309,7 @@ def execute(args, root=WORKSPACE_DIR):
                             "git_commit": commit, "git_dirty": dirty,
                             "rustc": None, "rayon_num_threads": threads,
                             "platform": platform.platform(), "checkpoint": None,
-                            "requested_gpu": args.gpu, "model_dir": str(model),
+                            "requested_gpu": args.gpu, "lookahead": args.lookahead, "model_dir": str(model),
                             "cpu_mode_scope": "CPU request computation; model load may initialize GPU and retain VRAM",
                             "os_page_cache": "uncontrolled; checkpoint hashing reads files before measurement",
                             "config": {"cache_mib_per_layer": args.cache, "context": args.context,

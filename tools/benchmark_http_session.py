@@ -14,6 +14,7 @@ import time
 import uuid
 
 import run_benchmark as common
+from memory_telemetry import reclaim_snapshot
 
 
 def memory_pressure_reason(sample, limits):
@@ -46,7 +47,7 @@ class MemoryWatchdog:
             with (self.directory / 'memory.jsonl').open('x') as output:
                 while not self.stop.is_set() and self.server.poll() is None:
                     sample = {'elapsed_s': time.monotonic() - self.started,
-                              'process': process_snapshot(self.server.pid), 'system': memory_snapshot()}
+                              **supervised_memory_snapshot(self.server.pid)}
                     output.write(json.dumps(sample) + '\n')
                     output.flush()
                     reason = memory_pressure_reason(sample, self.limits)
@@ -148,7 +149,8 @@ def process_snapshot(pid):
         try:
             for line in Path(f"/proc/{pid}/{name}").read_text().splitlines():
                 key, _, value = line.partition(":")
-                if key in ("VmRSS", "VmHWM", "VmSwap", "read_bytes", "write_bytes"):
+                if key in ("VmRSS", "VmHWM", "VmSwap", "VmSize", "VmData", "VmLck", "VmPin",
+                           "RssAnon", "RssFile", "RssShmem", "read_bytes", "write_bytes"):
                     result[key] = int(value.split()[0])
         except (OSError, ValueError):
             pass
@@ -156,12 +158,19 @@ def process_snapshot(pid):
 
 
 def memory_snapshot():
-    keys = ("MemAvailable", "SwapTotal", "SwapFree")
+    keys = ("MemTotal", "MemAvailable", "MemFree", "SwapTotal", "SwapFree", "SwapCached",
+            "AnonPages", "Cached", "SReclaimable", "Mlocked", "Unevictable", "Dirty", "Writeback")
     try:
         return {key: int(value.split()[0]) for line in Path("/proc/meminfo").read_text().splitlines()
                 for key, _, value in [line.partition(":")] if key in keys}
     except OSError:
         return {}
+
+
+def supervised_memory_snapshot(pid):
+    """Keep legacy KiB/byte fields; optional reclaim telemetry never substitutes zeros."""
+    return {'process': process_snapshot(pid), 'system': memory_snapshot(),
+            'reclaim': reclaim_snapshot(pid)}
 
 
 def request(port, path, body=None, timeout=300):
@@ -256,7 +265,8 @@ def measure(binary, model, args, env, directory):
     env.update(MOE_BIND=f"127.0.0.1:{port}", MOE_MODEL_DIR=str(model),
                MOE_CACHE_BYTES_PER_LAYER=str(args.cache * 1024 * 1024),
                MOE_CONTEXT=str(args.context), MOE_DENSE_BYTES=str(3 * 1024**3),
-               MOE_EXPERT_CACHE_POLICY=args.expert_cache_policy)
+               MOE_EXPERT_CACHE_POLICY=args.expert_cache_policy,
+               MOE_LOOKAHEAD_PREFETCH=args.lookahead, MOE_GPU_MODE=args.gpu)
     env.setdefault('MOE_RAM_LIMIT_BYTES', str(5 * 1024**3))
     env.setdefault('MOE_RAM_HEADROOM_BYTES', str(1024**3))
     with (directory / "server.log").open("x") as log:
@@ -276,20 +286,25 @@ def measure(binary, model, args, env, directory):
             else:
                 raise TimeoutError("server readiness timeout")
             start = json.loads(request(port, "/experts"))
-            if args.gpu == "cpu" and start["gpu"]["enabled"]:
-                request(port, "/api/gpu/toggle", {})
-                start = json.loads(request(port, "/experts"))
+            if start.get("gpu_mode_at_load") != args.gpu:
+                raise ValueError("GPU mode was not applied before model load")
             if start["cache_bytes_per_layer"] != args.cache * 1024 * 1024:
                 raise ValueError("server cache mismatch")
             if start.get("expert_cache_policy") != args.expert_cache_policy:
                 raise ValueError("server expert cache policy mismatch")
+            if start.get("lookahead_enabled") is not (args.lookahead == "on"):
+                raise ValueError("server lookahead mode mismatch")
+            if args.gpu == "cpu" and (start["gpu"]["enabled"] or start["gpu"]["allocated_vram_bytes"]):
+                raise RuntimeError("CPU requested but GPU remained enabled")
             if args.gpu == "auto" and not start["gpu"]["enabled"]:
                 raise RuntimeError("GPU requested but unavailable; refuse CPU fallback for this experiment")
+            common.write_exclusive_json(directory / "status-start.json", start)
             runs, warmups = [], []
             spec = scenario_spec(args.http_scenario)
             for cycle, policy in enumerate(policy_plan(args)):
                 run_cycle(port, server.pid, policy, cycle, spec, args.max_tokens, directory, runs, warmups)
             end = json.loads(request(port, "/experts"))
+            common.write_exclusive_json(directory / "status-end.json", end)
             watchdog.finish()
             if watchdog.violations:
                 raise RuntimeError('memory watchdog stopped the experiment; see watchdog.json')
@@ -308,6 +323,9 @@ def measure(binary, model, args, env, directory):
 
 
 def execute(args, root):
+    if args.compare_lookahead:
+        from benchmark_lookahead import validate_protocol
+        validate_protocol(args)
     root = Path(root).resolve()
     if args.suite or args.case:
         raise ValueError("--http-session cannot be combined with --suite/--case")
@@ -316,6 +334,7 @@ def execute(args, root):
     env = os.environ.copy()
     threads = args.threads or (4 if args.testbed == "i5" else 8)
     env["RAYON_NUM_THREADS"] = str(threads)
+    env["MOE_LOOKAHEAD_PREFETCH"] = args.lookahead
     env.setdefault('MOE_RAM_LIMIT_BYTES', str(5 * 1024**3))
     env.setdefault('MOE_RAM_HEADROOM_BYTES', str(1024**3))
     model = common.absolute(args.model_dir, root)
@@ -326,15 +345,19 @@ def execute(args, root):
     build = ["cargo", "build", "--release", "--locked", "--bin", "moe-tier-engine", "--message-format=json"]
     spec = scenario_spec(args.http_scenario)
     plan = policy_plan(args)
+    if args.compare_lookahead:
+        from benchmark_lookahead import block_plan
+        plan = block_plan(args.runs)
     if args.dry_run:
         print(json.dumps({"http_session": True, "testbed": args.testbed, "model": str(model),
                           "build": build, "threads": threads, "cache_mib": args.cache,
                           "expert_cache_policy": args.expert_cache_policy,
                           "compare_cache_policies": args.compare_cache_policies,
-                          "max_tokens": args.max_tokens, "policy_plan": plan,
+                          "max_tokens": args.max_tokens, ("block_plan" if args.compare_lookahead else "policy_plan"): plan,
                           "ram_environment": {key: env[key] for key in ('MOE_RAM_LIMIT_BYTES', 'MOE_RAM_HEADROOM_BYTES')},
                           "watchdog_limits_mib": {"stop_rss": 5632, "min_available": 1536, "stop_swap": 128},
                           "measured_requests": len(plan) * len(spec["prompts"]),
+                          "compare_lookahead": args.compare_lookahead, "lookahead": args.lookahead,
                           "warmup_requests": len(plan) * spec["warmup_requests"],
                           "scenario": spec}, indent=2))
         return 0
@@ -345,12 +368,13 @@ def execute(args, root):
               "testbed": args.testbed, "git_commit": commit, "git_dirty": dirty,
               "config": {"threads": threads, "cache_mib": args.cache, "context": args.context,
                          "max_tokens": args.max_tokens, "cycles": args.runs, "gpu_requested": args.gpu,
-                         "expert_cache_policy": args.expert_cache_policy},
+                         "expert_cache_policy": args.expert_cache_policy, "lookahead": args.lookahead},
               "compare_cache_policies": args.compare_cache_policies,
+              "compare_lookahead": args.compare_lookahead,
               "ram_environment": {key: env[key] for key in ('MOE_RAM_LIMIT_BYTES', 'MOE_RAM_HEADROOM_BYTES')},
               "scenario": spec,
               "scenario_sha256": hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest(),
-              "policy_plan": plan,
+              ("block_plan" if args.compare_lookahead else "policy_plan"): plan,
               "memory_start_kib": memory_snapshot(),
               "notes": ["engine reset does not clear OS cache or VRAM pool allocations",
                         "checkpoint hashing reads files before measurement", "desktop load uncontrolled",
@@ -366,6 +390,16 @@ def execute(args, root):
             for path in sorted((root / folder).glob("*.rs" if folder == "src" else "*.py")):
                 data = path.read_bytes()
                 record["source_sha256"][str(path.relative_to(root))] = hashlib.sha256(data).hexdigest()
+        protocol_fingerprint = None
+        if args.compare_lookahead:
+            import zipfile
+            from benchmark_lookahead import source_fingerprint
+            protocol_fingerprint = source_fingerprint(root)
+            record["source_sha256"] = protocol_fingerprint
+            # Complete inference/tool/fixture inputs for this protocol, including new untracked tooling.
+            with zipfile.ZipFile(directory / 'source.zip', 'x', zipfile.ZIP_DEFLATED) as archive:
+                for name in protocol_fingerprint:
+                    archive.write(root / name, name)
         # The dirty source snapshot is retained, not just a bool/hash.
         for name in ("olmoe.rs", "gpu.rs", "generation.rs"):
             (directory / name).write_bytes((root / "src" / name).read_bytes())
@@ -378,7 +412,14 @@ def execute(args, root):
                     and json.loads(line).get("target", {}).get("name") == "moe-tier-engine"]
         binary = Path(next(p for p in reversed(binaries) if p))
         record["binary_sha256"] = hashlib.sha256(binary.read_bytes()).hexdigest()
-        record["result"] = measure(binary, model, args, env, directory)
+        if args.compare_lookahead and source_fingerprint(root) != protocol_fingerprint:
+            raise ValueError('source drift during build')
+        if args.compare_lookahead:
+            record["protocol"] = "lookahead-v2"
+            from benchmark_lookahead import measure_paired
+            record["result"] = measure_paired(binary, model, args, env, directory, root, measure)
+        else:
+            record["result"] = measure(binary, model, args, env, directory)
         record["status"] = "success"
     except Exception as error:
         record["error"] = f"{type(error).__name__}: {error}"

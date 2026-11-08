@@ -62,6 +62,122 @@ fn snapshot() -> Snapshot {
     result
 }
 
+pub(crate) fn process_memory_bytes() -> (Option<usize>, Option<usize>) {
+    let status = fs::read_to_string("/proc/self/status").unwrap_or_default();
+    (kib_field(&status, "VmRSS"), kib_field(&status, "VmSwap"))
+}
+
+pub(crate) fn current_thread_id() -> Option<u32> {
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_link("/proc/thread-self")
+            .ok()?
+            .file_name()?
+            .to_str()?
+            .parse()
+            .ok()
+    }
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
+/// Allocator bookkeeping, not exact live Rust payload or resident memory.
+/// Only called from opt-in memory tracing. No allocator policy is changed.
+pub(crate) fn allocator_memory() -> crate::generation::AllocatorMemorySample {
+    #[allow(unused_mut)]
+    let mut sample = crate::generation::AllocatorMemorySample {
+        status: "unsupported_platform",
+        libc_version: None,
+        preload_env_present: std::env::var_os("LD_PRELOAD").is_some(),
+        arena_bytes: None,
+        in_use_bytes: None,
+        free_bytes: None,
+        mmap_bytes: None,
+        query_ns: None,
+    };
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    glibc_memory::fill(&mut sample);
+    sample
+}
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+mod glibc_memory {
+    use std::{
+        ffi::{c_char, c_void, CStr},
+        sync::OnceLock,
+        time::Instant,
+    };
+
+    // Exact glibc malloc.h layout: ten size_t fields, returned by value.
+    // Do not reduce this struct to the four fields exported in the trace.
+    #[repr(C)]
+    struct Mallinfo2 {
+        arena: usize,
+        ordblks: usize,
+        smblks: usize,
+        hblks: usize,
+        hblkhd: usize,
+        usmblks: usize,
+        fsmblks: usize,
+        uordblks: usize,
+        fordblks: usize,
+        keepcost: usize,
+    }
+    type Query = unsafe extern "C" fn() -> Mallinfo2;
+    struct Probe {
+        query: Option<Query>,
+        version: String,
+    }
+    #[link(name = "dl")]
+    extern "C" {
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn gnu_get_libc_version() -> *const c_char;
+    }
+    static PROBE: OnceLock<Probe> = OnceLock::new();
+
+    pub(super) fn fill(sample: &mut crate::generation::AllocatorMemorySample) {
+        let probe = PROBE.get_or_init(|| {
+            // SAFETY: GNU libc exports a process-lifetime NUL-terminated static
+            // version string. RTLD_DEFAULT (NULL on GNU/Linux) resolves the
+            // optional mallinfo2 symbol without imposing GLIBC_2.33 at link time.
+            // A resolved function has malloc.h's ABI/layout above; the symbol
+            // remains loaded with libc for this process. No pointer is retained
+            // into an allocator arena and no allocation is freed by this code.
+            unsafe {
+                let version = CStr::from_ptr(gnu_get_libc_version())
+                    .to_string_lossy()
+                    .into_owned();
+                let ptr = dlsym(std::ptr::null_mut(), c"mallinfo2".as_ptr());
+                Probe {
+                    query: if ptr.is_null() {
+                        None
+                    } else {
+                        Some(std::mem::transmute::<*mut c_void, Query>(ptr))
+                    },
+                    version,
+                }
+            }
+        });
+        sample.libc_version = Some(probe.version.clone());
+        sample.status = "symbol_unavailable";
+        if let Some(query) = probe.query {
+            let started = Instant::now();
+            // SAFETY: signature/layout and process lifetime established above.
+            // glibc synchronizes arena reads internally. Results across arenas
+            // are sequential, not an atomic snapshot; tcache/metadata and other
+            // allocators/mappings prevent interpreting this as exact live heap.
+            // The engine never changes mallopt settings concurrently.
+            let info = unsafe { query() };
+            sample.query_ns = Some(started.elapsed().as_nanos().min(u64::MAX as u128) as u64);
+            sample.status = "glibc_mallinfo2";
+            sample.arena_bytes = Some(info.arena);
+            sample.in_use_bytes = Some(info.uordblks);
+            sample.free_bytes = Some(info.fordblks);
+            sample.mmap_bytes = Some(info.hblkhd);
+        }
+    }
+}
+
 fn setting(name: &str, default: usize) -> io::Result<usize> {
     match std::env::var(name) {
         Ok(value) => value
@@ -127,6 +243,38 @@ impl RamGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn allocator_probe_reports_availability_without_inventing_live_bytes() {
+        let sample = allocator_memory();
+        match sample.status {
+            "glibc_mallinfo2" => {
+                assert!(sample.libc_version.as_ref().is_some_and(|s| !s.is_empty()));
+                assert_eq!(
+                    sample
+                        .in_use_bytes
+                        .unwrap()
+                        .checked_add(sample.free_bytes.unwrap()),
+                    sample.arena_bytes
+                );
+                assert!(sample.mmap_bytes.is_some());
+                assert!(sample.query_ns.is_some());
+            }
+            "symbol_unavailable" | "unsupported_platform" => {
+                assert!(sample.arena_bytes.is_none());
+                assert!(sample.in_use_bytes.is_none());
+                assert!(sample.free_bytes.is_none());
+                assert!(sample.mmap_bytes.is_none());
+                assert!(sample.query_ns.is_none());
+            }
+            status => panic!("unexpected allocator status: {status}"),
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let tid = current_thread_id().expect("Linux proc thread-self");
+            assert!(std::path::Path::new(&format!("/proc/self/task/{tid}")).exists());
+        }
+    }
 
     #[test]
     fn headroom_and_rss_reserve_reject_before_allocation() {

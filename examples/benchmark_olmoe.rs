@@ -64,19 +64,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let dense_budget_bytes = 3 * 1024 * 1024 * 1024;
     let load_started = Instant::now();
-    let engine = InferenceEngine::load_with_limits(
+    let engine = InferenceEngine::load_with_gpu_mode(
         &args[0],
         cache_bytes_per_layer,
         context_limit,
         dense_budget_bytes,
+        gpu_mode.parse()?,
     )
     .await?;
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
     if engine.model_name() != "olmoe" {
         return Err("benchmark_olmoe requires an OLMoE checkpoint".into());
-    }
-    if gpu_mode == "cpu" {
-        engine.set_gpu_enabled(false)?;
     }
     let gpu_status_start = engine.expert_status().map(|s| s.gpu);
     let mut runs = Vec::with_capacity(run_count);

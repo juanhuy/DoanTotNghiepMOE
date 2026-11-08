@@ -6,7 +6,7 @@ Chạy lệnh từ root repo. Hai người dùng cùng commit, `Cargo.lock`, sui
 
 1. Clone repo, tạo branch cho thay đổi. Cài Rust stable (rustfmt/Clippy), Python 3.11+. Không cần Node/CUDA/checkpoint để chạy fixture tests Rust.
 2. Chạy `python3 tools/check.py --rust`. Đây cũng là lệnh CI. `Cargo.toml` khai báo MSRV 1.85; stable CI không chứng minh MSRV nếu chưa chạy riêng toolchain đó.
-3. Đọc [AGENTS.md](AGENTS.md), [workflow](docs/WORKFLOWS.md) và [setup coding agent](docs/AGENT_SETUP.md). Không cần cài nhiều agent framework.
+3. Đọc [AGENTS.md](AGENTS.md), [workflow](docs/WORKFLOWS.md). Không cần cài nhiều agent framework.
 4. Chuẩn bị checkpoint chỉ khi cần demo/benchmark thật. Model không commit; có thể dùng thư mục local/symlink, runner hash nội dung thực.
 
 ## Python converter/reference theo tác vụ

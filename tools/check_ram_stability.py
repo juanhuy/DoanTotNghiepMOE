@@ -24,10 +24,33 @@ def pressure_reason(sample, args):
     return http.memory_pressure_reason(sample, args)
 
 
+def workload_spec(name):
+    if name == 'mixed':
+        prompts = ['Where is Mars', 'What planet did I just ask about?',
+                   'Explain a Python dictionary.', 'What is love ?']
+    elif name == 'kv-switch':
+        prompts = ['Where is Mars', 'Explain a Python dictionary.']
+    else:
+        raise ValueError('unknown RAM workload')
+    return {'id': name, 'version': 1, 'prompts': prompts,
+            'session_mode': 'independent' if name == 'kv-switch' else 'follow-up at phase 1'}
+
+
+def turn_plan(spec, turn, keep_cache):
+    phase = turn % len(spec['prompts'])
+    new_session = spec['id'] == 'kv-switch' or phase != 1
+    reset = turn == 0 or (not keep_cache and (spec['id'] == 'kv-switch' or phase in (0, 3)))
+    return spec['prompts'][phase], new_session, reset
+
+
 def parser():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument('--testbed', choices=('i5', 'i7'), required=True)
     cli.add_argument('--gpu', choices=('cpu', 'auto'), required=True)
+    cli.add_argument('--lookahead', choices=('on', 'off'), default='on')
+    cli.add_argument('--memory-trace', choices=('on', 'off'), default='off')
+    cli.add_argument('--kv-buffer-reuse', choices=('on', 'off'), default='off')
+    cli.add_argument('--workload', choices=('mixed', 'kv-switch'), default='mixed')
     cli.add_argument('--cache', type=common.nonnegative, required=True, help='MiB per layer')
     cli.add_argument('--model-dir', type=Path, default=Path('models/olmoe-1b-7b-int8'))
     cli.add_argument('--threads', type=common.positive, default=8)
@@ -47,6 +70,7 @@ def parser():
 
 
 def execute(args):
+    spec = workload_spec(args.workload)
     if args.stop_rss_mib <= args.ram_limit_mib:
         raise ValueError('watchdog RSS threshold must exceed engine RSS limit')
     env = os.environ.copy()
@@ -54,7 +78,7 @@ def execute(args):
     if dirty and not args.allow_dirty:
         raise ValueError('dirty tree; --allow-dirty is exploratory only')
     if args.dry_run:
-        print(json.dumps({'kind': 'ram_stability', 'config': vars(args),
+        print(json.dumps({'kind': 'ram_stability', 'config': vars(args), 'workload_spec': spec,
                           'notes': 'No build/load. Stop other inference before execution.'}, default=str, indent=2))
         return 0
     if not Path('/proc/self/status').exists():
@@ -67,6 +91,7 @@ def execute(args):
     directory = common.absolute(args.output_root, ROOT) / args.testbed / run_id
     directory.mkdir(parents=True)
     record = {'kind': 'ram_stability', 'status': 'failed', 'run_id': run_id,
+              'workload_spec': spec,
               'git_commit': common.checked_text(['git', 'rev-parse', 'HEAD'], ROOT, env),
               'git_dirty': dirty, 'config': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
               'notes': ['bounded stability observation, not causal performance comparison or proof of no leaks',
@@ -85,6 +110,8 @@ def execute(args):
         probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
     env.update(MOE_BIND=f'127.0.0.1:{port}', MOE_MODEL_DIR=str(model), RAYON_NUM_THREADS=str(args.threads),
                MOE_CACHE_BYTES_PER_LAYER=str(args.cache * 1024**2), MOE_CONTEXT=str(args.context),
+               MOE_GPU_MODE=args.gpu, MOE_LOOKAHEAD_PREFETCH=args.lookahead,
+               MOE_MEMORY_TRACE=args.memory_trace, MOE_KV_BUFFER_REUSE=args.kv_buffer_reuse,
                MOE_EXPERT_CACHE_POLICY='victim', MOE_RAM_LIMIT_BYTES=str(args.ram_limit_mib * 1024**2),
                MOE_RAM_HEADROOM_BYTES=str(args.headroom_mib * 1024**2))
     stop = threading.Event()
@@ -98,8 +125,8 @@ def execute(args):
                 while not stop.is_set():
                     if server.poll() is not None:
                         return
-                    sample = {'elapsed_s': time.monotonic() - started, 'process': http.process_snapshot(server.pid),
-                              'system': http.memory_snapshot()}
+                    sample = {'elapsed_s': time.monotonic() - started,
+                              **http.supervised_memory_snapshot(server.pid)}
                     samples.write(json.dumps(sample) + '\n'); samples.flush()
                     reason = pressure_reason(sample, args)
                     if reason:
@@ -122,9 +149,10 @@ def execute(args):
             else:
                 raise TimeoutError('server load timeout')
             status = json.loads(http.request(port, '/experts'))
-            if args.gpu == 'cpu' and status['gpu']['enabled']:
-                http.request(port, '/api/gpu/toggle', {})
-                status = json.loads(http.request(port, '/experts'))
+            if status.get('gpu_mode_at_load') != args.gpu:
+                raise RuntimeError('GPU mode was not applied before load')
+            if args.gpu == 'cpu' and (status['gpu']['enabled'] or status['gpu']['allocated_vram_bytes']):
+                raise RuntimeError('CPU mode unexpectedly initialized GPU resources')
             if args.gpu == 'auto' and not status['gpu']['enabled']:
                 raise RuntimeError('GPU requested but unavailable')
             if status['cache_bytes_per_layer'] != args.cache * 1024**2:
@@ -132,21 +160,39 @@ def execute(args):
             if status.get('ram_rss_limit_bytes') != args.ram_limit_mib * 1024**2:
                 raise RuntimeError('binary missing expected RAM guard; rebuild first')
             record['status_start'] = status
+            common.write_exclusive_json(directory / 'status-start.json', status)
+            if args.gpu == 'cpu':
+                try:
+                    mappings = Path(f'/proc/{server.pid}/maps').read_text()
+                    libraries = sorted({line.split()[-1].rsplit('/', 1)[-1] for line in mappings.splitlines()
+                                        if 'libcuda.so' in line or 'libcublas' in line})
+                    record['cpu_start_library_probe'] = {'available': True, 'cuda_libraries': libraries}
+                    if libraries:
+                        raise RuntimeError('CPU process unexpectedly mapped CUDA/cuBLAS libraries')
+                except OSError as error:
+                    record['cpu_start_library_probe'] = {'available': False, 'error': type(error).__name__}
+            if status.get('lookahead_enabled') is not (args.lookahead == 'on'):
+                raise RuntimeError('lookahead mode mismatch')
+            if status.get('memory_trace_enabled') is not (args.memory_trace == 'on'):
+                raise RuntimeError('memory trace mode mismatch; rebuild the server')
+            if status.get('kv_buffer_reuse_enabled') is not (args.kv_buffer_reuse == 'on'):
+                raise RuntimeError('KV buffer reuse mode mismatch; rebuild the server')
             history, session = [], ''
-            prompts = ('Where is Mars', 'What planet did I just ask about?', 'Explain a Python dictionary.', 'What is love ?')
             for turn in range(args.cycles):
-                phase = turn % 4
-                if turn == 0 or (not args.keep_cache and phase in (0, 3)):
+                prompt, new_session, reset = turn_plan(spec, turn, args.keep_cache)
+                if reset:
                     http.request(port, '/api/cache/reset', {})
-                if phase != 1:
+                if new_session:
                     history, session = [], 'ram-' + uuid.uuid4().hex
-                history.append({'role': 'user', 'content': prompts[phase]})
+                history.append({'role': 'user', 'content': prompt})
                 response = http.stream_chat(port, history, session, args.max_tokens)
                 status = json.loads(http.request(port, '/experts'))
                 sample = {'turn': turn, 'messages': [dict(m) for m in history], 'session_id': session,
                           'response': response, 'status': status, 'process': http.process_snapshot(server.pid)}
                 common.write_exclusive_json(directory / f'turn-{turn}.json', sample)
                 record['turns'].append(sample)
+                from benchmark_lookahead import validate_gate_counters
+                validate_gate_counters(response['metrics']['lookahead'], args.lookahead == 'on')
                 history.append({'role': 'assistant', 'content': response['text']})
                 print(f"turn={turn} RSS={sample['process'].get('VmRSS')}KiB swap={sample['process'].get('VmSwap')}KiB", flush=True)
             record['status'] = 'completed'

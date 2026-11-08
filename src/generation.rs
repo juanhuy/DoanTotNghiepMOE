@@ -2,8 +2,45 @@ use crate::{model::DecoderModel, tokenizer};
 use serde::Serialize;
 use std::io;
 
+/// Request-local decode lookahead accounting. Bytes are payload/capacity, not SSD I/O or RSS.
+#[derive(Debug, Default, Serialize)]
+pub struct LookaheadMetrics {
+    /// Decode layer visits including the final layer; histogram excludes final layers.
+    pub evaluated_layers: u64,
+    pub no_next_layer: u64,
+    pub blocked_by_misses: u64,
+    pub disabled_eligible_layers: u64,
+    /// Index = current-layer demand misses after cache/previous-lookahead lookup.
+    pub miss_histogram: Vec<u64>,
+    pub prediction_calls: u64,
+    pub no_positive_score_calls: u64,
+    pub all_candidates_cached_calls: u64,
+    pub positive_candidates: u64,
+    pub candidates_in_ram: u64,
+    pub candidates_in_vram: u64,
+    pub candidates_available: u64,
+    pub eligible_layers: u64,
+    pub proposed: u64,
+    pub loaded: u64,
+    pub load_errors: u64,
+    pub used: u64,
+    pub unused: u64,
+    pub abandoned: u64,
+    pub pending: u64,
+    pub file_bytes: u64,
+    pub buffer_peak_bytes: usize,
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct GenerationMetrics {
+    pub kv_buffer_reuse: KvBufferReuseMetrics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_trace: Option<RequestMemoryTrace>,
+    pub lookahead_enabled: bool,
+    pub lookahead: LookaheadMetrics,
+    /// Decode expert payload capacity only; excludes dense/KV/scratch/allocator/driver.
+    pub decode_expert_active_peak_bytes: usize,
+    pub decode_expert_host_peak_bytes: usize,
     pub tokenizer_ms: f64,
     pub prefill_ms: f64,
     pub time_to_first_token_ms: f64,
@@ -31,6 +68,58 @@ pub struct GenerationMetrics {
     pub expert_cache_bytes: usize,
     pub kv_cache_bytes: usize,
     pub cached_prompt_tokens: usize,
+}
+
+/// Raw KV allocation reuse, separate from valid prefix/result reuse.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct KvBufferReuseMetrics {
+    pub enabled: bool,
+    pub reused_capacity_bytes: usize,
+    pub early_evicted_sessions: usize,
+    pub source: Option<&'static str>,
+}
+
+/// Selected live host allocations at explicit boundaries; not RSS or an allocator trace.
+#[derive(Clone, Debug, Serialize)]
+pub struct RequestMemoryTrace {
+    pub schema_version: u32,
+    pub outcome: &'static str,
+    pub samples: Vec<MemoryStageSample>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AllocatorMemorySample {
+    pub status: &'static str,
+    pub libc_version: Option<String>,
+    /// Environment hint only; absence does not prove the active allocator's identity.
+    pub preload_env_present: bool,
+    pub arena_bytes: Option<usize>,
+    pub in_use_bytes: Option<usize>,
+    pub free_bytes: Option<usize>,
+    pub mmap_bytes: Option<usize>,
+    /// Duration of the allocator call, not the complete memory trace overhead.
+    pub query_ns: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MemoryStageSample {
+    pub stage: &'static str,
+    pub elapsed_ms: f64,
+    pub rss_bytes: Option<usize>,
+    pub swap_bytes: Option<usize>,
+    /// Linux caller TID; does not identify every Rayon allocation worker.
+    pub thread_id: Option<u32>,
+    pub allocator: AllocatorMemorySample,
+    pub dense_weight_payload_bytes: usize,
+    pub expert_cache_capacity_bytes: usize,
+    pub recycled_capacity_bytes: usize,
+    pub retained_session_capacity_bytes: usize,
+    /// Subset of retained_session_capacity_bytes, never added a second time.
+    pub retained_kv_capacity_bytes: usize,
+    pub active_kv_capacity_bytes: usize,
+    pub scratch_capacity_bytes: usize,
+    pub prefill_capacity_bytes: usize,
+    pub tracked_host_bytes: usize,
 }
 
 #[derive(Debug, Serialize)]

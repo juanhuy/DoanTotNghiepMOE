@@ -1,0 +1,26 @@
+[
+  {
+    "sample": 0,
+    "MemAvailable_KiB": 10692028,
+    "SwapUsed_KiB": 0,
+    "pswpin_pages": 0,
+    "pswpout_pages": 0,
+    "pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=188653\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=187797"
+  },
+  {
+    "sample": 1,
+    "MemAvailable_KiB": 10663496,
+    "SwapUsed_KiB": 0,
+    "pswpin_pages": 0,
+    "pswpout_pages": 0,
+    "pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=188653\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=187797"
+  },
+  {
+    "sample": 2,
+    "MemAvailable_KiB": 10619312,
+    "SwapUsed_KiB": 0,
+    "pswpin_pages": 0,
+    "pswpout_pages": 0,
+    "pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=188653\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=187797"
+  }
+]

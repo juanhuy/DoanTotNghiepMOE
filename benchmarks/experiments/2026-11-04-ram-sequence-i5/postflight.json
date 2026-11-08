@@ -1,0 +1,73 @@
+{
+  "observed_utc": "2026-11-04T14:53:07.177782+00:00",
+  "scope": "post-run observer process ancestors, not retrospective child telemetry",
+  "system": {
+    "MemAvailable_KiB": 11269644,
+    "SwapUsed_KiB": 392472,
+    "pswpin_pages": 3239,
+    "pswpout_pages": 136031,
+    "memory_pressure": "some avg10=0.00 avg60=0.12 avg300=0.07 total=772879\nfull avg10=0.00 avg60=0.12 avg300=0.07 total=768801",
+    "swappiness": "60"
+  },
+  "cgroup_ancestors": [
+    {
+      "ancestor_level": 0,
+      "values": {
+        "memory.current": "7637499904",
+        "memory.max": "max",
+        "memory.high": "max",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 2",
+        "memory.swap.current": "367923200",
+        "memory.swap.max": "max"
+      }
+    },
+    {
+      "ancestor_level": 1,
+      "values": {
+        "memory.current": "9991999488",
+        "memory.max": "max",
+        "memory.high": "max",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 2",
+        "memory.swap.current": "367955968",
+        "memory.swap.max": "max"
+      }
+    },
+    {
+      "ancestor_level": 2,
+      "values": {
+        "memory.current": "11206369280",
+        "memory.max": "max",
+        "memory.high": "max",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 2",
+        "memory.swap.current": "382976000",
+        "memory.swap.max": "max"
+      }
+    },
+    {
+      "ancestor_level": 3,
+      "values": {
+        "memory.current": "11240325120",
+        "memory.max": "max",
+        "memory.high": "max",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 2",
+        "memory.swap.current": "382976000",
+        "memory.swap.max": "max"
+      }
+    },
+    {
+      "ancestor_level": 4,
+      "values": {
+        "memory.current": "11394179072",
+        "memory.max": "max",
+        "memory.high": "max",
+        "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 2",
+        "memory.swap.current": "382976000",
+        "memory.swap.max": "max"
+      }
+    },
+    {
+      "ancestor_level": 5,
+      "values": {}
+    }
+  ]
+}

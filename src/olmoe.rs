@@ -4,7 +4,11 @@ use crate::{
         causal_attention_into, configure_parallelism, finite, invalid, rms_norm_in_place,
         rms_norm_into, softmax, Matrix,
     },
-    generation::{Generation, GenerationMetrics},
+    generation::{
+        Generation, GenerationMetrics, KvBufferReuseMetrics, LookaheadMetrics, MemoryStageSample,
+        RequestMemoryTrace,
+    },
+    gpu::GpuMode,
     int8_expert::{ExpertScratch, Int8Expert},
     safetensors::TensorIndex,
 };
@@ -120,6 +124,14 @@ pub struct LayerExpertStatus {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ExpertStatusReport {
+    pub kv_buffer_reuse_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_kv_buffer_reuse: Option<KvBufferReuseMetrics>,
+    pub memory_trace_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_memory_trace: Option<RequestMemoryTrace>,
+    pub gpu_mode_at_load: &'static str,
+    pub lookahead_enabled: bool,
     pub expert_cache_policy: &'static str,
     pub num_layers: usize,
     pub num_experts: usize,
@@ -206,8 +218,28 @@ struct SessionState {
     last_used: u64,
 }
 
+struct PreparedSession {
+    id: String,
+    tokens: Vec<usize>,
+}
+
+#[derive(Default)]
+struct CandidateDiagnostics {
+    positive: u64,
+    in_ram: u64,
+    in_vram: u64,
+    available: u64,
+}
+
 #[derive(Default)]
 struct RequestProfile {
+    kv_buffer_reuse: KvBufferReuseMetrics,
+    memory_trace: Option<RequestMemoryTrace>,
+    memory_started: Option<Instant>,
+    active_kv_container_bytes: usize,
+    lookahead: LookaheadMetrics,
+    decode_expert_active_peak_bytes: usize,
+    decode_expert_host_peak_bytes: usize,
     attention: Duration,
     expert_compute: Duration,
     lm_head: Duration,
@@ -224,6 +256,13 @@ struct RequestProfile {
     cache_misses: u64,
     cache_evictions: u64,
     bytes_read: u64,
+}
+
+#[derive(Default)]
+struct ActiveMemory {
+    kv: usize,
+    scratch: usize,
+    prefill: usize,
 }
 
 struct StepScratch {
@@ -244,6 +283,32 @@ struct StepScratch {
 }
 
 impl StepScratch {
+    fn capacity_bytes(&self) -> usize {
+        let floats = [
+            &self.x,
+            &self.hidden,
+            &self.query,
+            &self.key,
+            &self.value,
+            &self.qkv_buffer,
+            &self.context,
+            &self.projected,
+            &self.router,
+            &self.logits,
+            &self.rope_bases,
+        ];
+        let expert_bytes = |s: &ExpertScratch| (s.activated.capacity() + s.output.capacity()) * 4;
+        floats.iter().map(|v| v.capacity() * 4).sum::<usize>()
+            + self.sincos.capacity() * std::mem::size_of::<(f32, f32)>()
+            + expert_bytes(&self.expert)
+            + self.expert_scratches.capacity() * std::mem::size_of::<ExpertScratch>()
+            + self
+                .expert_scratches
+                .iter()
+                .map(expert_bytes)
+                .sum::<usize>()
+    }
+
     fn new(config: &Config) -> Self {
         let hidden = config.hidden_size;
         let hd = hidden / config.num_attention_heads;
@@ -278,6 +343,10 @@ impl StepScratch {
 }
 
 pub struct OlmoeModel {
+    kv_buffer_reuse_enabled: bool,
+    last_kv_buffer_reuse: Option<KvBufferReuseMetrics>,
+    memory_trace_enabled: bool,
+    last_memory_trace: Option<RequestMemoryTrace>,
     // Retain the serial reference only in tests for paired in-process measurements.
     #[cfg(test)]
     serial_prefill_reference: bool,
@@ -299,6 +368,8 @@ pub struct OlmoeModel {
     session_clock: u64,
     session_cache_bytes: usize,
     victim_expert_cache: bool,
+    lookahead_enabled: bool,
+    gpu_mode_at_load: GpuMode,
     gpu_tier: crate::gpu::GpuTierManager,
     gpu_dense: Option<crate::gpu::GpuDenseStorage>,
     inter_layer_transitions: Vec<Vec<u16>>,
@@ -341,6 +412,22 @@ impl OlmoeModel {
         context_limit: usize,
         dense_budget: usize,
     ) -> io::Result<Self> {
+        Self::load_with_gpu_mode(
+            path,
+            cache_bytes_per_layer,
+            context_limit,
+            dense_budget,
+            GpuMode::from_environment()?,
+        )
+    }
+
+    pub fn load_with_gpu_mode(
+        path: impl AsRef<Path>,
+        cache_bytes_per_layer: usize,
+        context_limit: usize,
+        dense_budget: usize,
+        gpu_mode: GpuMode,
+    ) -> io::Result<Self> {
         configure_parallelism()?;
         let victim_expert_cache = match std::env::var("MOE_EXPERT_CACHE_POLICY").as_deref() {
             Ok("victim") | Err(std::env::VarError::NotPresent) => true,
@@ -352,6 +439,18 @@ impl OlmoeModel {
             }
         };
 
+        let lookahead_enabled =
+            parse_lookahead_mode(std::env::var("MOE_LOOKAHEAD_PREFETCH").ok().as_deref())?;
+        let memory_trace_enabled = match std::env::var("MOE_MEMORY_TRACE") {
+            Ok(value) => parse_memory_trace_mode(Some(&value))?,
+            Err(std::env::VarError::NotPresent) => false,
+            Err(_) => return Err(invalid("MOE_MEMORY_TRACE must be on or off")),
+        };
+        let kv_buffer_reuse_enabled = match std::env::var("MOE_KV_BUFFER_REUSE") {
+            Ok(value) => parse_kv_buffer_reuse_mode(Some(&value))?,
+            Err(std::env::VarError::NotPresent) => false,
+            Err(_) => return Err(invalid("MOE_KV_BUFFER_REUSE must be on or off")),
+        };
         let path = path.as_ref();
         if path.join("INCOMPLETE").exists() {
             return Err(invalid("checkpoint conversion is incomplete"));
@@ -491,7 +590,13 @@ impl OlmoeModel {
         } else {
             serde_json::Value::Null
         };
-        let mut gpu_tier = crate::gpu::GpuTierManager::probe();
+        let mut gpu_tier = match gpu_mode {
+            GpuMode::Auto => crate::gpu::GpuTierManager::probe(),
+            GpuMode::Cpu => {
+                info!("CPU selected at load; skipping CUDA probe and GPU allocation");
+                crate::gpu::GpuTierManager::cpu_only()
+            }
+        };
         let gpu_dense = if gpu_tier.is_enabled() {
             if let Some(engine) = crate::gpu::GpuComputeEngine::init() {
                 let mut gpu_layers = Vec::with_capacity(layers.len());
@@ -601,10 +706,68 @@ impl OlmoeModel {
             session_clock: 0,
             session_cache_bytes: 256 * 1024 * 1024,
             victim_expert_cache,
+            lookahead_enabled,
+            memory_trace_enabled,
+            last_memory_trace: None,
+            kv_buffer_reuse_enabled,
+            last_kv_buffer_reuse: None,
+            gpu_mode_at_load: gpu_mode,
             gpu_tier,
             gpu_dense,
             inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
         })
+    }
+
+    fn record_memory(
+        &self,
+        profile: &mut RequestProfile,
+        stage: &'static str,
+        active: ActiveMemory,
+    ) {
+        let Some(trace) = profile.memory_trace.as_mut() else {
+            return;
+        };
+        let expert_cache = self.layers.iter().map(|l| l.bytes).sum::<usize>();
+        let recycled = self.layers.iter().map(Layer::recycled_bytes).sum::<usize>();
+        let retained = self.sessions.iter().fold(0usize, |total, (id, state)| {
+            total
+                .saturating_add(id.capacity())
+                .saturating_add(session_bytes(state))
+        });
+        let retained_kv = self
+            .sessions
+            .values()
+            .map(|s| kv_capacity_bytes(&s.kv, s.kv.capacity() * std::mem::size_of::<Kv>()))
+            .sum();
+        let tracked = [
+            self.dense_bytes,
+            expert_cache,
+            recycled,
+            retained,
+            active.kv,
+            active.scratch,
+            active.prefill,
+        ]
+        .into_iter()
+        .fold(0usize, usize::saturating_add);
+        let (rss_bytes, swap_bytes) = crate::ram::process_memory_bytes();
+        trace.samples.push(MemoryStageSample {
+            stage,
+            elapsed_ms: profile.memory_started.map_or(0.0, |t| ms(t.elapsed())),
+            rss_bytes,
+            swap_bytes,
+            thread_id: crate::ram::current_thread_id(),
+            allocator: crate::ram::allocator_memory(),
+            dense_weight_payload_bytes: self.dense_bytes,
+            expert_cache_capacity_bytes: expert_cache,
+            recycled_capacity_bytes: recycled,
+            retained_session_capacity_bytes: retained,
+            retained_kv_capacity_bytes: retained_kv,
+            active_kv_capacity_bytes: active.kv,
+            scratch_capacity_bytes: active.scratch,
+            prefill_capacity_bytes: active.prefill,
+            tracked_host_bytes: tracked,
+        });
     }
 
     pub fn expert_status(&self) -> ExpertStatusReport {
@@ -618,7 +781,7 @@ impl OlmoeModel {
                 recycled_bytes: layer.recycled_bytes(),
             })
             .collect();
-        let mut gpu_status = self.gpu_tier.status();
+        let mut gpu_status = self.gpu_status();
         if let Some(storage) = &self.gpu_dense {
             gpu_status.vram_experts_resident = storage.expert_cache.len();
             let total_vram = storage.total_allocated_bytes + storage.expert_cache.used_bytes;
@@ -638,6 +801,12 @@ impl OlmoeModel {
             system_telemetry.gpu_vram_used_mib = Some(gpu_status.allocated_vram_bytes / 1048576);
         }
         ExpertStatusReport {
+            kv_buffer_reuse_enabled: self.kv_buffer_reuse_enabled,
+            last_kv_buffer_reuse: self.last_kv_buffer_reuse.clone(),
+            memory_trace_enabled: self.memory_trace_enabled,
+            last_memory_trace: self.last_memory_trace.clone(),
+            gpu_mode_at_load: self.gpu_mode_at_load.as_str(),
+            lookahead_enabled: self.lookahead_enabled,
             expert_cache_policy: if self.victim_expert_cache {
                 "victim"
             } else {
@@ -667,31 +836,48 @@ impl OlmoeModel {
         }
     }
 
+    fn gpu_status(&self) -> crate::gpu::GpuTierStatus {
+        let mut status = self.gpu_tier.status();
+        if self.gpu_mode_at_load == GpuMode::Cpu {
+            status.message =
+                "GPU tắt từ lúc nạp; khởi động lại với MOE_GPU_MODE=auto để sử dụng GPU".into();
+        }
+        status
+    }
+
     /// Đảo trạng thái Bật / Tắt GPU Tier khi chạy ứng dụng
     pub fn toggle_gpu(&mut self) -> crate::gpu::GpuTierStatus {
+        if self.gpu_mode_at_load == GpuMode::Cpu {
+            return self.gpu_status();
+        }
         let new_state = self.gpu_tier.toggle_enabled();
         if new_state {
             if let Some(storage) = self.gpu_dense.as_mut() {
                 storage.engine.reset_circuit_breaker();
             }
         }
-        self.gpu_tier.status()
+        self.gpu_status()
     }
 
     /// Thiết lập trạng thái Bật / Tắt GPU Tier
     pub fn set_gpu_enabled(&mut self, enabled: bool) -> crate::gpu::GpuTierStatus {
+        if self.gpu_mode_at_load == GpuMode::Cpu {
+            return self.gpu_status();
+        }
         self.gpu_tier.set_enabled(enabled);
         if enabled {
             if let Some(storage) = self.gpu_dense.as_mut() {
                 storage.engine.reset_circuit_breaker();
             }
         }
-        self.gpu_tier.status()
+        self.gpu_status()
     }
 
     /// Xóa toàn bộ bộ đệm (KV session cache, Host RAM L2 expert cache, GPU VRAM L1 expert cache)
     /// Đưa hệ thống về trạng thái Khởi động lạnh (Cold Start / 0 cache) hoàn toàn
     pub fn reset_cache(&mut self) {
+        self.last_kv_buffer_reuse = None;
+        self.last_memory_trace = None;
         // 1. Xóa toàn bộ KV session cache
         self.sessions.clear();
         // Keep the configured admission budget so subsequent sessions can cache KV again.
@@ -1060,9 +1246,9 @@ impl OlmoeModel {
         gpu_dense: Option<&crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
         max_candidates: usize,
-    ) -> Vec<usize> {
+    ) -> (Vec<usize>, CandidateDiagnostics) {
         if curr_layer_id >= transitions.len() || max_candidates == 0 {
-            return Vec::new();
+            return (Vec::new(), CandidateDiagnostics::default());
         }
         let trans = &transitions[curr_layer_id];
         let mut scores = [0u32; 64];
@@ -1086,33 +1272,37 @@ impl OlmoeModel {
 
         // 3. Lọc các expert CHƯA CÓ trong cache của tầng tiếp theo (và chỉ lấy expert có điểm tin cậy > 0)
         let next_layer_id = curr_layer_id + 1;
-        let mut candidates: Vec<(usize, u32)> = (0..64)
-            .filter(|&eid| {
-                if scores[eid] == 0 {
-                    return false;
-                }
-                if next_layer_cache.iter().any(|entry| entry.id == eid) {
-                    return false;
-                }
-                if let Some(storage) = gpu_dense {
-                    if gpu_enabled && storage.expert_cache.contains(next_layer_id, eid) {
-                        return false;
-                    }
-                }
-                true
-            })
-            .map(|eid| (eid, scores[eid]))
-            .collect();
+        let mut diagnostics = CandidateDiagnostics::default();
+        let mut candidates = Vec::new();
+        for (eid, score) in scores.into_iter().enumerate() {
+            if score == 0 {
+                continue;
+            }
+            diagnostics.positive += 1;
+            if next_layer_cache.iter().any(|entry| entry.id == eid) {
+                diagnostics.in_ram += 1;
+            } else if gpu_enabled
+                && gpu_dense.is_some_and(|s| s.expert_cache.contains(next_layer_id, eid))
+            {
+                diagnostics.in_vram += 1;
+            } else {
+                diagnostics.available += 1;
+                candidates.push((eid, score));
+            }
+        }
 
         // 4. Sắp xếp giảm dần theo điểm số dự đoán
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         // 5. Chọn top max_candidates ứng viên có xác suất cao nhất
-        candidates
-            .into_iter()
-            .take(max_candidates)
-            .map(|(eid, _)| eid)
-            .collect()
+        (
+            candidates
+                .into_iter()
+                .take(max_candidates)
+                .map(|(eid, _)| eid)
+                .collect(),
+            diagnostics,
+        )
     }
 
     /// Tra cứu Expert theo thứ tự phân tầng 3 cấp: L2 Host RAM -> L1 GPU VRAM -> SSD NVMe Cold Storage
@@ -1387,6 +1577,25 @@ impl OlmoeModel {
         scratch: &mut StepScratch,
         check: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
+        let result = self.step_inner(token, kv, profile, scratch, check);
+        if result.is_err() {
+            if profile.lookahead.pending > 0 || profile.lookahead.load_errors > 0 {
+                warn!(lookahead = ?profile.lookahead, "decode failed; dropping pending speculative payloads");
+            }
+            profile.lookahead.abandoned += profile.lookahead.pending;
+            profile.lookahead.pending = 0;
+        }
+        result
+    }
+
+    fn step_inner(
+        &mut self,
+        token: usize,
+        kv: &mut [Kv],
+        profile: &mut RequestProfile,
+        scratch: &mut StepScratch,
+        check: &dyn Fn() -> io::Result<()>,
+    ) -> io::Result<()> {
         let victim_cache = self.victim_expert_cache;
         let c = &self.config;
         if token >= c.vocab_size {
@@ -1411,14 +1620,15 @@ impl OlmoeModel {
             &mut self.inter_layer_transitions,
         );
 
+        let lookahead_enabled = self.lookahead_enabled;
         let num_layers = layers.len();
         let mut lookahead_prefetched: HashMap<usize, Int8Expert> = HashMap::new();
         let mut prev_top_experts: Vec<usize> = Vec::with_capacity(8);
 
         for id in 0..num_layers {
             check()?;
-            let (prev_and_curr, remaining) = layers.split_at_mut(id + 1);
-            let layer = &mut prev_and_curr[id];
+            let (previous, current_and_next) = layers.split_at_mut(id);
+            let (layer, remaining) = current_and_next.split_first_mut().unwrap();
 
             let attention_started = Instant::now();
             let position = kv[id].keys.len() / kd;
@@ -1533,6 +1743,8 @@ impl OlmoeModel {
                 } else if let Some(exp) = lookahead_prefetched.remove(&eid) {
                     // TRÚNG LOOKAHEAD PREFETCH TỪ TẦNG TRƯỚC!
                     // Biến 1 Miss I/O từ SSD thành 1 Hit tức thời trong RAM!
+                    profile.lookahead.used += 1;
+                    profile.lookahead.pending -= 1;
                     preloaded.insert(eid, exp);
                     hit_slots.push(slot);
                 } else {
@@ -1543,15 +1755,33 @@ impl OlmoeModel {
 
             // Hoàn trả các expert còn lại trong lookahead_prefetched (nếu không dùng đến) vào recycled_buffers
             for (_, unused_exp) in lookahead_prefetched.drain() {
+                profile.lookahead.unused += 1;
+                profile.lookahead.pending -= 1;
                 layer.recycle(unused_exp.into_raw(), cache_bytes_per_layer);
             }
 
             // 3. Dự đoán Speculative Lookahead Candidates cho tầng tiếp theo (id + 1):
             // Opportunistic Lookahead: Chỉ kích hoạt nạp trước khi tầng hiện tại KHÔNG CÓ MISS (toàn bộ Hit).
             // Nếu tầng hiện tại có miss, ưu tiên 100% băng thông I/O nạp miss để tránh hiện tượng Prefetch Contention.
-            let next_candidates = if miss_slots.is_empty() {
+            let diagnostics = &mut profile.lookahead;
+            diagnostics.evaluated_layers += 1;
+            if remaining.is_empty() {
+                diagnostics.no_next_layer += 1;
+            } else {
+                diagnostics.miss_histogram.resize(top_k + 1, 0);
+                diagnostics.miss_histogram[miss_slots.len()] += 1;
+                if miss_slots.is_empty() {
+                    diagnostics.eligible_layers += 1;
+                    if !lookahead_enabled {
+                        diagnostics.disabled_eligible_layers += 1;
+                    }
+                } else {
+                    diagnostics.blocked_by_misses += 1;
+                }
+            }
+            let next_candidates = if lookahead_enabled && miss_slots.is_empty() {
                 if let Some(next_l) = remaining.first() {
-                    Self::predict_next_layer_experts(
+                    let (candidates, stats) = Self::predict_next_layer_experts(
                         transitions,
                         id,
                         top_experts,
@@ -1559,14 +1789,28 @@ impl OlmoeModel {
                         &next_l.cache,
                         gpu_dense.as_ref(),
                         gpu_tier.is_enabled(),
-                        2, // Window = 2 candidates sáng giá nhất có score > 0
-                    )
+                        2, // Window unchanged: at most two positive-score uncached candidates.
+                    );
+                    profile.lookahead.prediction_calls += 1;
+                    profile.lookahead.positive_candidates += stats.positive;
+                    profile.lookahead.candidates_in_ram += stats.in_ram;
+                    profile.lookahead.candidates_in_vram += stats.in_vram;
+                    profile.lookahead.candidates_available += stats.available;
+                    if stats.positive == 0 {
+                        profile.lookahead.no_positive_score_calls += 1;
+                    } else if candidates.is_empty() {
+                        profile.lookahead.all_candidates_cached_calls += 1;
+                    }
+                    candidates
                 } else {
                     Vec::new()
                 }
             } else {
                 Vec::new()
             };
+
+            profile.lookahead.proposed += next_candidates.len() as u64;
+            let speculative_attempts = next_candidates.len();
 
             // 4. Chuẩn bị danh sách Hit Experts sẵn sàng tính toán
             struct ReadyExpert {
@@ -1647,6 +1891,27 @@ impl OlmoeModel {
                 (Vec::new(), Vec::new())
             };
 
+            let next_buffer_bytes: usize = next_buffers.iter().map(buffer_bytes).sum();
+            profile.lookahead.buffer_peak_bytes =
+                profile.lookahead.buffer_peak_bytes.max(next_buffer_bytes);
+            observe_decode_payload(
+                profile,
+                previous
+                    .iter()
+                    .chain(std::iter::once(&*layer))
+                    .chain(remaining.iter()),
+                hit_ready
+                    .iter()
+                    .map(|r| r.expert.allocated_bytes())
+                    .sum::<usize>()
+                    + preloaded
+                        .values()
+                        .map(Int8Expert::allocated_bytes)
+                        .sum::<usize>()
+                    + curr_buffers.iter().map(buffer_bytes).sum::<usize>()
+                    + next_buffer_bytes,
+            );
+
             if !hit_ready.is_empty() && has_io_work {
                 let num_hits = hit_ready.len();
                 let (hit_scratches, _) = scratch.expert_scratches[..top_k].split_at_mut(num_hits);
@@ -1703,6 +1968,7 @@ impl OlmoeModel {
                     },
                 );
 
+                record_lookahead_loads(profile, speculative_attempts, &io_res.1);
                 compute_res.0?;
                 profile.expert_compute += compute_res.1;
                 profile.expert_io += io_res.2;
@@ -1744,6 +2010,7 @@ impl OlmoeModel {
                 };
 
                 let elapsed = started.elapsed();
+                record_lookahead_loads(profile, speculative_attempts, &next_loaded);
                 profile.expert_io += elapsed;
                 profile.file_io += elapsed;
                 profile.file_loads += (curr_loaded.len() + next_loaded.len()) as u64;
@@ -1804,6 +2071,27 @@ impl OlmoeModel {
                     is_protected,
                 });
             }
+
+            observe_decode_payload(
+                profile,
+                previous
+                    .iter()
+                    .chain(std::iter::once(&*layer))
+                    .chain(remaining.iter()),
+                hit_ready
+                    .iter()
+                    .chain(miss_ready.iter())
+                    .map(|r| r.expert.allocated_bytes())
+                    .sum::<usize>()
+                    + preloaded
+                        .values()
+                        .map(Int8Expert::allocated_bytes)
+                        .sum::<usize>()
+                    + lookahead_prefetched
+                        .values()
+                        .map(Int8Expert::allocated_bytes)
+                        .sum::<usize>(),
+            );
 
             if !miss_ready.is_empty() {
                 let num_hits = hit_ready.len();
@@ -1945,6 +2233,37 @@ impl OlmoeModel {
         let mut expert_uses: Vec<Vec<(usize, usize, f32)>> = (0..c.num_experts)
             .map(|_| Vec::with_capacity(tokens.len()))
             .collect();
+
+        if profile.memory_trace.is_some() {
+            let prefill = [
+                &batch,
+                &hidden_batch,
+                &all_q,
+                &all_k,
+                &all_v,
+                &norm_batch,
+                &context_batch,
+                &projected_batch,
+                &contributions,
+            ]
+            .iter()
+            .map(|v| v.capacity() * 4)
+            .sum::<usize>()
+                + expert_uses.capacity() * std::mem::size_of::<Vec<(usize, usize, f32)>>()
+                + expert_uses
+                    .iter()
+                    .map(|v| v.capacity() * std::mem::size_of::<(usize, usize, f32)>())
+                    .sum::<usize>();
+            self.record_memory(
+                profile,
+                "prefill_buffers_live",
+                ActiveMemory {
+                    kv: kv_capacity_bytes(kv, profile.active_kv_container_bytes),
+                    scratch: scratch.capacity_bytes(),
+                    prefill,
+                },
+            );
+        }
 
         let intermediate_size = c.intermediate_size;
         let weight_count = d * intermediate_size * 3;
@@ -2267,7 +2586,13 @@ impl OlmoeModel {
         tokens: &[usize],
         session_id: Option<&str>,
         kd: usize,
-    ) -> (usize, Vec<Kv>) {
+        max_tokens: usize,
+        reuse: &mut KvBufferReuseMetrics,
+    ) -> (usize, Vec<Kv>, Option<PreparedSession>) {
+        *reuse = KvBufferReuseMetrics {
+            enabled: self.kv_buffer_reuse_enabled,
+            ..Default::default()
+        };
         if let Some(mut state) = session_id.and_then(|id| self.sessions.remove(id)) {
             // Causal KV remains valid up to the first changed token. Recompute at
             // least the final prompt token because the cache does not retain logits.
@@ -2292,7 +2617,26 @@ impl OlmoeModel {
                     cache.keys.truncate(prefix * kd);
                     cache.values.truncate(prefix * kd);
                 }
-                return (prefix, state.kv);
+                return (prefix, state.kv, None);
+            }
+            if self.kv_buffer_reuse_enabled {
+                for cache in &mut state.kv {
+                    cache.keys.clear();
+                    cache.values.clear();
+                }
+                reuse.reused_capacity_bytes =
+                    kv_capacity_bytes(&state.kv, state.kv.capacity() * std::mem::size_of::<Kv>());
+                reuse.source = Some("same_session_reset");
+                return (0, state.kv, None);
+            }
+        }
+        if self.kv_buffer_reuse_enabled {
+            if let Some(id) = session_id {
+                if let Some((kv, prepared)) =
+                    self.take_evicted_kv(tokens, id, kd, max_tokens, reuse)
+                {
+                    return (0, kv, Some(prepared));
+                }
             }
         }
         // Allocate only after lookup; a reusable session already owns its buffers.
@@ -2301,7 +2645,86 @@ impl OlmoeModel {
             (0..self.layers.len())
                 .map(|_| Kv::with_capacity(self.context_limit, kd))
                 .collect(),
+            None,
         )
+    }
+
+    fn take_evicted_kv(
+        &mut self,
+        tokens: &[usize],
+        id: &str,
+        kd: usize,
+        max_tokens: usize,
+        reuse: &mut KvBufferReuseMetrics,
+    ) -> Option<(Vec<Kv>, PreparedSession)> {
+        let slots = self.context_limit.checked_mul(kd)?;
+        let minimum_kv = self.layers.len().checked_mul(
+            slots
+                .checked_mul(8)?
+                .checked_add(std::mem::size_of::<Kv>())?,
+        )?;
+        // Even a minimal final state would force eviction. Do not evict for a
+        // sessionless request, an oversized state, or merely speculative growth.
+        let minimum_state = minimum_kv
+            .checked_add(std::mem::size_of::<SessionState>())?
+            .checked_add(tokens.len().checked_mul(std::mem::size_of::<usize>())?)?
+            .checked_add(id.len())?;
+        let retained = self.sessions.iter().fold(0usize, |total, (key, state)| {
+            total
+                .saturating_add(key.capacity())
+                .saturating_add(session_bytes(state))
+        });
+        if minimum_state > self.session_cache_bytes
+            || retained.saturating_add(minimum_state) <= self.session_cache_bytes
+        {
+            return None;
+        }
+        let (old_id, donor) = self
+            .sessions
+            .iter()
+            .min_by_key(|(_, state)| state.last_used)?;
+        if donor.kv.len() != self.layers.len()
+            || donor
+                .kv
+                .iter()
+                .any(|kv| kv.keys.capacity() < slots || kv.values.capacity() < slots)
+        {
+            return None;
+        }
+        let donor_bytes =
+            kv_capacity_bytes(&donor.kv, donor.kv.capacity() * std::mem::size_of::<Kv>());
+        let old_bytes = old_id.capacity().saturating_add(session_bytes(donor));
+        let old_id = old_id.clone();
+        // Reserve the token buffer once so admission size is exact before the
+        // destructive handoff, even if decoding reaches its token limit.
+        let mut prepared = PreparedSession {
+            id: id.to_owned(),
+            tokens: tokens.to_vec(),
+        };
+        prepared.tokens.reserve_exact(max_tokens.saturating_sub(1));
+        let incoming = donor_bytes
+            .saturating_add(std::mem::size_of::<SessionState>())
+            .saturating_add(prepared.id.capacity())
+            .saturating_add(
+                prepared
+                    .tokens
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<usize>()),
+            );
+        if retained.saturating_sub(old_bytes).saturating_add(incoming) > self.session_cache_bytes {
+            return None;
+        }
+        // Exclusive model ownership; the entry cannot disappear between lookup
+        // and removal. Remove the old ID before any buffer can be overwritten.
+        let mut donor = self.sessions.remove(&old_id)?;
+        for kv in &mut donor.kv {
+            kv.keys.clear();
+            kv.values.clear();
+        }
+        reuse.reused_capacity_bytes = donor_bytes;
+        reuse.early_evicted_sessions = 1;
+        reuse.source = Some("evicted_session");
+        Some((donor.kv, prepared))
     }
 
     pub(crate) fn generate_controlled(
@@ -2313,7 +2736,32 @@ impl OlmoeModel {
         ready: impl FnOnce() -> io::Result<()>,
         emit: Option<&mut DeltaSink<'_>>,
     ) -> io::Result<Generation> {
-        let result = self.generate_inner(prompt, max_tokens, session_id, check, ready, emit);
+        let mut profile = RequestProfile::default();
+        profile.kv_buffer_reuse.enabled = self.kv_buffer_reuse_enabled;
+        if self.memory_trace_enabled {
+            profile.memory_trace = Some(RequestMemoryTrace {
+                schema_version: 1,
+                outcome: "running",
+                samples: Vec::with_capacity(8),
+            });
+            profile.memory_started = Some(Instant::now());
+        }
+        self.record_memory(&mut profile, "before_request", ActiveMemory::default());
+        let mut result = self.generate_inner(
+            prompt,
+            max_tokens,
+            session_id,
+            check,
+            ready,
+            emit,
+            &mut profile,
+        );
+        // All generate_inner locals have now left scope, even on cancellation/error.
+        self.record_memory(
+            &mut profile,
+            "after_generate_inner",
+            ActiveMemory::default(),
+        );
         if result
             .as_ref()
             .is_err_and(|error| error.kind() == io::ErrorKind::OutOfMemory)
@@ -2326,10 +2774,27 @@ impl OlmoeModel {
                 layer.recycled_buffers.clear();
                 layer.bytes = 0;
             }
+            self.record_memory(&mut profile, "after_error_cleanup", ActiveMemory::default());
         }
+        if let Some(trace) = profile.memory_trace.as_mut() {
+            trace.outcome = match &result {
+                Ok(_) => "completed",
+                Err(e) if e.kind() == io::ErrorKind::OutOfMemory => "out_of_memory",
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => "interrupted",
+                Err(_) => "error",
+            };
+        }
+        if let Ok(generation) = &mut result {
+            if let Some(metrics) = &mut generation.metrics {
+                metrics.memory_trace = profile.memory_trace.clone();
+            }
+        }
+        self.last_memory_trace = profile.memory_trace;
+        self.last_kv_buffer_reuse = Some(profile.kv_buffer_reuse);
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn generate_inner(
         &mut self,
         prompt: &str,
@@ -2338,6 +2803,7 @@ impl OlmoeModel {
         check: &dyn Fn() -> io::Result<()>,
         ready: impl FnOnce() -> io::Result<()>,
         mut emit: Option<&mut DeltaSink<'_>>,
+        profile: &mut RequestProfile,
     ) -> io::Result<Generation> {
         let guard = self.ram_guard;
         // Check at existing cancellation boundaries, including inside layers.
@@ -2407,25 +2873,56 @@ impl OlmoeModel {
         self.session_clock = self.session_clock.wrapping_add(1);
         let d = self.config.hidden_size;
         let kd = d / self.config.num_attention_heads * self.config.num_key_value_heads;
-        let (cached_prompt_tokens, mut kv) = self.take_prefix_kv(&tokens, session_id, kd);
-        let mut profile = RequestProfile::default();
+        let (cached_prompt_tokens, mut kv, mut prepared_session) = self.take_prefix_kv(
+            &tokens,
+            session_id,
+            kd,
+            max_tokens,
+            &mut profile.kv_buffer_reuse,
+        );
+        if profile.memory_trace.is_some() {
+            profile.active_kv_container_bytes = kv.capacity() * std::mem::size_of::<Kv>();
+            self.record_memory(
+                profile,
+                "after_kv_lookup",
+                ActiveMemory {
+                    kv: kv_capacity_bytes(&kv, profile.active_kv_container_bytes),
+                    scratch: 0,
+                    prefill: 0,
+                },
+            );
+        }
         let mut scratch = StepScratch::new(&self.config);
         let prefill_started = Instant::now();
         self.prefill(
             &tokens[cached_prompt_tokens..],
             &mut kv,
-            &mut profile,
+            profile,
             &mut scratch,
             check,
         )?;
         let prefill_elapsed = prefill_started.elapsed();
+        if profile.memory_trace.is_some() {
+            self.record_memory(
+                profile,
+                "after_prefill",
+                ActiveMemory {
+                    kv: kv_capacity_bytes(&kv, profile.active_kv_container_bytes),
+                    scratch: scratch.capacity_bytes(),
+                    prefill: 0,
+                },
+            );
+        }
         let prefill_expert_io = profile.expert_io;
         let mut output = Vec::new();
         let mut finish_reason = "length";
         let first_token_started = total_started.elapsed();
         let decode_started = Instant::now();
         let mut decode_steps = 0usize;
-        let mut processed_tokens = tokens.clone();
+        let mut processed_tokens = prepared_session
+            .as_mut()
+            .map(|prepared| std::mem::take(&mut prepared.tokens))
+            .unwrap_or_else(|| tokens.clone());
         for step in 0..max_tokens {
             check()?;
             let token = argmax_greedy(&scratch.logits);
@@ -2446,7 +2943,7 @@ impl OlmoeModel {
                 break;
             }
             if step + 1 < max_tokens {
-                self.step(token, &mut kv, &mut profile, &mut scratch, check)?;
+                self.step(token, &mut kv, profile, &mut scratch, check)?;
                 processed_tokens.push(token);
                 decode_steps += 1;
             }
@@ -2475,8 +2972,24 @@ impl OlmoeModel {
             .iter()
             .map(|cache| (cache.keys.len() + cache.values.len()) * std::mem::size_of::<f32>())
             .sum();
+        let mut active_kv_after = 0;
+        if profile.memory_trace.is_some() {
+            active_kv_after = kv_capacity_bytes(&kv, profile.active_kv_container_bytes);
+            self.record_memory(
+                profile,
+                "before_session_admission",
+                ActiveMemory {
+                    kv: active_kv_after,
+                    scratch: scratch.capacity_bytes(),
+                    prefill: 0,
+                },
+            );
+        }
         if let Some(id) = session_id {
-            let id = id.to_owned();
+            let id = prepared_session
+                .take()
+                .map(|prepared| prepared.id)
+                .unwrap_or_else(|| id.to_owned());
             let state = SessionState {
                 tokens: processed_tokens,
                 kv,
@@ -2507,6 +3020,18 @@ impl OlmoeModel {
                 }
                 self.sessions.insert(id, state);
             }
+            active_kv_after = 0;
+        }
+        if profile.memory_trace.is_some() {
+            self.record_memory(
+                profile,
+                "after_session_admission",
+                ActiveMemory {
+                    kv: active_kv_after,
+                    scratch: scratch.capacity_bytes(),
+                    prefill: 0,
+                },
+            );
         }
         let seconds = decode_elapsed.as_secs_f64();
         Ok(Generation {
@@ -2515,6 +3040,12 @@ impl OlmoeModel {
             prompt_tokens: tokens.len(),
             finish_reason,
             metrics: Some(GenerationMetrics {
+                kv_buffer_reuse: profile.kv_buffer_reuse.clone(),
+                memory_trace: None, // Final boundary is attached by generate_controlled.
+                lookahead_enabled: self.lookahead_enabled,
+                lookahead: std::mem::take(&mut profile.lookahead),
+                decode_expert_active_peak_bytes: profile.decode_expert_active_peak_bytes,
+                decode_expert_host_peak_bytes: profile.decode_expert_host_peak_bytes,
                 tokenizer_ms: ms(tokenizer_elapsed),
                 prefill_ms: ms(prefill_elapsed),
                 time_to_first_token_ms: first_token_started.as_secs_f64() * 1000.0,
@@ -2549,6 +3080,75 @@ impl OlmoeModel {
             }),
         })
     }
+}
+
+fn kv_capacity_bytes(kv: &[Kv], container_bytes: usize) -> usize {
+    kv.iter().fold(container_bytes, |total, cache| {
+        total
+            .saturating_add(cache.keys.capacity().saturating_mul(4))
+            .saturating_add(cache.values.capacity().saturating_mul(4))
+    })
+}
+
+fn parse_memory_trace_mode(value: Option<&str>) -> io::Result<bool> {
+    match value {
+        None | Some("off") => Ok(false),
+        Some("on") => Ok(true),
+        _ => Err(invalid("MOE_MEMORY_TRACE must be on or off")),
+    }
+}
+
+fn parse_kv_buffer_reuse_mode(value: Option<&str>) -> io::Result<bool> {
+    match value {
+        None | Some("off") => Ok(false),
+        Some("on") => Ok(true),
+        _ => Err(invalid("MOE_KV_BUFFER_REUSE must be on or off")),
+    }
+}
+
+fn parse_lookahead_mode(value: Option<&str>) -> io::Result<bool> {
+    match value {
+        None | Some("on") => Ok(true),
+        Some("off") => Ok(false),
+        _ => Err(invalid("MOE_LOOKAHEAD_PREFETCH must be on or off")),
+    }
+}
+
+fn buffer_bytes(buffer: &(Vec<u8>, Vec<f32>)) -> usize {
+    buffer.0.capacity() + buffer.1.capacity() * std::mem::size_of::<f32>()
+}
+
+fn observe_decode_payload<'a>(
+    profile: &mut RequestProfile,
+    layers: impl Iterator<Item = &'a Layer>,
+    active: usize,
+) {
+    let retained: usize = layers
+        .map(|l| {
+            l.cache
+                .iter()
+                .map(|e| e.expert.allocated_bytes())
+                .sum::<usize>()
+                + l.recycled_bytes()
+        })
+        .sum();
+    profile.decode_expert_active_peak_bytes = profile.decode_expert_active_peak_bytes.max(active);
+    profile.decode_expert_host_peak_bytes =
+        profile.decode_expert_host_peak_bytes.max(retained + active);
+}
+
+fn record_lookahead_loads(
+    profile: &mut RequestProfile,
+    attempts: usize,
+    loaded: &HashMap<usize, Int8Expert>,
+) {
+    profile.lookahead.loaded += loaded.len() as u64;
+    profile.lookahead.load_errors += (attempts - loaded.len()) as u64;
+    profile.lookahead.pending += loaded.len() as u64;
+    profile.lookahead.file_bytes += loaded
+        .values()
+        .map(|e| e.resident_bytes() as u64)
+        .sum::<u64>();
 }
 
 fn session_bytes(state: &SessionState) -> usize {
@@ -2625,6 +3225,553 @@ fn rotate(x: &mut [f32], hd: usize, position: usize, theta: f32) {
         .collect();
     prepare_rope_sincos(&mut sincos, &bases, position);
     apply_rope_cached(x, hd, &sincos);
+}
+
+#[cfg(test)]
+mod memory_trace_tests {
+    use super::*;
+
+    #[test]
+    fn kv_buffer_reuse_recycles_one_slot_without_stale_prefix_or_overlap() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut reused = model(fixture);
+            reused.kv_buffer_reuse_enabled = true;
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            reused.session_cache_bytes =
+                reused.expert_status().session_cache_allocated_bytes + 1024;
+            let pointers: Vec<_> = reused.sessions["a"]
+                .kv
+                .iter()
+                .map(|kv| (kv.keys.as_ptr(), kv.values.as_ptr()))
+                .collect();
+            let output = reused
+                .generate_controlled("[BOS]token8 ", 3, Some("b"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let metrics = output.metrics.as_ref().unwrap();
+            assert_eq!(metrics.kv_buffer_reuse.early_evicted_sessions, 1);
+            assert!(metrics.kv_buffer_reuse.reused_capacity_bytes > 0);
+            assert_eq!(metrics.kv_buffer_reuse.source, Some("evicted_session"));
+            assert_eq!(metrics.cached_prompt_tokens, 0);
+            assert!(!reused.sessions.contains_key("a"));
+            assert!(reused.sessions.contains_key("b"));
+            let after: Vec<_> = reused.sessions["b"]
+                .kv
+                .iter()
+                .map(|kv| (kv.keys.as_ptr(), kv.values.as_ptr()))
+                .collect();
+            assert_eq!(pointers, after);
+            let lookup = stage(metrics.memory_trace.as_ref().unwrap(), "after_kv_lookup");
+            assert_eq!(lookup.retained_session_capacity_bytes, 0);
+            assert_eq!(
+                lookup.active_kv_capacity_bytes,
+                metrics.kv_buffer_reuse.reused_capacity_bytes
+            );
+            let fresh = model(fixture).generate("[BOS]token8 ", 3).unwrap();
+            assert_eq!(output.token_ids, fresh.token_ids);
+        }
+    }
+
+    #[test]
+    fn kv_buffer_reuse_preserves_prefix_and_resets_same_id_without_prefix() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut reused = model(fixture);
+            reused.kv_buffer_reuse_enabled = true;
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let pointer = reused.sessions["a"].kv[0].keys.as_ptr();
+            let prefix = reused
+                .generate_controlled(
+                    "[BOS]token3 token4 ",
+                    3,
+                    Some("a"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            assert!(prefix.metrics.as_ref().unwrap().cached_prompt_tokens > 0);
+            assert_eq!(
+                prefix
+                    .metrics
+                    .as_ref()
+                    .unwrap()
+                    .kv_buffer_reuse
+                    .reused_capacity_bytes,
+                0
+            );
+            assert_eq!(pointer, reused.sessions["a"].kv[0].keys.as_ptr());
+            let reset = reused
+                .generate_controlled("token8 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let metrics = reset.metrics.as_ref().unwrap();
+            assert_eq!(metrics.cached_prompt_tokens, 0);
+            assert_eq!(metrics.kv_buffer_reuse.source, Some("same_session_reset"));
+            assert_eq!(metrics.kv_buffer_reuse.early_evicted_sessions, 0);
+            assert_eq!(pointer, reused.sessions["a"].kv[0].keys.as_ptr());
+            assert_eq!(
+                reset.token_ids,
+                model(fixture).generate("token8 ", 3).unwrap().token_ids
+            );
+        }
+    }
+
+    #[test]
+    fn kv_buffer_reuse_selects_lru_and_keeps_total_retained_budget() {
+        let mut reused = model("unnormalized-mha");
+        reused.kv_buffer_reuse_enabled = true;
+        for id in ["a", "b", "a"] {
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some(id), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+        }
+        let pointer_b = reused.sessions["b"].kv[0].keys.as_ptr();
+        let retained = reused.expert_status().session_cache_allocated_bytes;
+        reused.session_cache_bytes = retained + retained / 4;
+        let output = reused
+            .generate_controlled("[BOS]token8 ", 3, Some("c"), &|| Ok(()), || Ok(()), None)
+            .unwrap();
+        assert_eq!(
+            output
+                .metrics
+                .unwrap()
+                .kv_buffer_reuse
+                .early_evicted_sessions,
+            1
+        );
+        assert!(!reused.sessions.contains_key("b"));
+        assert!(reused.sessions.contains_key("a") && reused.sessions.contains_key("c"));
+        assert_eq!(pointer_b, reused.sessions["c"].kv[0].keys.as_ptr());
+        assert!(reused.expert_status().session_cache_allocated_bytes <= reused.session_cache_bytes);
+    }
+
+    #[test]
+    fn kv_buffer_reuse_does_not_evict_when_no_admission_or_room_remains() {
+        for case in ["room", "sessionless", "oversized"] {
+            let mut reused = model("unnormalized-mha");
+            reused.kv_buffer_reuse_enabled = true;
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let retained = reused.expert_status().session_cache_allocated_bytes;
+            reused.session_cache_bytes = if case == "room" {
+                retained * 3
+            } else if case == "oversized" {
+                0
+            } else {
+                retained + 1024
+            };
+            let output = reused
+                .generate_controlled(
+                    "[BOS]token8 ",
+                    3,
+                    if case == "sessionless" {
+                        None
+                    } else {
+                        Some("b")
+                    },
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            let metrics = output.metrics.unwrap();
+            assert_eq!(metrics.kv_buffer_reuse.early_evicted_sessions, 0, "{case}");
+            assert_eq!(metrics.kv_buffer_reuse.reused_capacity_bytes, 0, "{case}");
+            assert!(reused.sessions.contains_key("a"), "{case}");
+        }
+    }
+
+    #[test]
+    fn kv_buffer_reuse_rejects_incompatible_or_oversized_donor_without_removing_id() {
+        for too_large in [false, true] {
+            let mut reused = model("unnormalized-mha");
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let kd = reused.config.hidden_size / reused.config.num_attention_heads
+                * reused.config.num_key_value_heads;
+            for kv in &mut reused.sessions.get_mut("a").unwrap().kv {
+                if too_large {
+                    kv.keys.reserve_exact(reused.context_limit * kd * 4);
+                    kv.values.reserve_exact(reused.context_limit * kd * 4);
+                } else {
+                    kv.keys.shrink_to_fit();
+                    kv.values.shrink_to_fit();
+                }
+            }
+            let minimum = reused.layers.len()
+                * (reused.context_limit * kd * 8 + std::mem::size_of::<Kv>())
+                + std::mem::size_of::<SessionState>()
+                + 2 * std::mem::size_of::<usize>()
+                + 1;
+            reused.session_cache_bytes = minimum + 64;
+            reused.kv_buffer_reuse_enabled = true;
+            let mut metrics = KvBufferReuseMetrics::default();
+            let (_, _, prepared) = reused.take_prefix_kv(&[1, 8], Some("b"), kd, 3, &mut metrics);
+            assert_eq!(metrics.early_evicted_sessions, 0);
+            assert_eq!(metrics.reused_capacity_bytes, 0);
+            assert!(prepared.is_none() && reused.sessions.contains_key("a"));
+        }
+    }
+
+    #[test]
+    fn kv_buffer_reuse_cancel_errors_remove_old_id_and_retry_is_fresh() {
+        for kind in [
+            io::ErrorKind::Interrupted,
+            io::ErrorKind::InvalidData,
+            io::ErrorKind::OutOfMemory,
+        ] {
+            let mut reused = model("unnormalized-mha");
+            reused.kv_buffer_reuse_enabled = true;
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            reused.session_cache_bytes =
+                reused.expert_status().session_cache_allocated_bytes + 1024;
+            let mut emit =
+                |_delta: &str| Err(io::Error::new(kind, "fixture error after KV handoff"));
+            let error = reused
+                .generate_controlled(
+                    "[BOS]token3 ",
+                    3,
+                    Some("b"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    Some(&mut emit),
+                )
+                .unwrap_err();
+            assert_eq!(error.kind(), kind);
+            assert!(!reused.sessions.contains_key("a") && !reused.sessions.contains_key("b"));
+            let status = reused.expert_status();
+            assert_eq!(
+                status
+                    .last_kv_buffer_reuse
+                    .as_ref()
+                    .unwrap()
+                    .early_evicted_sessions,
+                1
+            );
+            let trace = status.last_memory_trace.unwrap();
+            assert_eq!(trace.samples.last().unwrap().active_kv_capacity_bytes, 0);
+            let retry = reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            assert_eq!(retry.metrics.as_ref().unwrap().cached_prompt_tokens, 0);
+            assert_eq!(
+                retry.token_ids,
+                model("unnormalized-mha")
+                    .generate("[BOS]token3 ", 3)
+                    .unwrap()
+                    .token_ids
+            );
+        }
+    }
+
+    #[test]
+    fn kv_buffer_reuse_prefill_logits_match_fresh_and_parser_is_explicit() {
+        assert!(!parse_kv_buffer_reuse_mode(None).unwrap());
+        assert!(!parse_kv_buffer_reuse_mode(Some("off")).unwrap());
+        assert!(parse_kv_buffer_reuse_mode(Some("on")).unwrap());
+        assert!(parse_kv_buffer_reuse_mode(Some("true")).is_err());
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut reused = model(fixture);
+            reused.kv_buffer_reuse_enabled = true;
+            reused
+                .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            reused.session_cache_bytes =
+                reused.expert_status().session_cache_allocated_bytes + 1024;
+            let kd = reused.config.hidden_size / reused.config.num_attention_heads
+                * reused.config.num_key_value_heads;
+            let mut metrics = KvBufferReuseMetrics::default();
+            let (_, mut kv, prepared) =
+                reused.take_prefix_kv(&[1, 8], Some("b"), kd, 3, &mut metrics);
+            assert!(prepared.is_some() && metrics.reused_capacity_bytes > 0);
+            assert!(kv
+                .iter()
+                .all(|kv| kv.keys.is_empty() && kv.values.is_empty()));
+            let mut scratch = StepScratch::new(&reused.config);
+            reused
+                .prefill(
+                    &[1, 8],
+                    &mut kv,
+                    &mut RequestProfile::default(),
+                    &mut scratch,
+                    &|| Ok(()),
+                )
+                .unwrap();
+            let mut fresh = model(fixture);
+            let logits = fresh.logits(&[1, 8]).unwrap();
+            let error = scratch
+                .logits
+                .iter()
+                .zip(logits.last().unwrap())
+                .map(|(a, b)| (a - b).abs())
+                .fold(0f32, f32::max);
+            assert!(error < 2e-5, "{fixture}: {error}");
+        }
+    }
+
+    fn model(fixture: &str) -> OlmoeModel {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/olmoe")
+            .join(fixture);
+        let mut model =
+            OlmoeModel::load_with_gpu_mode(path, 8192, 64, 10_000_000, GpuMode::Cpu).unwrap();
+        model.memory_trace_enabled = true;
+        model.kv_buffer_reuse_enabled = false;
+        model
+    }
+
+    fn stage<'a>(trace: &'a RequestMemoryTrace, name: &str) -> &'a MemoryStageSample {
+        trace.samples.iter().find(|s| s.stage == name).unwrap()
+    }
+
+    fn totals(trace: &RequestMemoryTrace) {
+        assert_eq!(trace.schema_version, 1);
+        assert!(trace.samples.len() <= 8);
+        for s in &trace.samples {
+            let encoded = serde_json::to_value(s).unwrap();
+            assert!(encoded.get("thread_id").is_some());
+            assert!(encoded["allocator"]["status"].is_string());
+            if s.allocator.status == "glibc_mallinfo2" {
+                assert_eq!(
+                    s.allocator
+                        .in_use_bytes
+                        .unwrap()
+                        .checked_add(s.allocator.free_bytes.unwrap()),
+                    s.allocator.arena_bytes
+                );
+                assert!(s.allocator.libc_version.is_some());
+            } else {
+                assert!(s.allocator.in_use_bytes.is_none());
+            }
+            assert_eq!(
+                s.tracked_host_bytes,
+                s.dense_weight_payload_bytes
+                    + s.expert_cache_capacity_bytes
+                    + s.recycled_capacity_bytes
+                    + s.retained_session_capacity_bytes
+                    + s.active_kv_capacity_bytes
+                    + s.scratch_capacity_bytes
+                    + s.prefill_capacity_bytes
+            );
+            assert!(s.retained_kv_capacity_bytes <= s.retained_session_capacity_bytes);
+        }
+        assert!(trace
+            .samples
+            .windows(2)
+            .all(|p| p[0].elapsed_ms <= p[1].elapsed_ms));
+    }
+
+    #[test]
+    fn memory_trace_kv_transfer_reuse_eviction_and_mha_gqa_parity() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut traced = model(fixture);
+            let mut reference = model(fixture);
+            reference.memory_trace_enabled = false;
+            for _ in 0..2 {
+                let prompt = "[BOS]token3 token4 ";
+                let actual = traced
+                    .generate_controlled(prompt, 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                    .unwrap();
+                let expected = reference
+                    .generate_controlled(prompt, 3, Some("a"), &|| Ok(()), || Ok(()), None)
+                    .unwrap();
+                assert_eq!(actual.token_ids, expected.token_ids);
+                assert!(expected.metrics.unwrap().memory_trace.is_none());
+                let trace = actual
+                    .metrics
+                    .as_ref()
+                    .unwrap()
+                    .memory_trace
+                    .as_ref()
+                    .unwrap();
+                totals(trace);
+                assert_eq!(trace.outcome, "completed");
+                assert_eq!(
+                    trace.samples.iter().map(|s| s.stage).collect::<Vec<_>>(),
+                    [
+                        "before_request",
+                        "after_kv_lookup",
+                        "prefill_buffers_live",
+                        "after_prefill",
+                        "before_session_admission",
+                        "after_session_admission",
+                        "after_generate_inner"
+                    ]
+                );
+                assert_eq!(
+                    stage(trace, "after_kv_lookup").retained_session_capacity_bytes,
+                    0
+                );
+                assert_eq!(stage(trace, "after_kv_lookup").scratch_capacity_bytes, 0);
+                let active = stage(trace, "before_session_admission").active_kv_capacity_bytes;
+                assert!(active > 0);
+                assert_eq!(
+                    stage(trace, "after_session_admission").active_kv_capacity_bytes,
+                    0
+                );
+                assert_eq!(
+                    stage(trace, "after_session_admission").retained_kv_capacity_bytes,
+                    active
+                );
+                assert!(stage(trace, "prefill_buffers_live").prefill_capacity_bytes > 0);
+                assert_eq!(stage(trace, "after_prefill").prefill_capacity_bytes, 0);
+                assert!(stage(trace, "after_session_admission").scratch_capacity_bytes > 0);
+                assert_eq!(
+                    stage(trace, "after_generate_inner").scratch_capacity_bytes,
+                    0
+                );
+            }
+            traced.session_cache_bytes = traced.expert_status().session_cache_allocated_bytes;
+            let output = traced
+                .generate_controlled(
+                    "[BOS]token3 token4 ",
+                    3,
+                    Some("b"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    None,
+                )
+                .unwrap();
+            let trace = output
+                .metrics
+                .as_ref()
+                .unwrap()
+                .memory_trace
+                .as_ref()
+                .unwrap();
+            totals(trace);
+            let lookup = stage(trace, "after_kv_lookup");
+            assert!(lookup.retained_kv_capacity_bytes > 0 && lookup.active_kv_capacity_bytes > 0);
+            assert!(!traced.sessions.contains_key("a") && traced.sessions.contains_key("b"));
+            assert_eq!(
+                stage(trace, "after_session_admission").retained_kv_capacity_bytes,
+                lookup.active_kv_capacity_bytes
+            );
+            traced.reset_cache();
+            assert!(traced.expert_status().last_memory_trace.is_none());
+            assert!(traced.memory_trace_enabled);
+        }
+    }
+
+    #[test]
+    fn memory_trace_unretained_and_sessionless_kv_drop() {
+        for session in [Some("too-large"), None] {
+            let mut model = model("unnormalized-mha");
+            model.session_cache_bytes = 0;
+            let output = model
+                .generate_controlled("[BOS]token3 ", 3, session, &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let trace = output
+                .metrics
+                .as_ref()
+                .unwrap()
+                .memory_trace
+                .as_ref()
+                .unwrap();
+            totals(trace);
+            let after = stage(trace, "after_session_admission");
+            assert_eq!(after.retained_session_capacity_bytes, 0);
+            assert_eq!(after.active_kv_capacity_bytes > 0, session.is_none());
+            assert_eq!(
+                stage(trace, "after_generate_inner").active_kv_capacity_bytes,
+                0
+            );
+            assert!(model.sessions.is_empty());
+        }
+    }
+
+    #[test]
+    fn memory_trace_cancel_oom_cleanup_and_retry() {
+        for kind in [io::ErrorKind::Interrupted, io::ErrorKind::OutOfMemory] {
+            let mut model = model("unnormalized-mha");
+            model
+                .generate_controlled("[BOS]token3 ", 3, Some("old"), &|| Ok(()), || Ok(()), None)
+                .unwrap();
+            let mut emit = |_delta: &str| Err(io::Error::new(kind, "fixture error after prefill"));
+            let error = model
+                .generate_controlled(
+                    "[BOS]token3 ",
+                    3,
+                    Some("new"),
+                    &|| Ok(()),
+                    || Ok(()),
+                    Some(&mut emit),
+                )
+                .unwrap_err();
+            assert_eq!(error.kind(), kind);
+            let status = model.expert_status();
+            let trace = status.last_memory_trace.as_ref().unwrap();
+            totals(trace);
+            assert!(stage(trace, "after_prefill").active_kv_capacity_bytes > 0);
+            let last = trace.samples.last().unwrap();
+            assert_eq!(
+                last.active_kv_capacity_bytes
+                    + last.scratch_capacity_bytes
+                    + last.prefill_capacity_bytes,
+                0
+            );
+            assert!(!model.sessions.contains_key("new"));
+            if kind == io::ErrorKind::OutOfMemory {
+                assert_eq!(trace.outcome, "out_of_memory");
+                assert_eq!(last.stage, "after_error_cleanup");
+                assert_eq!(
+                    last.retained_session_capacity_bytes
+                        + last.expert_cache_capacity_bytes
+                        + last.recycled_capacity_bytes,
+                    0
+                );
+            } else {
+                assert_eq!(trace.outcome, "interrupted");
+                assert!(model.sessions.contains_key("old"));
+            }
+            assert!(model.generate("[BOS]token3 ", 3).is_ok());
+        }
+    }
+
+    #[test]
+    fn memory_trace_prefill_logits_and_parser() {
+        assert!(!parse_memory_trace_mode(None).unwrap());
+        assert!(!parse_memory_trace_mode(Some("off")).unwrap());
+        assert!(parse_memory_trace_mode(Some("on")).unwrap());
+        assert!(parse_memory_trace_mode(Some("yes")).is_err());
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut expected: Option<Vec<f32>> = None;
+            for enabled in [false, true] {
+                let mut model = model(fixture);
+                let mut profile = RequestProfile::default();
+                if enabled {
+                    profile.memory_trace = Some(RequestMemoryTrace {
+                        schema_version: 1,
+                        outcome: "running",
+                        samples: Vec::new(),
+                    });
+                    profile.memory_started = Some(Instant::now());
+                }
+                let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+                let mut scratch = StepScratch::new(&model.config);
+                model
+                    .prefill(&[1, 3, 4], &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                    .unwrap();
+                if let Some(ref logits) = expected {
+                    let error = logits
+                        .iter()
+                        .zip(&scratch.logits)
+                        .map(|(a, b)| (a - b).abs())
+                        .fold(0f32, f32::max);
+                    assert!(error < 2e-5, "{fixture}: {error}");
+                    assert_eq!(profile.memory_trace.as_ref().unwrap().samples.len(), 1);
+                } else {
+                    expected = Some(scratch.logits.clone());
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2924,7 +4071,13 @@ mod cancellation_tests {
             let expected = model.logits(&tokens).unwrap().pop().unwrap();
             let kd = model.config.hidden_size / model.config.num_attention_heads
                 * model.config.num_key_value_heads;
-            let (prefix, mut kv) = model.take_prefix_kv(&tokens, Some("fork"), kd);
+            let (prefix, mut kv, _) = model.take_prefix_kv(
+                &tokens,
+                Some("fork"),
+                kd,
+                1,
+                &mut KvBufferReuseMetrics::default(),
+            );
             assert_eq!(prefix, 3);
             assert!(!model.sessions.contains_key("fork"));
             for (cache, addresses) in kv.iter().zip(addresses) {
@@ -3970,6 +5123,240 @@ mod routing_and_topk_tests {
         );
     }
 
+    fn prepared_lookahead_model(directory: &Path, enabled: bool) -> OlmoeModel {
+        let mut model =
+            OlmoeModel::load_with_gpu_mode(directory, 8192, 64, 10_000_000, GpuMode::Cpu).unwrap();
+        model.set_gpu_enabled(false);
+        model.lookahead_enabled = enabled;
+        // Tie-break routes to 0/1. Predict 0 (used) and 3 (unused) at the next layer.
+        for layer in &mut model.layers {
+            layer.router.values.fill(0.0);
+        }
+        for id in [0, 1] {
+            let expert = Int8Expert::load(&model.index, 0, id, 16, 8, 512).unwrap();
+            model.layers[0].bytes += expert.allocated_bytes();
+            model.layers[0].cache.push_back(CachedExpert {
+                id,
+                expert,
+                last_used: 0,
+                hits_in_cache: 1,
+                is_protected: false,
+            });
+            model.inter_layer_transitions[0][id * 64] = 10;
+            model.inter_layer_transitions[0][id * 64 + 3] = 10;
+        }
+        model
+    }
+
+    #[test]
+    fn lookahead_modes_preserve_logits_and_account_for_used_unused_buffers() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut expected = None;
+        for enabled in [false, true] {
+            let mut model = prepared_lookahead_model(&directory, enabled);
+            let mut profile = RequestProfile::default();
+            let mut scratch = StepScratch::new(&model.config);
+            let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+            model
+                .step(1, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                .unwrap();
+            let m = &profile.lookahead;
+            assert_eq!(m.eligible_layers, 1);
+            assert_eq!(m.evaluated_layers, 2);
+            assert_eq!(m.no_next_layer, 1);
+            assert_eq!(m.blocked_by_misses, 0);
+            assert_eq!(m.miss_histogram, [1, 0, 0]);
+            assert_eq!(m.disabled_eligible_layers, if enabled { 0 } else { 1 });
+            assert_eq!(m.prediction_calls, if enabled { 1 } else { 0 });
+            assert_eq!(m.positive_candidates, if enabled { 2 } else { 0 });
+            assert_eq!(m.candidates_available, m.positive_candidates);
+            assert_eq!(m.proposed, if enabled { 2 } else { 0 });
+            assert_eq!(m.loaded, m.used + m.unused + m.abandoned + m.pending);
+            assert_eq!(m.proposed, m.loaded + m.load_errors);
+            assert_eq!(m.pending, 0);
+            if enabled {
+                assert_eq!((m.used, m.unused, m.load_errors), (1, 1, 0));
+                assert_eq!(m.file_bytes, 2 * 512);
+                assert_eq!(m.buffer_peak_bytes, 2 * 512);
+            } else {
+                assert_eq!(m.loaded, 0);
+                assert_eq!(m.buffer_peak_bytes, 0);
+            }
+            assert!(profile.decode_expert_active_peak_bytes <= (2 + 2) * 512);
+            assert!(profile.decode_expert_host_peak_bytes <= 2 * 8192 + (2 + 2) * 512);
+            for layer in &model.layers {
+                assert!(layer.bytes + layer.recycled_bytes() <= 8192);
+            }
+            if let Some(ref logits) = expected {
+                let error = scratch
+                    .logits
+                    .iter()
+                    .zip(logits)
+                    .map(|(a, b): (&f32, &f32)| (a - b).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(error < 2e-5, "{error}");
+            } else {
+                expected = Some(scratch.logits.clone());
+            }
+            model.reset_cache();
+            assert!(model
+                .inter_layer_transitions
+                .iter()
+                .flatten()
+                .all(|n| *n == 0));
+            assert!(model
+                .layers
+                .iter()
+                .all(|l| l.cache.is_empty() && l.recycled_buffers.is_empty()));
+            assert_eq!(model.expert_status().lookahead_enabled, enabled);
+        }
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let directory = directory.parent().unwrap().join(fixture);
+            let mut model = OlmoeModel::load(directory, 1024, 64, 10_000_000).unwrap();
+            model.set_gpu_enabled(false);
+            model.lookahead_enabled = false;
+            let off = model.generate("a", 8).unwrap();
+            model.reset_cache();
+            model.lookahead_enabled = true;
+            let on = model.generate("a", 8).unwrap();
+            assert_eq!(off.token_ids, on.token_ids);
+        }
+    }
+
+    #[test]
+    fn lookahead_reports_partial_and_full_current_misses_without_predicting() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        for missing in [1, 2] {
+            let mut model = prepared_lookahead_model(&directory, true);
+            for _ in 0..missing {
+                let entry = model.layers[0].cache.pop_back().unwrap();
+                model.layers[0].bytes -= entry.expert.allocated_bytes();
+            }
+            let mut profile = RequestProfile::default();
+            let mut scratch = StepScratch::new(&model.config);
+            let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+            model
+                .step(1, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                .unwrap();
+            let m = &profile.lookahead;
+            assert_eq!(m.evaluated_layers, 2);
+            assert_eq!(m.no_next_layer, 1);
+            assert_eq!(m.blocked_by_misses, 1);
+            assert_eq!(m.miss_histogram[missing], 1);
+            assert_eq!(m.miss_histogram.iter().sum::<u64>(), 1);
+            assert_eq!(m.eligible_layers, 0);
+            assert_eq!(m.prediction_calls, 0);
+            assert_eq!(m.no_positive_score_calls, 0); // Not evaluated, rather than no score.
+            assert_eq!(m.proposed, 0);
+        }
+    }
+
+    #[test]
+    fn lookahead_distinguishes_no_score_from_candidates_already_cached() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        for cached in [false, true] {
+            let mut model = prepared_lookahead_model(&directory, true);
+            if cached {
+                for id in [0, 3] {
+                    let expert = Int8Expert::load(&model.index, 1, id, 16, 8, 512).unwrap();
+                    model.layers[1].bytes += expert.allocated_bytes();
+                    model.layers[1].cache.push_back(CachedExpert {
+                        id,
+                        expert,
+                        last_used: 0,
+                        hits_in_cache: 1,
+                        is_protected: false,
+                    });
+                }
+            } else {
+                model.inter_layer_transitions[0].fill(0);
+            }
+            let mut profile = RequestProfile::default();
+            let mut scratch = StepScratch::new(&model.config);
+            let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+            model
+                .step(1, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                .unwrap();
+            let m = &profile.lookahead;
+            assert_eq!(m.eligible_layers, 1);
+            assert_eq!(m.prediction_calls, 1);
+            assert_eq!(m.miss_histogram, [1, 0, 0]);
+            assert_eq!(m.no_positive_score_calls, if cached { 0 } else { 1 });
+            assert_eq!(m.all_candidates_cached_calls, if cached { 1 } else { 0 });
+            assert_eq!(m.positive_candidates, if cached { 2 } else { 0 });
+            assert_eq!(m.candidates_in_ram, m.positive_candidates);
+            assert_eq!(m.candidates_available, 0);
+            assert_eq!(m.loaded, 0);
+        }
+    }
+
+    #[test]
+    fn lookahead_cancel_drops_pending_and_model_can_retry() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = prepared_lookahead_model(&directory, true);
+        let mut profile = RequestProfile::default();
+        let mut scratch = StepScratch::new(&model.config);
+        let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+        let checks = std::cell::Cell::new(0);
+        let error = model
+            .step(1, &mut kv, &mut profile, &mut scratch, &|| {
+                checks.set(checks.get() + 1);
+                if checks.get() == 2 {
+                    Err(io::Error::new(io::ErrorKind::Interrupted, "cancel"))
+                } else {
+                    Ok(())
+                }
+            })
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert_eq!(profile.lookahead.loaded, 2);
+        assert_eq!(profile.lookahead.abandoned, 2);
+        assert_eq!(profile.lookahead.pending, 0);
+        model.reset_cache();
+        assert!(model.generate("a", 3).is_ok());
+    }
+
+    #[test]
+    fn lookahead_file_error_is_counted_and_not_hidden_as_success() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let copy = tempfile::tempdir().unwrap();
+        for entry in fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            fs::copy(entry.path(), copy.path().join(entry.file_name())).unwrap();
+        }
+        let mut model = prepared_lookahead_model(copy.path(), true);
+        // Only this private test copy changes, after indexing/priming the current layer.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(copy.path().join("model.safetensors"))
+            .unwrap()
+            .set_len(0)
+            .unwrap();
+        let mut profile = RequestProfile::default();
+        let mut scratch = StepScratch::new(&model.config);
+        let mut kv: Vec<_> = (0..model.layers.len()).map(|_| Kv::default()).collect();
+        assert!(model
+            .step(1, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+            .is_err());
+        assert_eq!(profile.lookahead.proposed, 2);
+        assert_eq!(profile.lookahead.load_errors, 2);
+        assert_eq!(profile.lookahead.loaded, 0);
+        assert_eq!(profile.lookahead.pending, 0);
+    }
+
+    #[test]
+    fn lookahead_mode_parser_rejects_ambiguous_values() {
+        assert!(parse_lookahead_mode(None).unwrap());
+        assert!(parse_lookahead_mode(Some("on")).unwrap());
+        assert!(!parse_lookahead_mode(Some("off")).unwrap());
+        assert!(parse_lookahead_mode(Some("false")).is_err());
+    }
+
     #[test]
     fn test_inter_layer_lookahead_prefetch_and_markov_transition() {
         // Kiểm tra cơ chế dự đoán Lookahead và cập nhật Ma trận chuyển tiếp liên tầng
@@ -4002,7 +5389,7 @@ mod routing_and_topk_tests {
 
         let next_layer_cache = VecDeque::new();
 
-        let candidates = OlmoeModel::predict_next_layer_experts(
+        let (candidates, _) = OlmoeModel::predict_next_layer_experts(
             &transitions,
             0,
             &layer0_experts,

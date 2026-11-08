@@ -87,6 +87,7 @@ def main(argv=None):
         [sys.executable, "tools/export_benchmark_evidence.py", "--check"],
         [sys.executable, "tools/test_benchmark_evidence.py"],
         [sys.executable, "tools/test_run_benchmark.py"],
+        [sys.executable, "tools/test_memory_telemetry.py"],
     ]
     if args.rust:
         commands += [["cargo", "fmt", "--all", "--", "--check"],

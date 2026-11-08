@@ -1,0 +1,29 @@
+[
+  {
+    "sample": 0,
+    "observed_utc": "2026-11-05T03:29:53.730547+00:00",
+    "MemAvailable_KiB": 9999488,
+    "SwapUsed_KiB": 752540,
+    "pswpin_pages": 33478,
+    "pswpout_pages": 194587,
+    "pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=763298\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=740669"
+  },
+  {
+    "sample": 1,
+    "observed_utc": "2026-11-05T03:29:58.732332+00:00",
+    "MemAvailable_KiB": 10032112,
+    "SwapUsed_KiB": 752512,
+    "pswpin_pages": 33484,
+    "pswpout_pages": 194587,
+    "pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=763517\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=740884"
+  },
+  {
+    "sample": 2,
+    "observed_utc": "2026-11-05T03:30:03.732985+00:00",
+    "MemAvailable_KiB": 10101544,
+    "SwapUsed_KiB": 752512,
+    "pswpin_pages": 33484,
+    "pswpout_pages": 194587,
+    "pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=763517\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=740884"
+  }
+]

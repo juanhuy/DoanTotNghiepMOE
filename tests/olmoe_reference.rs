@@ -151,3 +151,65 @@ async fn stream_matches_complete_generation_and_validates_before_start() {
         .unwrap();
     }
 }
+
+#[test]
+fn cpu_mode_skips_gpu_resources_and_matches_reference_logits() {
+    use moe_tier_engine::gpu::GpuMode;
+    for name in ["unnormalized-mha", "normalized-gqa"] {
+        let dir = path(name);
+        let reference: Reference =
+            serde_json::from_slice(&std::fs::read(dir.join("reference.json")).unwrap()).unwrap();
+        let mut model =
+            OlmoeModel::load_with_gpu_mode(&dir, 100_000, 32, 10_000_000, GpuMode::Cpu).unwrap();
+        let start = model.expert_status();
+        assert_eq!(start.gpu_mode_at_load, "cpu");
+        assert!(!start.gpu.enabled);
+        assert_eq!(start.gpu.allocated_vram_bytes, 0);
+        assert_eq!(start.gpu.total_vram_bytes, 0);
+        assert!(!start.gpu.dense_offloaded);
+        let actual = model.logits(&reference.ids).unwrap();
+        let error = actual
+            .iter()
+            .flatten()
+            .zip(reference.logits.iter().flatten())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
+        assert!(error < 2e-5, "{name}: {error}");
+        // No late initialization via runtime controls or reset.
+        assert!(!model.toggle_gpu().enabled);
+        assert!(!model.set_gpu_enabled(true).enabled);
+        model.reset_cache();
+        assert_eq!(model.expert_status().gpu.allocated_vram_bytes, 0);
+        assert_eq!(model.expert_status().gpu_mode_at_load, "cpu");
+    }
+    assert!("cpu".parse::<GpuMode>().is_ok());
+    assert!("auto".parse::<GpuMode>().is_ok());
+    assert!("false".parse::<GpuMode>().is_err());
+}
+
+#[tokio::test]
+async fn engine_cpu_mode_is_applied_before_blocking_model_load() {
+    let engine = InferenceEngine::load_with_gpu_mode(
+        path("unnormalized-mha"),
+        10_000,
+        32,
+        10_000_000,
+        moe_tier_engine::gpu::GpuMode::Cpu,
+    )
+    .await
+    .unwrap();
+    assert_eq!(engine.expert_status().unwrap().gpu_mode_at_load, "cpu");
+    assert!(!engine.set_gpu_enabled(true).unwrap().unwrap().enabled);
+    let result = engine
+        .chat(
+            vec![ChatMessage {
+                role: "user".into(),
+                content: "token3".into(),
+            }],
+            3,
+        )
+        .await
+        .unwrap();
+    assert!(!result.token_ids.is_empty());
+    assert_eq!(engine.expert_status().unwrap().gpu.allocated_vram_bytes, 0);
+}

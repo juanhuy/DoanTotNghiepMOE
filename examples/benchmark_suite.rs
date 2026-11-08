@@ -76,20 +76,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("CASE_ID is not present in the suite".into());
     }
     let started = Instant::now();
-    let engine = InferenceEngine::load_with_limits(
+    let engine = InferenceEngine::load_with_gpu_mode(
         &args[0],
         cache_bytes,
         context_limit,
         3 * 1024 * 1024 * 1024,
+        gpu_mode.parse()?,
     )
     .await?;
     if engine.model_name() != "olmoe" {
         return Err("suite requires OLMoE".into());
     }
     let load_ms = started.elapsed().as_secs_f64() * 1000.0;
-    if gpu_mode == "cpu" {
-        engine.set_gpu_enabled(false)?;
-    }
     let gpu_status_start = engine.expert_status().map(|s| s.gpu);
     let mut runs = Vec::new();
     for round in 0..rounds {

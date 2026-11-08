@@ -85,6 +85,23 @@ impl InferenceEngine {
         context: usize,
         dense: usize,
     ) -> io::Result<Self> {
+        Self::load_with_gpu_mode(
+            directory,
+            cache,
+            context,
+            dense,
+            crate::gpu::GpuMode::from_environment()?,
+        )
+        .await
+    }
+
+    pub async fn load_with_gpu_mode(
+        directory: impl AsRef<Path>,
+        cache: usize,
+        context: usize,
+        dense: usize,
+        gpu_mode: crate::gpu::GpuMode,
+    ) -> io::Result<Self> {
         let directory = directory.as_ref().to_owned();
         let (model, initial_status) = if directory.join("model.json").exists() {
             (
@@ -93,7 +110,8 @@ impl InferenceEngine {
             )
         } else {
             let (model, status) = tokio::task::spawn_blocking(move || {
-                let model = OlmoeModel::load(directory, cache, context, dense)?;
+                let model =
+                    OlmoeModel::load_with_gpu_mode(directory, cache, context, dense, gpu_mode)?;
                 model.require_chat()?;
                 let status = model.expert_status();
                 Ok::<_, io::Error>((model, status))

@@ -7,6 +7,44 @@ use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+/// Backend selected before CUDA probing or allocation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpuMode {
+    Auto,
+    Cpu,
+}
+impl GpuMode {
+    pub fn from_environment() -> std::io::Result<Self> {
+        match std::env::var("MOE_GPU_MODE") {
+            Ok(value) => value.parse(),
+            Err(std::env::VarError::NotPresent) => Ok(Self::Auto),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid MOE_GPU_MODE",
+            )),
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Cpu => "cpu",
+        }
+    }
+}
+impl std::str::FromStr for GpuMode {
+    type Err = std::io::Error;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "cpu" => Ok(Self::Cpu),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "GPU mode must be auto or cpu",
+            )),
+        }
+    }
+}
+
 pub type CUresult = c_int;
 pub type CUdevice = c_int;
 pub type CUdeviceptr = u64;
@@ -1810,6 +1848,18 @@ pub struct GpuTierManager {
 }
 
 impl GpuTierManager {
+    /// No driver load, cuInit, device probe, context or VRAM allocation.
+    pub fn cpu_only() -> Self {
+        Self {
+            _api: None,
+            device_info: None,
+            budget: None,
+            allocated_vram_bytes: 0,
+            vram_experts: Vec::new(),
+            is_manually_disabled: true,
+        }
+    }
+
     /// Khởi tạo và tự động phát hiện GPU trên máy
     pub fn probe() -> Self {
         let api = match CudaDriverApi::load() {

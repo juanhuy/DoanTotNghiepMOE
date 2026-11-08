@@ -42,59 +42,11 @@ Các fixture số học và log thực nghiệm có vai trò khác nhau. Outputt
 
 Lệnh checksum chỉ kiểm tệp bằng chứng có bị thay đổi hay không, không chứng minh phương pháp thử đúng hoặc kết luận có thể áp dụng cho mọi trường hợp. Khi chưa cần tái đo, dùng hồ sơ đã lưu để trình bày; không cần chạy lại toàn bộ benchmark trong buổi phản biện.
 
-## Các JSON được tạo từ đâu?
+## Đọc và tái lập thực nghiệm
 
-### Bộ cold/warm/conversation
+[Sổ tay lệnh](HUONG_DAN_LENH_THUC_NGHIEM.md) giải thích đầu vào, lệnh chạy, cách JSON được ghi và cách đọc lại dữ liệu thành bảng. Các lệnh hồi cứu không phải bản chép đầy đủ lịch sử terminal; chạy lại không bảo đảm thời gian giống từng mẫu cũ.
 
-Luồng tạo dữ liệu là: run_scenarios.py → run_benchmark.py → benchmark_http_session.py → server Rust → phản hồi HTTP/SSE → ghi file JSON. Đây là luồng phần mềm tạo bộ kết quả; các con số trong response.metrics do engine đo bằng timer và bộ đếm, không phải văn bản do model sinh.
-
-- Engine sinh văn bản, token usage và metrics. HTTP handler gửi các trường đó trong sự kiện kết thúc stream.
-- Client Python thu stream, ghép văn bản và giữ metrics/usage. Runner bổ sung messages đã gửi, session, policy và thông tin tiến trình trước/sau request.
-- run_cycle trong [benchmark_http_session.py](../tools/benchmark_http_session.py) gọi hàm ghi JSON để tạo turn-{cycle}-{turn}.json hoặc warmup-{cycle}-{index}.json.
-- execute trong cùng file tạo result.json, thêm cấu hình, thông tin model/hardware, hashes và tập request. MemoryWatchdog ghi memory.jsonl và watchdog.json.
-- summary.json là bản tổng hợp sau phép đo, không phải một request mới.
-
-Lời gọi tương ứng với bộ warm i5 có cấu hình như sau, chạy từ thư mục gốc dự án:
-
-```bash
-python3 tools/run_scenarios.py warm \
-  --testbed i5 --gpu auto --threads 8 \
-  --model-dir models/olmoe-1b-7b-int8 \
-  --cache 64 --context 512 --max-tokens 128 --runs 5 \
-  --single-policy --expert-cache-policy victim \
-  --output-root benchmarks/runs/recheck
-```
-
-Lệnh này tổ chức năm vòng warm, mỗi vòng gồm một request làm ấm và một request đo. Nó tạo bộ kết quả mới ở thư mục riêng, không viết lại artifact ngày22/10. Đổi warm thành cold hoặc conversation để chọn kịch bản tương ứng; đổi testbed/model-dir theo máy và model thực tế. Runner tự khởi tạo server, không cần mở server thủ công trước. Không chạy đồng thời với một phiên inference khác.
-
-Có thể thêm --dry-run để chỉ xem kế hoạch mà không suy luận. Workspace đang có thay đổi chưa commit thì preview cần thêm --allow-dirty. Đây là hướng dẫn tái hiện phương pháp; muốn đối chứng một thay đổi cần khớp phiên bản code, model và các điều kiện liên quan. Chạy lại không bảo đảm từng giá trị thời gian giống hệt vì cache hệ điều hành, tải nền và nhiệt độ có thể khác.
-
-### Các JSON khác
-
-- paired-session.json và paired-prefill.json do hai bài thử Rust benchmark_session_prefix_paired và benchmark_prefill_dispatch_paired trong [olmoe.rs](../src/olmoe.rs) tạo. Chúng chạy hai biến thể trong cùng tiến trình và ghi từng cặp mẫu, không đi qua HTTP. Lệnh chạy và điều kiện nằm trong [README prefill](../benchmarks/experiments/2026-10-22-prefill-i5/README.md).
-- Bộ RAM do [check_ram_stability.py](../tools/check_ram_stability.py) tạo bằng request HTTP và quan sát tiến trình; không phải benchmark tốc độ cùng loại với paired prefill.
-- Các file source snapshots, log và hashes hỗ trợ truy lại cách chạy. JSON có dữ liệu không tự chứng minh phép đo đúng; cần đọc cùng cấu hình và code ghi metric như bản đồ kiểm chứng ở trên.
-
-## Xem lại dữ liệu thành bảng, không chạy model
-
-Đoạn sau chỉ đọc năm file đã lưu của warm i5 rồi in bảng; không nạp model, gửi request hoặc tạo số đo mới:
-
-```python
-import json
-from pathlib import Path
-
-folder = Path("benchmarks/experiments/2026-10-22-phase1-i5/warm")
-print("Luot | TTFT(s) | Decode(steps/s) | WALL(s)")
-for path in sorted(folder.glob("turn-*-0.json")):
-    sample = json.loads(path.read_text())
-    metric = sample["response"]["metrics"]
-    print(sample["cycle"] + 1,
-          round(metric["time_to_first_token_ms"] / 1000, 3),
-          round(metric["decode_tokens_per_second"], 3),
-          round(metric["total_ms"] / 1000, 3), sep=" | ")
-```
-
-Có thể chạy đoạn này trong Python terminal hoặc lưu thành script tạm rồi gọi python3. Đây cũng là dữ liệu có thể đưa vào bảng tính hoặc vẽ biểu đồ; hình/bảng sinh lại từ raw phải được ghi là biểu diễn dữ liệu đã đo, không phải lần đo mới.
+Để thiết kế phép đo giai đoạn tiếp, dùng [SCENARIOS](../benchmarks/SCENARIOS.md), không chạy lại toàn bộ bộ kỳ 1 theo mặc định.
 
 ## Bản nộp và biên dịch
 
@@ -105,3 +57,7 @@ Phần đầu dùng số La Mã; số Ả Rập bắt đầu từ Mở đầu th
 Biên dịch bằng `bash baocao/latex/compile.sh`. Cần Times New Roman cài trên máy, hoặc bốn file Times.TTF, Timesbd.TTF, Timesi.TTF, Timesbi.TTF trong `baocao/latex/fonts/`. Bộ font cục bộ được lấy từ [gói corefonts times32](https://sourceforge.net/projects/corefonts/files/the%20fonts/final/times32.exe/); tệp tải có SHA-1 `20b79e65cdef4e2d7195f84da202499e3aa83060`, chỉ giải nén font, không chạy EXE. Font không được đưa vào Git. Nếu thiếu, cấu hình sẽ báo lỗi để tránh xuất nhầm font thay thế. PDF đã xuất nhúng font, người đọc không cần cài thêm.
 
 Khoảng cách sau dấu kết câu được đặt bằng khoảng cách thông thường giữa các từ; tắt giãn câu mặc định của LaTeX. Thân bài vẫn căn đều hai lề, nên khoảng cách giữa từ có thể co giãn theo dòng. Không thay đổi chuỗi câu hỏi thử nghiệm, công thức, mã lệnh và số liệu khi chuẩn hóa dấu câu.
+
+## Tài liệu nền cho báo cáo tiếp theo
+
+Bắt đầu từ [Hướng dẫn hệ thống](../docs/SYSTEM_GUIDE.md), sau đó đối chiếu [ma trận bằng chứng](../docs/thesis/EVIDENCE_MATRIX.md) và README của từng thí nghiệm. Hướng dẫn hệ thống mô tả trạng thái hiện tại; báo cáo kỳ 1 là snapshot lịch sử.

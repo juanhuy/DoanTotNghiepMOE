@@ -1,0 +1,27 @@
+{
+  "limits_mib": {
+    "stop_rss_mib": 5632,
+    "min_available_mib": 1536,
+    "stop_swap_mib": 128
+  },
+  "violations": [
+    {
+      "reason": "process swap watchdog threshold",
+      "sample": {
+        "elapsed_s": 74.36687300100039,
+        "process": {
+          "VmHWM": 3398984,
+          "VmRSS": 3265300,
+          "VmSwap": 135756,
+          "read_bytes": 49326055424,
+          "write_bytes": 8192
+        },
+        "system": {
+          "MemAvailable": 4727880,
+          "SwapTotal": 4194300,
+          "SwapFree": 2952348
+        }
+      }
+    }
+  ]
+}

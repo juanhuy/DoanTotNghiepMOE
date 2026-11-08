@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "kind": "http_session",
+  "run_id": "20261103T074242.388742Z-lookahead-v1-exploratory-0c422464fbcd44d5923a1a5a393ed42d",
+  "status": "failed",
+  "testbed": "i5",
+  "git_commit": "75d5a62ce79e1b1674b3d9abf72724c1aea0c088",
+  "git_dirty": true,
+  "config": {
+    "threads": 4,
+    "cache_mib": 64,
+    "context": 512,
+    "max_tokens": 64,
+    "cycles": 5,
+    "gpu_requested": "cpu",
+    "expert_cache_policy": "victim",
+    "lookahead": "on"
+  },
+  "compare_cache_policies": false,
+  "compare_lookahead": true,
+  "ram_environment": {
+    "MOE_RAM_LIMIT_BYTES": "5368709120",
+    "MOE_RAM_HEADROOM_BYTES": "1073741824"
+  },
+  "scenario": {
+    "version": 1,
+    "id": "topics",
+    "session_mode": "independent",
+    "warmup_requests": 0,
+    "prompts": [
+      "Where is Mars",
+      "What is love ?",
+      "Explain a Python dictionary.",
+      "Why did the Roman Republic end?"
+    ],
+    "reset": "before each policy cycle, before warmup; OS cache unchanged"
+  },
+  "scenario_sha256": "812fe9efcac0040816d786ef426a2c000362b67450144a0cdd58b3a3311a3466",
+  "block_plan": [
+    {
+      "pair": 0,
+      "mode": "off"
+    },
+    {
+      "pair": 0,
+      "mode": "on"
+    },
+    {
+      "pair": 1,
+      "mode": "on"
+    },
+    {
+      "pair": 1,
+      "mode": "off"
+    },
+    {
+      "pair": 2,
+      "mode": "off"
+    },
+    {
+      "pair": 2,
+      "mode": "on"
+    },
+    {
+      "pair": 3,
+      "mode": "on"
+    },
+    {
+      "pair": 3,
+      "mode": "off"
+    },
+    {
+      "pair": 4,
+      "mode": "off"
+    },
+    {
+      "pair": 4,
+      "mode": "on"
+    }
+  ],
+  "memory_start_kib": {
+    "MemAvailable": 6849932,
+    "SwapTotal": 4194300,
+    "SwapFree": 4192108
+  },
+  "notes": [
+    "engine reset does not clear OS cache or VRAM pool allocations",
+    "checkpoint hashing reads files before measurement",
+    "desktop load uncontrolled",
+    "process read_bytes is a cumulative OS counter; per-turn deltas reported"
+  ],
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "build_environment": {
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null,
+    "CARGO_BUILD_TARGET": null
+  },
+  "checkpoint": {
+    "config_sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b",
+    "files": [
+      {
+        "path": ".coli_analysis.json",
+        "size": 1655,
+        "sha256": "d8f8d6d46befe273cc71b355ae614de050d24fca17d58b95ce8606b3a312bec5"
+      },
+      {
+        "path": "_meta/config.json",
+        "size": 759,
+        "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c"
+      },
+      {
+        "path": "_meta/generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "_meta/special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "_meta/tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "_meta/tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      },
+      {
+        "path": "config.json",
+        "size": 784,
+        "sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "model-00000.safetensors",
+        "size": 1834100784,
+        "sha256": "215a2a74ede3b54c81418cab274c835cde1fdf4dc3eee40471a1864f13aae635"
+      },
+      {
+        "path": "model-00001.safetensors",
+        "size": 1657854168,
+        "sha256": "c83c75dbc51b7868e2199cc904e3f1337cd78362bef50b64a86d50e23d4c43e0"
+      },
+      {
+        "path": "model-00002.safetensors",
+        "size": 1628059584,
+        "sha256": "45f9996dcf938fbd9321e729764bb9c6746ae8258c3d50a45403421c0172a4c8"
+      },
+      {
+        "path": "model-00003.safetensors",
+        "size": 1821755792,
+        "sha256": "83984c933d29af5d18c328a68d8a84577c342f8af3d7503920a9dbc14916ee97"
+      },
+      {
+        "path": "model-00004.safetensors",
+        "size": 471116928,
+        "sha256": "56934a3b93691be6857b6d02a5f597f3db7eab49fc3554f8cc76abb6ea465ba6"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      }
+    ]
+  },
+  "hardware_observed": {
+    "logical_cpus": 12,
+    "cpu_model": "Intel(R) Core(TM) i5-10500H CPU @ 2.50GHz",
+    "physical_memory_bytes": 16571326464,
+    "gpu_inventory": {
+      "status": "observed",
+      "format": "name,memory_MiB,driver",
+      "devices": [
+        "NVIDIA GeForce GTX 1650 with Max-Q Design, 4096, 615.78.08"
+      ]
+    }
+  },
+  "source_sha256": {
+    "Cargo.lock": "7dc5677da4a7c4a20dd2510a8832551c4cea2c78fd882c48af27893f472e3f93",
+    "Cargo.toml": "bc684537d929add22986e49cae2b6f88e148148577e716900673a48b4c93626c",
+    "src/attention.rs": "c2b0a3f8b8104f934c55f78d45d198c82cc9765e7f9b9575e828714800d79317",
+    "src/backend.rs": "604025e602d34cf38a791ebe65b11fe817a1445df5cb39f5dd28a85d93a20a68",
+    "src/engine.rs": "381c3d9c9e74a41273d44bdd1bd3fcddfc79d2a661b6b977dd5063e3a7b48f29",
+    "src/expert.rs": "e1209f08374965f80bcd7ac8e269c4d59304dab0fbcde5b30d5248b3443a093c",
+    "src/generation.rs": "9fcae2f05758f3d20f10bb0623384cbf4aafda07a1327c042cde478639d45eba",
+    "src/gpu.rs": "be7cb41e316ee567c191a113b64695d428c0e29945c77f8751977a3c9a26459d",
+    "src/int8_expert.rs": "62c0f34ff81440d71feaf7fac80697644a95000207e873dceb309465ac459a7a",
+    "src/lib.rs": "4aa720b20a19c4f767babb79f6ed3f3badb95812564cf8ac9dafd11373ac0097",
+    "src/main.rs": "21cce289c76f87d08869c8986296e2f3563d5ec5fc3aab094027afee0bd879a8",
+    "src/memory.rs": "2f4abb5e94fa29c96b856319482e7f33d5322f5593e5af2c4ed5620a4dc4a861",
+    "src/model/config.rs": "761bb01e2ec3b8b3ef6402596d0e012b392b3fe78c930f48c566e205c4cfa88d",
+    "src/model/loader.rs": "ed4f1b619a9cb96456503474000e0e6e78b0541661a3dad6e24997e3becd0df7",
+    "src/model/mod.rs": "9335368baf71b578b4d6630d484942538989e5c3b5f4eb84416b780c85cdd9d5",
+    "src/moe.rs": "05967f0440a9617f8801db6d0b8d901d99569d25156b2a69bd7efb5589f4bb6e",
+    "src/olmoe.rs": "71847c115eac42396325408a79982d5f703d1b2e6e5ecc255461eb9db2d88e1c",
+    "src/quantization.rs": "84887691cf88d1ce76918c8012ec77dfbbdaebbb3ab134e5919a18c0a4277b6f",
+    "src/ram.rs": "33445a1d3243ce533bc45f5344b184d53cbb8ecfd641568053d8ebcdfeed12df",
+    "src/router.rs": "dad15d395349c7462bd9b3329b594a2fa3968c7dadc3aaba9134a05d756926b8",
+    "src/safetensors.rs": "f07d2e262f2b6e67116d3c0bc69304b9418b27cd1784f4d18cc569f314bbd352",
+    "src/tokenizer.rs": "b9e978819c110583fbaeda9a89f0cabe07bf0731d601205b022bc3e66ab5661e",
+    "tests/fixtures/olmoe/normalized-gqa/config.json": "26681bb9c4658766484a8262cf5a9659483e86f1a1b284c9327a72c0b9ee2ab2",
+    "tests/fixtures/olmoe/normalized-gqa/model.safetensors": "8a014464332b4eeedca1c0d7c6915d01fcc6b10213f5beaef9fa550ca912bef9",
+    "tests/fixtures/olmoe/normalized-gqa/reference.json": "0c76b0aeefd80d5c5287a42a21ac624de616b69b6b612dcc11061190ac2d8c8b",
+    "tests/fixtures/olmoe/normalized-gqa/tokenizer.json": "7f3a6f9d2418b6c820429687df7b27d243718f7472725aa336062804f3bcccfa",
+    "tests/fixtures/olmoe/normalized-gqa/tokenizer_config.json": "cb91d938e047eaa6ae055ebc18daf9b8970af028963ce6960c1d7b318fdc0f37",
+    "tests/fixtures/olmoe/unnormalized-mha/config.json": "b1719a2d8c9b3d519f78abd6a89750172322748c6e1e11c5737be42785f522f2",
+    "tests/fixtures/olmoe/unnormalized-mha/model.safetensors": "ff1d5815df448ec5ed94023dee71c5734fdd808da8c15e1f190b2dbd25aa11a0",
+    "tests/fixtures/olmoe/unnormalized-mha/reference.json": "25764eaebb7b39f9d475f2d0ff9b8a1fe19a14fbf36e4455c5a13573ee6ab181",
+    "tests/fixtures/olmoe/unnormalized-mha/tokenizer.json": "7f3a6f9d2418b6c820429687df7b27d243718f7472725aa336062804f3bcccfa",
+    "tests/fixtures/olmoe/unnormalized-mha/tokenizer_config.json": "cb91d938e047eaa6ae055ebc18daf9b8970af028963ce6960c1d7b318fdc0f37",
+    "tools/beautify_tables.py": "a34741fc3101221a93ba45d01de223a8bd8a1d738e1dcb045a0bda9107e749ab",
+    "tools/benchmark_http_session.py": "912466838a39d7555f534afdf54fcd53ef61da2b90563a6e5306edbf90d05259",
+    "tools/benchmark_lookahead.py": "4c4da3c1a474317a43bcb80a73cc2a3e57a8033a88a7d230b8ded8b74e9048fe",
+    "tools/build_all_chapters.py": "b1b105af670401398a7283e9566c0891e34c7998d8bb301afe27a1467cae8609",
+    "tools/check.py": "90fdbfa730ab6a12269bc32d38b77cae20de192a03d558ec0758e8c6b13bec13",
+    "tools/check_ram_stability.py": "0eff69159eb28660004fa9ac55dc31fd09d24f0ce03add356ac5cd2551aed95d",
+    "tools/convert_report_to_latex.py": "be7e59d70e58516680d31f24e2e6ea4b4431d3714c014a135dadd7eaa41da383",
+    "tools/export_benchmark_evidence.py": "8adec4b8861db9af0273a4b83377af84381570b9d3a4d71a2ca88737505338a5",
+    "tools/make_olmoe_reference.py": "35aab198f1b49c98568776345b58aa08f51f73d56d1be69c11ab3385170a38cf",
+    "tools/monitor_tier.sh": "c0ad92d6bb069fc41de06ea4be0a6e8a4b19437bc997a7d0b84882f402d14e9f",
+    "tools/prepare_olmoe.py": "35b40242ac14acdb917606d44da637a75e8fd7221611bef365e0f727bb6b2206",
+    "tools/requirements-converter.txt": "d5b1206bcd29b775fd01bcd21dce7f1b3bc4769f2bea408fef3eed221ac62e07",
+    "tools/run_benchmark.py": "1cef2455783b9df24a9543ea00ea44cbdda9aa73bec8a2428b25dd2ebbe3b368",
+    "tools/run_scenarios.py": "a8882568ca6041d1f348a37ba3c317d547c05e2c4437ddfc54726294d0ee5db0",
+    "tools/stress_http.py": "c1cb887a5d31b22869cc6b28c881ec5bdf74190a721b6939f89654c2935c9ec9",
+    "tools/test_benchmark_evidence.py": "f35afe566b84f37de72bb312a0465200132d07a864ff2c96731acd2d241011a7",
+    "tools/test_chat_stream.cjs": "137fe3b0b275031170a407d5c9b3267ec9846edf4e0464a0e4076bcf96bd46d9",
+    "tools/test_prepare_olmoe.py": "4c705c7e2dc033bcb471c00cf0d396ea7c8d9fc280d561d038b31a3939165414",
+    "tools/test_run_benchmark.py": "aaf7c9d8091a6ff0b4c8550279a39c938f3994546422828caad67df5e55a0558",
+    "tools/test_streaming_smoke.py": "f85324e19f52e999b8c91ffe03ff6842205459c01c9d828971ab7a90de3ef599"
+  },
+  "binary_sha256": "b7cf7226304cd21e5477782b219c0c04e505eb51290b90e6be57e2156124ca4c",
+  "protocol": "lookahead-v1",
+  "error": "RuntimeError: SSE missing finish or DONE",
+  "memory_end_kib": {
+    "MemAvailable": 7895280,
+    "SwapTotal": 4194300,
+    "SwapFree": 3050368
+  }
+}
