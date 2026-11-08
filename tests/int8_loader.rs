@@ -215,3 +215,57 @@ fn test_load_reusing_buffers_produces_identical_expert() {
         .unwrap();
     assert_eq!(&scales, &[0.5, 0.25, 2., 0.75]);
 }
+
+#[test]
+fn merged_int4_expert_loads_and_matches_reference() {
+    use moe_tier_engine::int8_expert::QuantType;
+
+    let dir = tempfile::tempdir().unwrap();
+    // hidden=2, intermediate=2:
+    // Gate (shape 2x2): row 0=[1, -1] => 0xF1, row 1=[2, 0] => 0x02
+    // Up   (shape 2x2): row 0=[2, 1]  => 0x12, row 1=[-1, 1] => 0x1F
+    // Down (shape 2x2): row 0=[1, -2] => 0xE1, row 1=[0, 2] => 0x20
+    shard(
+        &dir.path().join("a.safetensors"),
+        json!({
+            "model.layers.3.mlp.experts.7.merged_weight": {
+                "dtype":"U8", "shape":[6], "data_offsets":[0,6]}
+        }),
+        &[0xF1, 0x02, 0x12, 0x1F, 0xE1, 0x20],
+    );
+    // Scales: gate scales (2), up scales (2), down scales (2) = 6 floats
+    let scales = [0.5f32, 0.25, 0.25, 0.5, 2.0, 1.0];
+    let data: Vec<_> = scales.iter().flat_map(|s| s.to_le_bytes()).collect();
+    shard(
+        &dir.path().join("b.safetensors"),
+        json!({
+            "model.layers.3.mlp.experts.7.qs": {
+                "dtype":"F32", "shape":[6], "data_offsets":[0,24]}
+        }),
+        &data,
+    );
+
+    let index = TensorIndex::open(dir.path()).unwrap();
+    let expert = Int8Expert::load(&index, 3, 7, 2, 2, 30).unwrap();
+    assert_eq!(expert.quant_type(), QuantType::Int4);
+    assert_eq!(expert.resident_bytes(), 6 + 24); // 6 bytes weights + 24 bytes scales = 30 bytes
+
+    let actual = expert.forward(&[2., -1.]).unwrap();
+
+    // Reference calculation:
+    let gate_0 = (1.0 * 2.0 + 1.0) * 0.5; // 3.0 * 0.5 = 1.5
+    let gate_1 = (2.0 * 2.0 - 0.0) * 0.25; // 4.0 * 0.25 = 1.0
+
+    let up_0 = (2.0 * 2.0 - 1.0) * 0.25; // 3.0 * 0.25 = 0.75
+    let up_1 = (-2.0 - 1.0) * 0.5; // -3.0 * 0.5 = -1.5
+
+    let silu = |x: f32| x / (1.0 + (-x).exp());
+    let act_0 = silu(gate_0) * up_0;
+    let act_1 = silu(gate_1) * up_1;
+
+    let expected_0 = (1.0 * act_0 + (-2.0) * act_1) * 2.0;
+    let expected_1 = (0.0 * act_0 + 2.0 * act_1) * 1.0;
+
+    assert!((actual[0] - expected_0).abs() < 1e-6);
+    assert!((actual[1] - expected_1).abs() < 1e-6);
+}

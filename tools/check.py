@@ -88,6 +88,7 @@ def main(argv=None):
         [sys.executable, "tools/test_benchmark_evidence.py"],
         [sys.executable, "tools/test_run_benchmark.py"],
         [sys.executable, "tools/test_memory_telemetry.py"],
+        [sys.executable, "tools/test_analyze_route_trace.py"],
     ]
     if args.rust:
         commands += [["cargo", "fmt", "--all", "--", "--check"],
@@ -96,7 +97,8 @@ def main(argv=None):
     if args.release:
         commands.append(["cargo", "test", "--release", "--all-targets", "--locked"])
     if args.converter:
-        commands.append([sys.executable, "tools/test_prepare_olmoe.py"])
+        commands += [[sys.executable, "tools/test_prepare_olmoe.py"],
+                     [sys.executable, "tools/test_prepare_olmoe_int4.py"]]
     if args.web:
         commands.append(["node", "tools/test_chat_stream.cjs"])
     if not all(run(command) for command in commands):

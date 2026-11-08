@@ -137,3 +137,205 @@ TrênLinuxGNU, dlsymRTLD_DEFAULT tra mallinfo2 một lần quaOnceLock; không l
 Allocator fields đều Option/byte: arena_bytes, in_use_bytes(uordblks), free_bytes(fordblks), mmap_bytes(hblkhd); null khiunavailable, không thay bằng0. query_ns đo thời gian chính lời gọi mallinfo2, không gồm /proc/capacityscan/serialize/dlsyminit/versionclone và toàn traceoverhead. Các phép đo này tự có allocation/overhead, không cam kết<1ms.
 
 in_use_bytes+mmap_bytes là chỉ báo bookkeepingallocator, không exactliveRustpayload. Tcache/metadata/nonmallocmapping/interposition/cácarenađọc tuần tự giới hạn diễn giải. RSS và allocator không snapshotđồngthời, không cộng hai nguồn vào tracked_host_bytes; trackedcapacity cũ không gồm chỉbáoallocator để tránhđếmtrùng. Không gọi mallopt/malloc_trim hoặc đổi routing/session/cachebudget. Phép đo cũ không có trường mới không được điền hồi tố.
+
+## Đánh giá khoa học: Perplexity & Cross-Entropy Loss
+
+Nhằm phục vụ đánh giá định lượng học thuật cho đồ án (thay thế hoàn toàn các bài kiểm tra heuristic chuỗi con 12 câu), engine tích hợp bộ đo lường chất lượng mô hình chuẩn hóa dựa trên xác suất tự hồi quy (Autoregressive Logits Evaluation).
+
+### 1. Cơ sở toán học
+Cho một chuỗi văn bản đầu vào được mã hóa thành $N$ token: $x_1, x_2, \dots, x_N$. Tại mỗi vị trí $t \in [1, N-1]$, mô hình sinh ra vector logits $z_t \in \mathbb{R}^V$ trên toàn bộ không gian từ vựng $V$ (50.280 tokens).
+
+- **Kỹ thuật Log-Sum-Exp ổn định số học** (ngăn chặn tràn số FP32 trên exp):
+  $$\text{LSE}(z_t) = \max_{v \in V}(z_{t, v}) + \ln \left( \sum_{v \in V} \exp\left(z_{t, v} - \max_{u \in V}(z_{t, u})\right) \right)$$
+
+- **Hàm mất mát Cross-Entropy (Negative Log-Likelihood - NLL)** cho token mục tiêu $x_{t+1}$:
+  $$\text{NLL}_t = -\ln P(x_{t+1} \mid x_{1..t}) = \text{LSE}(z_t) - z_{t, x_{t+1}}$$
+
+- **Cross-Entropy Loss trung bình**:
+  $$\mathcal{L} = \frac{1}{N - 1} \sum_{t=1}^{N - 1} \text{NLL}_t \quad (\text{đơn vị: nats})$$
+
+- **Độ phức tạp ngôn ngữ (Perplexity - PPL)**:
+  $$\text{PPL} = \exp(\mathcal{L})$$
+
+- **Số bit trên mỗi ký tự (Bits-Per-Character - BPC)**:
+  $$\text{BPC} = \frac{\sum_{t=1}^{N-1} \text{NLL}_t}{\ln(2) \times C} \quad (\text{với } C \text{ là tổng số ký tự văn bản})$$
+
+### 2. Tích hợp module và thực thi
+- `OlmoeModel::compute_perplexity`: Tính toán tuần tự logits trên token stream, tích lũy NLL với Log-Sum-Exp ổn định và trả về `PerplexityMetrics`.
+- `InferenceEngine::compute_perplexity`: Bọc lệnh gọi qua Semaphore Gate và Tokio `spawn_blocking`, đảm bảo an toàn đa luồng và không chặn event loop.
+- `examples/evaluate_perplexity.rs`: Công cụ dòng lệnh hỗ trợ đánh giá trên văn bản thô hoặc file corpus (Wikitext-2, tiếng Việt), xuất báo cáo JSON chuẩn để trích dẫn vào Chương 4 Luận văn.
+
+## Đa định dạng Lượng tử hóa Chuyên gia: INT4 Nibble Packing & AVX2 Kernel
+
+Nhằm tối ưu hóa băng thông I/O đĩa SSD NVMe và tiết kiệm 50% bộ nhớ RAM trong điều kiện thiết bị biên (edge devices/laptops), engine hỗ trợ cấu trúc chuyên gia INT4 nibble-packed song hành với INT8 mặc định.
+
+### 1. Cơ chế đóng gói nhị phân (Nibble Packing)
+Mỗi chuyên gia gồm 3 ma trận chiếu (Gate, Up, Down) với tổng số phần tử $N = 3 \times d_{\text{hidden}} \times d_{\text{intermediate}} = 6.291.456$ tham số:
+- **INT8**: 1 tham số có dấu $\in [-128, 127]$ chiếm 1 byte $\rightarrow 6.291.456$ bytes ($\approx 6,016$ MB).
+- **INT4**: 2 tham số có dấu $\in [-8, 7]$ được nén trong 1 byte `u8` $\rightarrow 3.145.728$ bytes ($\approx 3,008$ MB, giảm đúng 50%).
+
+Quy tắc đóng gói:
+- Phần tử chẵn $2i$ nằm ở 4 bit thấp (low nibble, bit 0..3):
+  $$\text{byte}_i[0..3] = q_{2i} \ \& \ \text{0x0F}$$
+- Phần tử lẻ $2i + 1$ nằm ở 4 bit cao (high nibble, bit 4..7):
+  $$\text{byte}_i[4..7] = (q_{2i+1} \ \& \ \text{0x0F}) \ll 4$$
+
+### 2. Giải mã và Mở rộng dấu không điều kiện (Branchless Sign Extension)
+Để khôi phục số nguyên có dấu 4-bit $[-8, 7]$ về số nguyên 8-bit hoặc 32-bit:
+- **Đại số bit học**: với giá trị $x \in [0, 15]$, mở rộng dấu bù 2 thực hiện qua:
+  $$\text{sign\_extend}(x) = (x \oplus 8) - 8$$
+  - Khi $x \in [0, 7]$: $x \oplus 8 = x + 8$, trừ 8 thu được $x$ (dương).
+  - Khi $x \in [8, 15]$: $x \oplus 8 = x - 8$, trừ 8 thu được $x - 16$ (âm, dải $[-8, -1]$).
+- Phương pháp này loại bỏ hoàn toàn các rẽ nhánh điều kiện (branchless), chuyển đổi trực tiếp thành 2 chỉ thị phần cứng duy nhất (`_mm_xor_si128` và `_mm_sub_epi8`).
+
+### 3. Tăng tốc phần cứng SIMD AVX2/FMA
+Kernel `dot_i4_f32_avx2` xử lý 32 nibbles (16 bytes) trên mỗi chu kỳ lặp:
+1. `_mm_loadu_si128`: Đọc 16 bytes từ bộ nhớ.
+2. `_mm_srli_epi16` và `_mm_and_si128(0x0F)`: Trích xuất song song 16 nibbles thấp và 16 nibbles cao.
+3. `_mm_unpacklo_epi8` / `_mm_unpackhi_epi8`: Xen kẽ các nibbles trở lại thứ tự ban đầu của vector đầu vào.
+4. `_mm256_cvtepi8_epi32` + `_mm256_cvtepi32_ps`: Chuyển đổi trực tiếp các số nguyên 8-bit sang 8 số thực FP32.
+5. `_mm256_fmadd_ps`: Nhân dồn đồng thời với vector `input` vào 4 thanh ghi tích lũy `sum0..sum3`, giải phóng tối đa throughput của đơn vị FMA trên CPU.
+
+## Kernel Fused SwiGLU Ghép Cặp (Paired Gate-Up SIMD): Tối ưu Hóa Vi Kiến Trúc CPU L1 Cache
+
+Tiếp thu và phát triển kỹ thuật tối ưu hóa vi kiến trúc từ engine MoE tham chiếu Colibrì (`colibri/c/fused_simd.h`), engine tích hợp kernel ghép cặp Gate-Up cho cả INT8 và INT4.
+
+### 1. Động lực học thuật và Nghẽn cổ chai L1 Cache
+Trong khối kích hoạt SwiGLU chuẩn:
+$$\text{SwiGLU}(x) = (\text{SiLU}(x \cdot W_{\text{gate}}) \odot (x \cdot W_{\text{up}})) \cdot W_{\text{down}}$$
+Cả hai phép nhân ma trận $x \cdot W_{\text{gate}}$ và $x \cdot W_{\text{up}}$ đều sử dụng cùng một vector kích hoạt đầu vào $x \in \mathbb{R}^{d_{\text{hidden}}}$:
+- Nếu thực hiện rời rạc 2 phép nhân tích vô hướng riêng biệt, CPU buộc phải nạp lại $x$ hai lần từ bộ nhớ đệm L1 Data Cache vào thanh ghi SIMD. Với $d_{\text{hidden}} = 2048$ và $d_{\text{intermediate}} = 1024$, vector $x$ bị đọc lặp lại 1024 lần.
+- **Giải pháp ghép cặp (Paired Gate-Up Kernel)**: Vector $x$ được nạp một lần duy nhất vào 4 thanh ghi 256-bit (`x0..x3`) cho mỗi khối 32 số thực FP32, sau đó nhân song song với cả 32 trọng số của Gate và 32 trọng số của Up.
+
+### 2. Tận dụng Hai Cổng Thực thi FMA (Dual FMA Execution Ports)
+Trên các vi kiến trúc hiện đại của Intel (Raptor Lake / Golden Cove trên Core i7-14650HX):
+- CPU sở hữu 2 cổng thực thi FMA 256-bit độc lập (Port 0 và Port 1), cho thông lượng lý thuyết đạt tối đa 2 lệnh FMA trên mỗi chu kỳ xung nhịp (thông lượng 16 phép toán FP32/chu kỳ).
+- Bằng cách bố trí các lệnh `_mm256_fmadd_ps` xen kẽ giữa các thanh ghi tích lũy của Gate (`sum_g0..sum_g3`) và Up (`sum_u0..sum_u3`), chuỗi phụ thuộc dữ liệu (data dependency chain) được giãn cách hoàn toàn, loại bỏ hiện tượng nghẽn thanh ghi (register stalling) và cho phép CPU đạt gần 100% công suất tính toán lý thuyết.
+
+### 3. Triển khai Kỹ thuật: `dot_i8_f32_pair_avx2` & `dot_i4_f32_pair_avx2`
+- **INT8 Paired Kernel**: Nạp 32 bytes trọng số từ `gate_row` và 32 bytes từ `up_row`, mở rộng dấu sang FP32, nhân dồn vào 4 bộ tích lũy Gate và 4 bộ tích lũy Up cùng với cùng một bản sao `x0..x3`.
+- **INT4 Paired Kernel**: Nạp 16 bytes (32 nibbles) của Gate và 16 bytes của Up, giải mã branchless `(x ^ 8) - 8` đồng thời, nạp vector $x$ một lần và tính song song hai kết quả vô hướng `(dot_g, dot_u)`.
+- **Độ chính xác và Parity**: Hai kernel ghép cặp được bảo chứng thông qua hai unit test `test_dot_i8_f32_pair_parity` và `test_dot_i4_f32_pair_parity` trên 16 dải kích thước vector khác nhau, đạt sai số toán học tuyệt đối $< 10^{-4} \times (1 + |\text{scalar}|)$.
+
+## Telemetry Định Tuyến & Ghim Chuyên Gia Nóng Bền Vững (.moe_usage & ROUTE_TRACE)
+
+Nhằm chuyển đổi cơ chế quản lý bộ nhớ đệm từ LRU bị động (reactive) sang cơ chế ghim dự đoán chủ động dựa trên lịch sử (history-aware proactive cache pinning), engine tích hợp giao thức lưu vết định tuyến chuẩn hóa theo Colibrì.
+
+### 1. Định dạng Tệp Lịch sử `.moe_usage`
+Tệp ghi nhận tần suất kích hoạt tích lũy của từng chuyên gia trên từng tầng:
+```text
+-1 <num_layers> <num_experts>
+-2 <version> <engine_id>
+<layer_id> <expert_id> <activation_count>
+```
+- Các dòng mở đầu với số âm (`-1`, `-2`) chứa siêu dữ liệu chiều mô hình và mã định danh engine, đảm bảo tính tương thích chéo với các engine MoE khác.
+- **Tính nguyên tử khi ghi (Atomic File Replace)**: Quá trình lưu luôn ghi ra file tạm `.tmp` sau đó gọi `fs::rename`, đảm bảo tệp không bị hư hỏng khi mất điện hoặc bị ngắt đột ngột.
+- **Tự động ghim khi khởi động**: Trong `OlmoeModel::load`, engine tự động đọc `.moe_usage` (nếu tồn tại hoặc chỉ định qua `MOE_USAGE_PATH`), tích lũy vào `layer.heat` và gọi `update_hot_pins()`, ghim các chuyên gia nóng nhất ngay từ trước khi nhận request đầu tiên.
+
+### 2. Luồng Vết Định tuyến Trực tiếp (`ROUTE_TRACE`)
+Khi biến môi trường `ROUTE_TRACE` hoặc `MOE_ROUTE_TRACE` được cấu hình, engine kích hoạt `RouteTraceLogger` xuất dữ liệu vết định tuyến theo thời gian thực:
+```text
+<call_id> <row> <layer> <expert_0>:<gate_0> <expert_1>:<gate_1> ...
+```
+- Dữ liệu này được xử lý bởi `tools/analyze_route_trace.py` để trích xuất hệ số bất cân đối Gini và xác lập ma trận tương quan giữa các cặp chuyên gia đồng kích hoạt (co-activation correlation).
+
+## Nâng Cấp PILOT Lookahead: Đà Định Tuyến (Routing Momentum) & Ngưỡng Tin Cậy Tích Lũy (Cumulative Confidence Cutoff)
+
+Nhằm tối ưu hóa cơ chế nạp trước chuyên gia (speculative lookahead prefetching) trên các thiết bị có băng thông đĩa NVMe và bộ nhớ RAM giới hạn, engine kế thừa và hoàn thiện cơ chế PILOT Router từ Colibrì (`colibri/c/olmoe.c`):
+
+### 1. Đà Định Tuyến Theo Token (Token-Level Routing Momentum EMA)
+- Khi dự phóng router của tầng kế tiếp ($l+1$) từ residual activation $x$ của tầng hiện tại ($l$), vector logits dự đoán dễ bị nhiễu do dao động cục bộ của từng token riêng lẻ.
+- Engine duy trì vector `router_ema` cho từng tầng mô hình. Khi tầng $l$ hoàn thành tính toán router, logits thực tế được dùng để cập nhật lịch sử hàm mũ:
+  $$\text{EMA}_l^{[t]} = (1.0 - \text{smooth}) \cdot \text{logits}_l^{[t]} + \text{smooth} \cdot \text{EMA}_l^{[t-1]}$$
+- Khi dự phóng router tầng kế tiếp, logits dự phóng được hòa trộn cùng vector EMA của tầng đó (`blend_pilot_router`) với tham số $\text{smooth} = 0.35$ (cấu hình qua biến môi trường `MOE_PILOT_SMOOTH`), giúp loại bỏ nhiễu tần số cao và nâng cao độ chính xác dự báo chuyên gia.
+
+### 2. Ngưỡng Tin Cậy Tích Lũy (Cumulative Confidence Cutoff - `pilot_conf_limit`)
+- Thay vì luôn nạp trước một số lượng ứng viên cố định (`max_candidates`), engine tính toán phân phối xác suất softmax trên vector logits dự phóng:
+  $$p_i = \frac{e^{l_i - l_{\max}}}{\sum_{j} e^{l_j - l_{\max}}}$$
+- Các ứng viên được duyệt theo thứ tự xác suất giảm dần. Engine tích lũy tổng xác suất $\sum p_i$; ngay khi tổng này vượt qua ngưỡng $\text{pilot\_conf\_limit}$ (mặc định $0.90$, cấu hình qua `MOE_PILOT_CONF_LIMIT`), engine ngừng bổ sung thêm ứng viên.
+- Cơ chế này giúp triệt tiêu hoàn toàn các yêu cầu đọc đĩa SSD lãng phí cho các chuyên gia có xác suất kích hoạt không đáng kể (< 5-10%), bảo toàn băng thông I/O cho các tác vụ quan trọng.
+
+### 3. Sắp Xếp Tịnh Tiến Đơn Điệu (Sequential Seek Locality)
+- Trước khi gửi danh sách ứng viên nạp trước xuống tầng I/O, các ID chuyên gia được sắp xếp tăng dần (`selected.sort_unstable()`).
+- Nhờ cấu trúc lưu trữ liên tục của các chuyên gia trong tệp checkpoint Safetensors, việc đọc tuần tự tăng dần giúp bộ điều khiển SSD NVMe tận dụng tối đa cơ chế nạp trước phần cứng (hardware read-ahead cache), triệt tiêu chi phí định vị ngẫu nhiên.
+
+## Nén Bộ Nhớ Đệm KV Cache Bằng FP8 E4M3 & Giải Mã O(1) LUT Attention (Colibrì Invariant)
+
+Trong suy luận mô hình ngôn ngữ lớn và đặc biệt là kiến trúc MoE trên thiết bị biên có dung lượng RAM hữu hạn, bộ nhớ đệm Key-Value (KV Cache) tăng trưởng tuyến tính theo chiều dài chuỗi ngữ cảnh $T$ và số lượng tầng $L$:
+$$\text{Memory}_{\text{FP32}} = 2 \times L \times T \times kd \times 4\text{ bytes}$$
+Với mô hình OLMoE-1B-7B ($L = 16$, $kd = 512$), mỗi token tiêu thụ $65.5\text{ KB}$ RAM cho toàn bộ 16 tầng ($4.096\text{ KB}$/layer). Với ngữ cảnh $2,048$ tokens, KV Cache chiếm hơn $134.2\text{ MB}$ và đòi hỏi đọc hàng trăm megabyte dữ liệu qua bus bộ nhớ trong mỗi bước Attention decode.
+
+Engine tiếp thu và chuẩn hóa giải pháp nén KV Cache từ Colibrì (`colibri/c/kv_fp8.h`):
+
+### 1. Định Dạng Số Thực Chuẩn OCP FP8 E4M3
+- Mỗi vector Key hoặc Value được nén từ `f32` (4 bytes) xuống `u8` (1 byte) kèm một hệ số co dãn vô hướng chia tỉ lệ theo từng token (Per-row Scale):
+  $$\text{scale} = \frac{\max_{i}(|x_i|)}{448.0}, \quad \text{byte}_i = \text{fp8\_e4m3\_encode}\left(\frac{x_i}{\text{scale}}\right)$$
+- Định dạng OCP FP8 E4M3 gồm: 1 bit dấu ($S$), 4 bit mũ ($E$, bias = 7), 3 bit định trị ($M$). Giá trị biểu diễn:
+  $$v = (-1)^S \times 2^{E - 7} \times \left(1 + \frac{M}{8}\right) \quad (\text{với } E > 0)$$
+  $$v = (-1)^S \times 2^{-9} \times M \quad (\text{với } E = 0, \text{ denormal step } 2^{-9})$$
+- Giá trị bão hòa cực đại: $\pm 448.0$. Các giá trị vô cùng hoặc NaN được gán bảo vệ chặt chẽ.
+
+### 2. Giải Mã Tức Thời O(1) Qua Bảng Tra Cứu Thường Trực (L1 Data Cache LUT)
+- Nhằm loại bỏ hoàn toàn chi phí giải nén CPU và triệt tiêu việc cấp phát bộ đệm trung gian trong vòng lặp Attention, engine tạo sẵn một bảng tra cứu tĩnh `FP8_E4M3_LUT: LazyLock<[f32; 256]>`.
+- Bảng này chỉ chiếm đúng $256 \times 4\text{ bytes} = 1\text{ KB}$, luôn thường trực trong bộ nhớ đệm L1 Data Cache của lõi CPU ($32\text{ KB} - 48\text{ KB}$).
+- Giải mã dùng bảng tra cứu theo byte; chi phí thực tế cần đo, không cam kết một chu kỳ CPU:
+  $$x_i = \text{FP8\_E4M3\_LUT}[\text{byte}_i] \times \text{scale}$$
+
+### 3. Tích Vô Hướng Chú Ý Trực Tiếp (Direct Attention Dot-Product & Accumulation)
+- Hàm `causal_attention_fp8_into` trong `src/backend.rs` thực hiện tính toán ma trận Attention trực tiếp trên dữ liệu nén:
+  - **Score calculation**:
+    $$\text{score}(q, k) = \frac{\sum_{j} q_j \cdot (\text{LUT}[k_j] \cdot \text{scale}_k)}{\sqrt{d_k}} = \frac{\text{scale}_k}{\sqrt{d_k}} \sum_{j} q_j \cdot \text{LUT}[k_j]$$
+  - **Output accumulation**:
+    $$\text{output}_j += \text{weight} \cdot (\text{LUT}[v_j] \cdot \text{scale}_v) = (\text{weight} \cdot \text{scale}_v) \cdot \text{LUT}[v_j]$$
+- Không phát sinh bất kỳ bộ đệm trung gian (`malloc`/`Vec::new`) nào trong suốt quá trình tính Attention.
+
+### 4. Hiệu Quả Tiết Kiệm Bộ Nhớ Thực Tế
+- Tỷ lệ bộ nhớ lý thuyết trên OLMoE ($kd = 512$):
+  $$\text{Ratio} = \frac{2 \times 512 \times 1\text{ byte} + 8\text{ bytes scales}}{2 \times 512 \times 4\text{ bytes}} = \frac{1032}{4096} = 25.195\% \implies \text{Tiết kiệm } \mathbf{74.8\%}$$
+- Kết quả kiểm chứng thực nghiệm trên mô hình thật OLMoE 1B-7B (INT4):
+  - Baseline FP32 KV Cache: **6,815,744 bytes**.
+  - FP8 E4M3 KV Cache: **1,707,264 bytes** (Tiết kiệm chính xác **74.95%**).
+  - Độ chính xác chuỗi token: **100% bit-exact parity** (trùng khớp hoàn hảo từng token ID so với FP32).
+  - Kích hoạt qua biến môi trường `MOE_KV_FP8=1` hoặc phương thức `model.set_kv_fp8(true)`.
+
+## Lưu Trữ KV Cache Bền Vững Chống Sập Nguồn & Phân Tầng Trạng Thái (.moekv)
+
+Kế thừa từ kiến trúc của Colibrì (`colibri/c/kv_persist.h` và `colibri/c/kv_prefix.h`), hệ thống hoàn thiện mô hình **Phân tầng Bộ nhớ 3 cấp Toàn diện (Full 3-Tier Architecture)** bao quát cả Trọng số Mô hình lẫn Trạng thái Hội thoại:
+- **Trọng số Chuyên gia:** VRAM L1 $\leftrightarrow$ Host RAM L2 $\leftrightarrow$ NVMe L3.
+- **Trạng thái KV Cache:** Host RAM L2 $\leftrightarrow$ NVMe L3 Persistent Storage (`.moekv`).
+
+### 1. Cấu Trúc Tệp Nhị Phân `.moekv`
+- **Header 32-byte định vị**:
+  - `Magic` (8 bytes): `MOEKV1\0\0` (FP32) hoặc `MOEKV2\0\0` (FP8 E4M3).
+  - `Version` (4 bytes): Phiên bản định dạng ($1$).
+  - `Layers` (4 bytes): Số lượng tầng mô hình (16).
+  - `KD` (4 bytes): Chiều vector KV ($512$).
+  - `Format` (4 bytes): $0$ (FP32) hoặc $1$ (FP8).
+  - `Num Tokens` (4 bytes): Số lượng token đã được ghi bền vững hoàn tất.
+  - `Reserved` (4 bytes): Giá trị dự phòng $0$.
+- **Payload theo Token Position**:
+  - Mỗi vị trí $p$: Lưu `token_id: u32`, tiếp sau là dữ liệu Keys/Values của toàn bộ $L$ tầng.
+  - Với định dạng nén FP8 E4M3, mỗi token chỉ tiêu thụ $16.1\text{ KB}$ trên đĩa ($4 + 16 \times 1032\text{ bytes}$), giảm 75% khối lượng ghi đĩa so với FP32 ($65.5\text{ KB/token}$).
+
+### 2. Cơ Chế Ghi Nguyên Tử Chống Sập Nguồn (Crash-Safe Invariant)
+- Nhằm loại bỏ nguy cơ tệp bị hỏng hoặc chứa dữ liệu rác khi mất điện hoặc tiến trình bị buộc dừng đột ngột, engine áp dụng cơ chế ghi hai pha:
+  1. Ghi toàn bộ Header và Payload ra tệp tạm `.tmp`.
+  2. Gọi `file.sync_all()` cam kết toàn bộ dữ liệu vật lý đã nằm an toàn trên các sector của ổ cứng SSD NVMe.
+  3. Thực hiện `fs::rename` tệp `.tmp` thành `<session_id>.moekv`. Thao tác `rename` là nguyên tử (atomic) trên các hệ thống tệp POSIX, bảo đảm trạng thái chỉ xuất hiện khi đã hoàn chỉnh 100%.
+
+### 3. Khôi Phục Trạng Thái Tức Thì & Tái Sử Dụng Tiền Tố (Prefix Reuse)
+- Khi nhận yêu cầu hội thoại tiếp theo có kèm `session_id`:
+  - Nếu session đã nằm trên RAM: Sử dụng ngay mà không tốn I/O.
+  - Nếu session không có trên RAM (do engine vừa khởi động lại hoặc session đã bị đẩy ra đĩa do RAM đầy): Engine mở tệp `.moekv`, so khớp chuỗi token IDs trực tiếp từ đĩa và khôi phục `prefix` tokens trong **vài mili-giây**.
+  - Chưa có hồ sơ raw đủ provenance trong bản tích hợp để xác nhận một mức giảm latency cố định; cần đối chứng riêng.
+
+
+## Invariant bổ sung sau hợp nhất i5 và Huy (08/11)
+
+- CPU-first/GPUmode, guard, lookahead telemetry và allocatortrace của i5 được giữ. Các số đo cũ là snapshot trước merge; không tự nhận bản mới đã có cùng profileRSS/quality trên7B.
+- INT8/FP32KV/greedy là đường kiểm reference hiện có; INT4 và FP8 là lượng tử hóa có mất mát, phải đánh giá riêng. TestFP8 dùng tolerance riêng0,25, không thay expected/tolerance2e-5 của referenceINT8.
+- Kv::allocated_bytes và memorytrace tính cả payloadFP8/scales/container, sessionbudget không bỏ sót định dạng mới. StepScratch accounting có cả bufferspilot mới.
+- Đổi modeFP32/FP8 xóa sessions trongRAM; filepersist khácprecision không được dùng lại cho generation. Low-levelparser vẫn đọc được cả2format để roundtrip/inspect. Same-sessionreset xóa mọi vector theo precision; donor cross-session của experimentalbufferreuse hiện chỉ hỗ trợFP32, FP8 fallback an toàn, không evict sớm.
+- Persistence opt-in qua MOE_SESSION_DIR; phải dùng thư mục riêng cho checkpoint/revision nguồn vì header hiện không fingerprint toàn bộ weights/tokenizer. File được sync rồi rename, chưa coi là chứng nhận chống mọi powerloss hoặc tài nguyên disk vô hạn; không bật làm cấu hình nghiệm thu mặc định.
+- Giao diện/API FP8 mô tả mộtbyte/value cộngscales; giảm~75% là payloadKV, không tổngRSS. Thông sốUI không thay trace.
+- Perplexity dùng đườnglogitsdiagnostic, khác vònggeneration cóguard hợp tác; corpus phải vừa context và được kiểm RAM riêng. Cấp API/OpenAI-compatible fields không nghĩa mọi trường nhưstop/n đều đã thực thi.

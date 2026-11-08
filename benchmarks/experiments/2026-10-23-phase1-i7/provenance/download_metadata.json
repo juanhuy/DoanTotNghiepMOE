@@ -1,0 +1,27 @@
+{
+  "config.json.metadata": {
+    "commit_hash": "b89a7c4bc24fb9e55ce2543c9458ce0ca5c4650e",
+    "etag": "804a50eb193d606e759589d85c5a16383bb92291",
+    "timestamp": 1789486070.8423018
+  },
+  "generation_config.json.metadata": {
+    "commit_hash": "b89a7c4bc24fb9e55ce2543c9458ce0ca5c4650e",
+    "etag": "500795d5a6370dedf20217e8b80ed458fed42a0b",
+    "timestamp": 1789486073.3740394
+  },
+  "special_tokens_map.json.metadata": {
+    "commit_hash": "b89a7c4bc24fb9e55ce2543c9458ce0ca5c4650e",
+    "etag": "0eb8a134190a9aa0c55847911b41198f5094a2ca",
+    "timestamp": 1789486072.284621
+  },
+  "tokenizer.json.metadata": {
+    "commit_hash": "b89a7c4bc24fb9e55ce2543c9458ce0ca5c4650e",
+    "etag": "72945541acdc0993cbb62a6c72811ebc875aa73b",
+    "timestamp": 1789486071.3186197
+  },
+  "tokenizer_config.json.metadata": {
+    "commit_hash": "b89a7c4bc24fb9e55ce2543c9458ce0ca5c4650e",
+    "etag": "98b62356cf5c8f07f50cbe86aa76bec2485cd3eb",
+    "timestamp": 1789486071.8658226
+  }
+}

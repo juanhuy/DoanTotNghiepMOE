@@ -61,3 +61,7 @@ Khoảng cách sau dấu kết câu được đặt bằng khoảng cách thông
 ## Tài liệu nền cho báo cáo tiếp theo
 
 Bắt đầu từ [Hướng dẫn hệ thống](../docs/SYSTEM_GUIDE.md), sau đó đối chiếu [ma trận bằng chứng](../docs/thesis/EVIDENCE_MATRIX.md) và README của từng thí nghiệm. Hướng dẫn hệ thống mô tả trạng thái hiện tại; báo cáo kỳ 1 là snapshot lịch sử.
+
+## Bổ sung provenance từ nhánh Huy
+
+[Hồ sơ provenance i7](../benchmarks/experiments/2026-10-23-phase1-i7/provenance/README.md) và3JSON được giữ từ nhánh Huy. README gốc trong artifact i7 giữ nguyên byte đã khóa checksum; không sửa diễn giải cũ ngay trong payload. Báo cáo kỳ1 và PDF đã nộp giữ phiên bản hoàn chỉnh trên main; phần mới INT4/FP8 là nghiên cứu sau kỳ1, chưa được nhập như kết quả đã nghiệm thu vào bản nộp.

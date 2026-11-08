@@ -1,4 +1,4 @@
-//! On-demand OLMoE merged INT8 experts from Safetensors shards.
+//! On-demand OLMoE merged INT8 & INT4 experts from Safetensors shards.
 //! Does not implement the OLMoE decoder or tokenizer.
 use crate::{
     backend::{finite, invalid},
@@ -7,11 +7,21 @@ use crate::{
 use rayon::prelude::*;
 use std::io;
 
+/// Định dạng lượng tử hóa của trọng số Expert
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuantType {
+    /// 1 byte trên mỗi tham số (INT8, ~6.015 MB / expert)
+    Int8,
+    /// 2 tham số 4-bit đóng gói trong 1 byte (INT4 nibble packing, ~3.008 MB / expert)
+    Int4,
+}
+
 pub struct Int8Expert {
     hidden: usize,
     intermediate: usize,
     weights: Vec<u8>,
     scales: Vec<f32>,
+    quant_type: QuantType,
 }
 
 pub(crate) struct ExpertScratch {
@@ -52,32 +62,50 @@ impl Int8Expert {
             .and_then(|n| n.checked_add(hidden))
             .ok_or_else(|| invalid("scale shape overflow"))?;
 
-        // Tái sử dụng vùng nhớ: resize không cấp phát lại nếu capacity đã đủ
-        if weights.capacity() < weight_count {
-            weights.reserve_exact(weight_count - weights.len());
-        }
-        weights.resize(weight_count, 0);
-
-        if scales.capacity() < scale_count {
-            scales.reserve_exact(scale_count - scales.len());
-        }
-        scales.resize(scale_count, 0.0);
-
         let prefix = format!("model.layers.{layer}.mlp.experts.{expert}");
         let weight_name = format!("{prefix}.merged_weight");
         let scale_name = format!("{prefix}.qs");
 
         let weight_info = index.tensor(&weight_name)?;
         let scale_info = index.tensor(&scale_name)?;
-        if weight_info.dtype != DType::I8
-            || weight_info.shape != [weight_count]
+
+        // Tự động nhận diện định dạng lượng tử hóa:
+        // - INT8: shape == [weight_count] (1 byte/tham số)
+        // - INT4: shape == [weight_count / 2] (2 nibbles 4-bit/byte)
+        let (quant_type, expected_weight_bytes) = if weight_info.shape == [weight_count] {
+            (QuantType::Int8, weight_count)
+        } else if weight_info.shape == [weight_count / 2] {
+            if hidden % 2 != 0 || intermediate % 2 != 0 {
+                return Err(invalid("hidden and intermediate must be even for INT4"));
+            }
+            (QuantType::Int4, weight_count / 2)
+        } else {
+            return Err(invalid(format!(
+                "invalid expert weight shape: expected [{weight_count}] (INT8) or [{}] (INT4), got {:?}",
+                weight_count / 2,
+                weight_info.shape
+            )));
+        };
+
+        if (weight_info.dtype != DType::I8 && weight_info.dtype != DType::U8)
             || scale_info.dtype != DType::F32
             || scale_info.shape != [scale_count]
         {
             return Err(invalid(
-                "expected flat I8 merged_weight and flat F32 qs with exact expert dimensions",
+                "expected flat I8/U8 merged_weight and flat F32 qs with exact expert dimensions",
             ));
         }
+
+        // Tái sử dụng vùng nhớ: resize không cấp phát lại nếu capacity đã đủ
+        if weights.capacity() < expected_weight_bytes {
+            weights.reserve_exact(expected_weight_bytes - weights.len());
+        }
+        weights.resize(expected_weight_bytes, 0);
+
+        if scales.capacity() < scale_count {
+            scales.reserve_exact(scale_count - scales.len());
+        }
+        scales.resize(scale_count, 0.0);
 
         // Tận dụng đầu mảng weights làm scratch buffer đọc scales (nếu weights đủ lớn)
         let scale_raw_bytes = scale_count * 4;
@@ -92,7 +120,7 @@ impl Int8Expert {
             return Err(invalid("expert scales must be finite and positive"));
         }
 
-        // Đọc toàn bộ 6.3 MB weights qua POSIX DMA pread, ghi đè hoàn toàn vùng tạm
+        // Đọc weights (INT8 6.0MB hoặc INT4 3.0MB) qua POSIX DMA pread
         index.read_raw_into(&weight_name, &mut weights)?;
 
         Ok(Self {
@@ -100,6 +128,7 @@ impl Int8Expert {
             intermediate,
             weights,
             scales,
+            quant_type,
         })
     }
 
@@ -119,16 +148,31 @@ impl Int8Expert {
             .checked_mul(2)
             .and_then(|n| n.checked_add(hidden))
             .ok_or_else(|| invalid("scale shape overflow"))?;
+
+        let prefix = format!("model.layers.{layer}.mlp.experts.{expert}");
+        let weight_name = format!("{prefix}.merged_weight");
+        let weight_info = index.tensor(&weight_name)?;
+
+        let actual_weight_bytes = if weight_info.shape == [weight_count / 2] {
+            weight_count / 2
+        } else {
+            weight_count
+        };
+
         let total = scale_count
             .checked_mul(4)
-            .and_then(|n| n.checked_add(weight_count))
+            .and_then(|n| n.checked_add(actual_weight_bytes))
             .ok_or_else(|| invalid("expert byte count overflow"))?;
         if total > max_bytes {
             return Err(invalid("expert exceeds read budget"));
         }
-        let weights = Vec::with_capacity(weight_count);
+        let weights = Vec::with_capacity(actual_weight_bytes);
         let scales = Vec::with_capacity(scale_count);
         Self::load_reusing(index, layer, expert, hidden, intermediate, weights, scales)
+    }
+
+    pub fn quant_type(&self) -> QuantType {
+        self.quant_type
     }
 
     pub fn resident_bytes(&self) -> usize {
@@ -145,11 +189,18 @@ impl Int8Expert {
         weights: Vec<u8>,
         scales: Vec<f32>,
     ) -> Self {
+        let weight_count = hidden * intermediate * 3;
+        let quant_type = if weights.len() == weight_count / 2 {
+            QuantType::Int4
+        } else {
+            QuantType::Int8
+        };
         Self {
             hidden,
             intermediate,
             weights,
             scales,
+            quant_type,
         }
     }
 
@@ -184,7 +235,11 @@ impl Int8Expert {
             return Err(invalid("expert scratch dimension mismatch"));
         }
         finite(input)?;
-        let n = self.hidden * self.intermediate;
+        let hidden_stride = match self.quant_type {
+            QuantType::Int8 => self.hidden,
+            QuantType::Int4 => self.hidden / 2,
+        };
+        let n = hidden_stride * self.intermediate;
         fused_gate_up_swiglu(
             &self.weights[..n],
             &self.weights[n..2 * n],
@@ -193,12 +248,14 @@ impl Int8Expert {
             input,
             &mut scratch.activated,
             self.hidden,
+            self.quant_type,
         );
         matvec_into(
             &self.weights[2 * n..],
             &self.scales[2 * self.intermediate..],
             &scratch.activated,
             &mut scratch.output,
+            self.quant_type,
         );
         finite(&scratch.output)?;
         Ok(&scratch.output)
@@ -218,7 +275,11 @@ impl Int8Expert {
             return Err(invalid("expert scratch dimension mismatch"));
         }
         finite(input)?;
-        let n = self.hidden * self.intermediate;
+        let hidden_stride = match self.quant_type {
+            QuantType::Int8 => self.hidden,
+            QuantType::Int4 => self.hidden / 2,
+        };
+        let n = hidden_stride * self.intermediate;
         fused_gate_up_swiglu_seq(
             &self.weights[..n],
             &self.weights[n..2 * n],
@@ -227,21 +288,23 @@ impl Int8Expert {
             input,
             &mut scratch.activated,
             self.hidden,
+            self.quant_type,
         );
         matvec_into_seq(
             &self.weights[2 * n..],
             &self.scales[2 * self.intermediate..],
             &scratch.activated,
             &mut scratch.output,
+            self.quant_type,
         );
         finite(&scratch.output)?;
         Ok(&scratch.output)
     }
 }
 
-/// Tích vô hướng INT8 x FP32 với 4 bộ cộng độc lập (32 elements / bước) tối ưu hóa cho đường ống lệnh SIMD FMA
+/// Tích vô hướng INT8 x FP32 chuẩn tham chiếu (scalar fallback) với 4 bộ cộng độc lập
 #[inline(always)]
-fn dot_i8_f32(row: &[u8], input: &[f32]) -> f32 {
+fn dot_i8_f32_scalar(row: &[u8], input: &[f32]) -> f32 {
     let mut s0 = [0.0f32; 8];
     let mut s1 = [0.0f32; 8];
     let mut s2 = [0.0f32; 8];
@@ -276,9 +339,597 @@ fn dot_i8_f32(row: &[u8], input: &[f32]) -> f32 {
     sum
 }
 
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn dot_i8_f32_avx2(row: &[u8], input: &[f32]) -> f32 {
+    use std::arch::x86_64::*;
+
+    let mut sum0 = _mm256_setzero_ps();
+    let mut sum1 = _mm256_setzero_ps();
+    let mut sum2 = _mm256_setzero_ps();
+    let mut sum3 = _mm256_setzero_ps();
+
+    let mut qs32 = row.chunks_exact(32);
+    let mut xs32 = input.chunks_exact(32);
+
+    for (q, x) in qs32.by_ref().zip(xs32.by_ref()) {
+        let q_ptr = q.as_ptr();
+        let x_ptr = x.as_ptr();
+
+        // Lane 0: elements 0..8
+        let val0 = std::ptr::read_unaligned(q_ptr as *const i64);
+        let q0_i8 = _mm_cvtsi64_si128(val0);
+        let q0_i32 = _mm256_cvtepi8_epi32(q0_i8);
+        let q0_f32 = _mm256_cvtepi32_ps(q0_i32);
+        let x0 = _mm256_loadu_ps(x_ptr);
+        sum0 = _mm256_fmadd_ps(q0_f32, x0, sum0);
+
+        // Lane 1: elements 8..16
+        let val1 = std::ptr::read_unaligned(q_ptr.add(8) as *const i64);
+        let q1_i8 = _mm_cvtsi64_si128(val1);
+        let q1_i32 = _mm256_cvtepi8_epi32(q1_i8);
+        let q1_f32 = _mm256_cvtepi32_ps(q1_i32);
+        let x1 = _mm256_loadu_ps(x_ptr.add(8));
+        sum1 = _mm256_fmadd_ps(q1_f32, x1, sum1);
+
+        // Lane 2: elements 16..24
+        let val2 = std::ptr::read_unaligned(q_ptr.add(16) as *const i64);
+        let q2_i8 = _mm_cvtsi64_si128(val2);
+        let q2_i32 = _mm256_cvtepi8_epi32(q2_i8);
+        let q2_f32 = _mm256_cvtepi32_ps(q2_i32);
+        let x2 = _mm256_loadu_ps(x_ptr.add(16));
+        sum2 = _mm256_fmadd_ps(q2_f32, x2, sum2);
+
+        // Lane 3: elements 24..32
+        let val3 = std::ptr::read_unaligned(q_ptr.add(24) as *const i64);
+        let q3_i8 = _mm_cvtsi64_si128(val3);
+        let q3_i32 = _mm256_cvtepi8_epi32(q3_i8);
+        let q3_f32 = _mm256_cvtepi32_ps(q3_i32);
+        let x3 = _mm256_loadu_ps(x_ptr.add(24));
+        sum3 = _mm256_fmadd_ps(q3_f32, x3, sum3);
+    }
+
+    let mut total_vec = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+
+    let rem_q = qs32.remainder();
+    let rem_x = xs32.remainder();
+    let mut qs8 = rem_q.chunks_exact(8);
+    let mut xs8 = rem_x.chunks_exact(8);
+
+    for (q, x) in qs8.by_ref().zip(xs8.by_ref()) {
+        let val = std::ptr::read_unaligned(q.as_ptr() as *const i64);
+        let q_i8 = _mm_cvtsi64_si128(val);
+        let q_i32 = _mm256_cvtepi8_epi32(q_i8);
+        let q_f32 = _mm256_cvtepi32_ps(q_i32);
+        let x_vec = _mm256_loadu_ps(x.as_ptr());
+        total_vec = _mm256_fmadd_ps(q_f32, x_vec, total_vec);
+    }
+
+    // Horizontal reduction of 8-wide float vector
+    let low = _mm256_castps256_ps128(total_vec);
+    let high = _mm256_extractf128_ps(total_vec, 1);
+    let sum128 = _mm_add_ps(low, high);
+    let shuf = _mm_movehl_ps(sum128, sum128);
+    let sum64 = _mm_add_ps(sum128, shuf);
+    let shuf2 = _mm_shuffle_ps(sum64, sum64, 1);
+    let sum32 = _mm_add_ss(sum64, shuf2);
+    let mut sum = _mm_cvtss_f32(sum32);
+
+    for (&q, &x) in qs8.remainder().iter().zip(xs8.remainder()) {
+        sum += (q as i8 as f32) * x;
+    }
+    sum
+}
+
+/// Tích vô hướng INT8 x FP32 tăng tốc phần cứng AVX2/FMA với graceful scalar fallback
+#[inline(always)]
+fn dot_i8_f32(row: &[u8], input: &[f32]) -> f32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: Hardware support for AVX2 and FMA was verified at runtime.
+            return unsafe { dot_i8_f32_avx2(row, input) };
+        }
+    }
+    dot_i8_f32_scalar(row, input)
+}
+
+/// Tích vô hướng INT4 x FP32 chuẩn tham chiếu (scalar fallback)
+/// Giải mã hai số nguyên có dấu 4-bit [-8, 7] trên mỗi byte (nibble packing)
+#[inline(always)]
+fn dot_i4_f32_scalar(row: &[u8], input: &[f32]) -> f32 {
+    let mut s0 = 0.0f32;
+    let mut s1 = 0.0f32;
+    let mut s2 = 0.0f32;
+    let mut s3 = 0.0f32;
+
+    let num_chunks = input.len() / 8;
+    for c in 0..num_chunks {
+        let q4 = &row[c * 4..(c + 1) * 4];
+        let x8 = &input[c * 8..(c + 1) * 8];
+
+        let q0 = ((q4[0] as i8) << 4) >> 4;
+        let q1 = (q4[0] as i8) >> 4;
+        let q2 = ((q4[1] as i8) << 4) >> 4;
+        let q3 = (q4[1] as i8) >> 4;
+        let q4_val = ((q4[2] as i8) << 4) >> 4;
+        let q5 = (q4[2] as i8) >> 4;
+        let q6 = ((q4[3] as i8) << 4) >> 4;
+        let q7 = (q4[3] as i8) >> 4;
+
+        s0 += (q0 as f32) * x8[0] + (q1 as f32) * x8[1];
+        s1 += (q2 as f32) * x8[2] + (q3 as f32) * x8[3];
+        s2 += (q4_val as f32) * x8[4] + (q5 as f32) * x8[5];
+        s3 += (q6 as f32) * x8[6] + (q7 as f32) * x8[7];
+    }
+
+    let mut sum = s0 + s1 + s2 + s3;
+    let rem_q = &row[num_chunks * 4..];
+    let rem_x = &input[num_chunks * 8..];
+    for (i, &b) in rem_q.iter().enumerate() {
+        let q0 = ((b as i8) << 4) >> 4;
+        let q1 = (b as i8) >> 4;
+        if 2 * i < rem_x.len() {
+            sum += (q0 as f32) * rem_x[2 * i];
+        }
+        if 2 * i + 1 < rem_x.len() {
+            sum += (q1 as f32) * rem_x[2 * i + 1];
+        }
+    }
+    sum
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn dot_i4_f32_avx2(row: &[u8], input: &[f32]) -> f32 {
+    use std::arch::x86_64::*;
+
+    let mut sum0 = _mm256_setzero_ps();
+    let mut sum1 = _mm256_setzero_ps();
+    let mut sum2 = _mm256_setzero_ps();
+    let mut sum3 = _mm256_setzero_ps();
+
+    let num_chunks_32 = input.len() / 32;
+    let mask_0f = _mm_set1_epi8(0x0F);
+    let c8 = _mm_set1_epi8(8);
+
+    for c in 0..num_chunks_32 {
+        let q_ptr = row.as_ptr().add(c * 16);
+        let x_ptr = input.as_ptr().add(c * 32);
+
+        let v = _mm_loadu_si128(q_ptr as *const __m128i);
+        let v_lo = _mm_and_si128(v, mask_0f);
+        let v_hi = _mm_and_si128(_mm_srli_epi16(v, 4), mask_0f);
+
+        let unp_lo = _mm_unpacklo_epi8(v_lo, v_hi);
+        let unp_hi = _mm_unpackhi_epi8(v_lo, v_hi);
+
+        let s_lo = _mm_sub_epi8(_mm_xor_si128(unp_lo, c8), c8);
+        let s_hi = _mm_sub_epi8(_mm_xor_si128(unp_hi, c8), c8);
+
+        // Lane 0: elements 0..8
+        let q0_i32 = _mm256_cvtepi8_epi32(s_lo);
+        let q0_f32 = _mm256_cvtepi32_ps(q0_i32);
+        let x0 = _mm256_loadu_ps(x_ptr);
+        sum0 = _mm256_fmadd_ps(q0_f32, x0, sum0);
+
+        // Lane 1: elements 8..16
+        let s_lo_hi = _mm_srli_si128(s_lo, 8);
+        let q1_i32 = _mm256_cvtepi8_epi32(s_lo_hi);
+        let q1_f32 = _mm256_cvtepi32_ps(q1_i32);
+        let x1 = _mm256_loadu_ps(x_ptr.add(8));
+        sum1 = _mm256_fmadd_ps(q1_f32, x1, sum1);
+
+        // Lane 2: elements 16..24
+        let q2_i32 = _mm256_cvtepi8_epi32(s_hi);
+        let q2_f32 = _mm256_cvtepi32_ps(q2_i32);
+        let x2 = _mm256_loadu_ps(x_ptr.add(16));
+        sum2 = _mm256_fmadd_ps(q2_f32, x2, sum2);
+
+        // Lane 3: elements 24..32
+        let s_hi_hi = _mm_srli_si128(s_hi, 8);
+        let q3_i32 = _mm256_cvtepi8_epi32(s_hi_hi);
+        let q3_f32 = _mm256_cvtepi32_ps(q3_i32);
+        let x3 = _mm256_loadu_ps(x_ptr.add(24));
+        sum3 = _mm256_fmadd_ps(q3_f32, x3, sum3);
+    }
+
+    let mut total_vec = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+
+    let rem_x = &input[num_chunks_32 * 32..];
+    let rem_q = &row[num_chunks_32 * 16..];
+
+    let num_chunks_8 = rem_x.len() / 8;
+    for c in 0..num_chunks_8 {
+        let q = &rem_q[c * 4..(c + 1) * 4];
+        let x = &rem_x[c * 8..(c + 1) * 8];
+
+        let b0 = q[0];
+        let b1 = q[1];
+        let b2 = q[2];
+        let b3 = q[3];
+
+        let q0 = ((b0 as i8) << 4) >> 4;
+        let q1 = (b0 as i8) >> 4;
+        let q2 = ((b1 as i8) << 4) >> 4;
+        let q3 = (b1 as i8) >> 4;
+        let q4_val = ((b2 as i8) << 4) >> 4;
+        let q5 = (b2 as i8) >> 4;
+        let q6 = ((b3 as i8) << 4) >> 4;
+        let q7 = (b3 as i8) >> 4;
+
+        let q_packed: i64 = (q0 as u8 as i64)
+            | ((q1 as u8 as i64) << 8)
+            | ((q2 as u8 as i64) << 16)
+            | ((q3 as u8 as i64) << 24)
+            | ((q4_val as u8 as i64) << 32)
+            | ((q5 as u8 as i64) << 40)
+            | ((q6 as u8 as i64) << 48)
+            | ((q7 as u8 as i64) << 56);
+
+        let q_i8 = _mm_cvtsi64_si128(q_packed);
+        let q_i32 = _mm256_cvtepi8_epi32(q_i8);
+        let q_f32 = _mm256_cvtepi32_ps(q_i32);
+        let x_vec = _mm256_loadu_ps(x.as_ptr());
+        total_vec = _mm256_fmadd_ps(q_f32, x_vec, total_vec);
+    }
+
+    // Horizontal reduction of 8-wide float vector
+    let low = _mm256_castps256_ps128(total_vec);
+    let high = _mm256_extractf128_ps(total_vec, 1);
+    let sum128 = _mm_add_ps(low, high);
+    let shuf = _mm_movehl_ps(sum128, sum128);
+    let sum64 = _mm_add_ps(sum128, shuf);
+    let shuf2 = _mm_shuffle_ps(sum64, sum64, 1);
+    let sum32 = _mm_add_ss(sum64, shuf2);
+    let mut sum = _mm_cvtss_f32(sum32);
+
+    let tail_x = &rem_x[num_chunks_8 * 8..];
+    let tail_q = &rem_q[num_chunks_8 * 4..];
+    for (i, &b) in tail_q.iter().enumerate() {
+        let q0 = ((b as i8) << 4) >> 4;
+        let q1 = (b as i8) >> 4;
+        if 2 * i < tail_x.len() {
+            sum += (q0 as f32) * tail_x[2 * i];
+        }
+        if 2 * i + 1 < tail_x.len() {
+            sum += (q1 as f32) * tail_x[2 * i + 1];
+        }
+    }
+    sum
+}
+
+/// Tích vô hướng INT4 x FP32 tăng tốc phần cứng AVX2/FMA với graceful scalar fallback
+#[inline(always)]
+fn dot_i4_f32(row: &[u8], input: &[f32]) -> f32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: Hardware support for AVX2 and FMA was verified at runtime.
+            return unsafe { dot_i4_f32_avx2(row, input) };
+        }
+    }
+    dot_i4_f32_scalar(row, input)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn dot_i8_f32_pair_avx2(g_row: &[u8], u_row: &[u8], input: &[f32]) -> (f32, f32) {
+    use std::arch::x86_64::*;
+
+    let mut sum_g0 = _mm256_setzero_ps();
+    let mut sum_g1 = _mm256_setzero_ps();
+    let mut sum_g2 = _mm256_setzero_ps();
+    let mut sum_g3 = _mm256_setzero_ps();
+
+    let mut sum_u0 = _mm256_setzero_ps();
+    let mut sum_u1 = _mm256_setzero_ps();
+    let mut sum_u2 = _mm256_setzero_ps();
+    let mut sum_u3 = _mm256_setzero_ps();
+
+    let mut g_chunks = g_row.chunks_exact(32);
+    let mut u_chunks = u_row.chunks_exact(32);
+    let mut x_chunks = input.chunks_exact(32);
+
+    for ((g, u), x) in g_chunks
+        .by_ref()
+        .zip(u_chunks.by_ref())
+        .zip(x_chunks.by_ref())
+    {
+        let g_ptr = g.as_ptr();
+        let u_ptr = u.as_ptr();
+        let x_ptr = x.as_ptr();
+
+        // Nạp vector input một lần duy nhất vào 4 thanh ghi YMM (256-bit)
+        let x0 = _mm256_loadu_ps(x_ptr);
+        let x1 = _mm256_loadu_ps(x_ptr.add(8));
+        let x2 = _mm256_loadu_ps(x_ptr.add(16));
+        let x3 = _mm256_loadu_ps(x_ptr.add(24));
+
+        // Nhánh Gate: unpack i8 -> f32 và FMA với x
+        let g0_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(g_ptr as *const i64));
+        let g0_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(g0_i8));
+        sum_g0 = _mm256_fmadd_ps(g0_f, x0, sum_g0);
+
+        let g1_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(g_ptr.add(8) as *const i64));
+        let g1_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(g1_i8));
+        sum_g1 = _mm256_fmadd_ps(g1_f, x1, sum_g1);
+
+        let g2_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(g_ptr.add(16) as *const i64));
+        let g2_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(g2_i8));
+        sum_g2 = _mm256_fmadd_ps(g2_f, x2, sum_g2);
+
+        let g3_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(g_ptr.add(24) as *const i64));
+        let g3_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(g3_i8));
+        sum_g3 = _mm256_fmadd_ps(g3_f, x3, sum_g3);
+
+        // Nhánh Up: tái sử dụng x0..x3 trực tiếp từ thanh ghi, không đọc lại L1 Cache
+        let u0_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(u_ptr as *const i64));
+        let u0_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(u0_i8));
+        sum_u0 = _mm256_fmadd_ps(u0_f, x0, sum_u0);
+
+        let u1_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(u_ptr.add(8) as *const i64));
+        let u1_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(u1_i8));
+        sum_u1 = _mm256_fmadd_ps(u1_f, x1, sum_u1);
+
+        let u2_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(u_ptr.add(16) as *const i64));
+        let u2_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(u2_i8));
+        sum_u2 = _mm256_fmadd_ps(u2_f, x2, sum_u2);
+
+        let u3_i8 = _mm_cvtsi64_si128(std::ptr::read_unaligned(u_ptr.add(24) as *const i64));
+        let u3_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(u3_i8));
+        sum_u3 = _mm256_fmadd_ps(u3_f, x3, sum_u3);
+    }
+
+    let mut tot_g = _mm256_add_ps(_mm256_add_ps(sum_g0, sum_g1), _mm256_add_ps(sum_g2, sum_g3));
+    let mut tot_u = _mm256_add_ps(_mm256_add_ps(sum_u0, sum_u1), _mm256_add_ps(sum_u2, sum_u3));
+
+    let rem_g = g_chunks.remainder();
+    let rem_u = u_chunks.remainder();
+    let rem_x = x_chunks.remainder();
+
+    let mut g8 = rem_g.chunks_exact(8);
+    let mut u8 = rem_u.chunks_exact(8);
+    let mut x8 = rem_x.chunks_exact(8);
+
+    for ((g, u), x) in g8.by_ref().zip(u8.by_ref()).zip(x8.by_ref()) {
+        let x_vec = _mm256_loadu_ps(x.as_ptr());
+
+        let g_val = std::ptr::read_unaligned(g.as_ptr() as *const i64);
+        let g_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_cvtsi64_si128(g_val)));
+        tot_g = _mm256_fmadd_ps(g_f, x_vec, tot_g);
+
+        let u_val = std::ptr::read_unaligned(u.as_ptr() as *const i64);
+        let u_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_cvtsi64_si128(u_val)));
+        tot_u = _mm256_fmadd_ps(u_f, x_vec, tot_u);
+    }
+
+    #[inline(always)]
+    unsafe fn hreduce(v: __m256) -> f32 {
+        let low = _mm256_castps256_ps128(v);
+        let high = _mm256_extractf128_ps(v, 1);
+        let sum128 = _mm_add_ps(low, high);
+        let shuf = _mm_movehl_ps(sum128, sum128);
+        let sum64 = _mm_add_ps(sum128, shuf);
+        let shuf2 = _mm_shuffle_ps(sum64, sum64, 1);
+        let sum32 = _mm_add_ss(sum64, shuf2);
+        _mm_cvtss_f32(sum32)
+    }
+
+    let mut final_g = hreduce(tot_g);
+    let mut final_u = hreduce(tot_u);
+
+    for ((&g, &u), &x) in g8
+        .remainder()
+        .iter()
+        .zip(u8.remainder())
+        .zip(x8.remainder())
+    {
+        final_g += (g as i8 as f32) * x;
+        final_u += (u as i8 as f32) * x;
+    }
+
+    (final_g, final_u)
+}
+
+#[inline(always)]
+fn dot_i8_f32_pair(gate_row: &[u8], up_row: &[u8], input: &[f32]) -> (f32, f32) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: Hardware support verified at runtime
+            return unsafe { dot_i8_f32_pair_avx2(gate_row, up_row, input) };
+        }
+    }
+    (dot_i8_f32(gate_row, input), dot_i8_f32(up_row, input))
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn dot_i4_f32_pair_avx2(g_row: &[u8], u_row: &[u8], input: &[f32]) -> (f32, f32) {
+    use std::arch::x86_64::*;
+
+    let mut sum_g0 = _mm256_setzero_ps();
+    let mut sum_g1 = _mm256_setzero_ps();
+    let mut sum_g2 = _mm256_setzero_ps();
+    let mut sum_g3 = _mm256_setzero_ps();
+
+    let mut sum_u0 = _mm256_setzero_ps();
+    let mut sum_u1 = _mm256_setzero_ps();
+    let mut sum_u2 = _mm256_setzero_ps();
+    let mut sum_u3 = _mm256_setzero_ps();
+
+    let num_chunks_32 = input.len() / 32;
+    let mask_0f = _mm_set1_epi8(0x0F);
+    let c8 = _mm_set1_epi8(8);
+
+    for c in 0..num_chunks_32 {
+        let x_ptr = input.as_ptr().add(c * 32);
+        let g_ptr = g_row.as_ptr().add(c * 16);
+        let u_ptr = u_row.as_ptr().add(c * 16);
+
+        // Nạp 32 floats của vector input một lần duy nhất
+        let x0 = _mm256_loadu_ps(x_ptr);
+        let x1 = _mm256_loadu_ps(x_ptr.add(8));
+        let x2 = _mm256_loadu_ps(x_ptr.add(16));
+        let x3 = _mm256_loadu_ps(x_ptr.add(24));
+
+        // Nhánh Gate: giải mã nibbles và FMA với x0..x3
+        let vg = _mm_loadu_si128(g_ptr as *const __m128i);
+        let vg_lo = _mm_and_si128(vg, mask_0f);
+        let vg_hi = _mm_and_si128(_mm_srli_epi16(vg, 4), mask_0f);
+        let unp_glo = _mm_unpacklo_epi8(vg_lo, vg_hi);
+        let unp_ghi = _mm_unpackhi_epi8(vg_lo, vg_hi);
+        let sg_lo = _mm_sub_epi8(_mm_xor_si128(unp_glo, c8), c8);
+        let sg_hi = _mm_sub_epi8(_mm_xor_si128(unp_ghi, c8), c8);
+
+        sum_g0 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(sg_lo)), x0, sum_g0);
+        sum_g1 = _mm256_fmadd_ps(
+            _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(sg_lo, 8))),
+            x1,
+            sum_g1,
+        );
+        sum_g2 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(sg_hi)), x2, sum_g2);
+        sum_g3 = _mm256_fmadd_ps(
+            _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(sg_hi, 8))),
+            x3,
+            sum_g3,
+        );
+
+        // Nhánh Up: giải mã nibbles và FMA trực tiếp với x0..x3 có sẵn trên thanh ghi
+        let vu = _mm_loadu_si128(u_ptr as *const __m128i);
+        let vu_lo = _mm_and_si128(vu, mask_0f);
+        let vu_hi = _mm_and_si128(_mm_srli_epi16(vu, 4), mask_0f);
+        let unp_ulo = _mm_unpacklo_epi8(vu_lo, vu_hi);
+        let unp_uhi = _mm_unpackhi_epi8(vu_lo, vu_hi);
+        let su_lo = _mm_sub_epi8(_mm_xor_si128(unp_ulo, c8), c8);
+        let su_hi = _mm_sub_epi8(_mm_xor_si128(unp_uhi, c8), c8);
+
+        sum_u0 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(su_lo)), x0, sum_u0);
+        sum_u1 = _mm256_fmadd_ps(
+            _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(su_lo, 8))),
+            x1,
+            sum_u1,
+        );
+        sum_u2 = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(su_hi)), x2, sum_u2);
+        sum_u3 = _mm256_fmadd_ps(
+            _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(su_hi, 8))),
+            x3,
+            sum_u3,
+        );
+    }
+
+    let mut tot_g = _mm256_add_ps(_mm256_add_ps(sum_g0, sum_g1), _mm256_add_ps(sum_g2, sum_g3));
+    let mut tot_u = _mm256_add_ps(_mm256_add_ps(sum_u0, sum_u1), _mm256_add_ps(sum_u2, sum_u3));
+
+    let rem_x = &input[num_chunks_32 * 32..];
+    let rem_g = &g_row[num_chunks_32 * 16..];
+    let rem_u = &u_row[num_chunks_32 * 16..];
+
+    let num_chunks_8 = rem_x.len() / 8;
+    for c in 0..num_chunks_8 {
+        let x = &rem_x[c * 8..(c + 1) * 8];
+        let g = &rem_g[c * 4..(c + 1) * 4];
+        let u = &rem_u[c * 4..(c + 1) * 4];
+
+        let x_vec = _mm256_loadu_ps(x.as_ptr());
+
+        // Decode 4 bytes -> 8 ints for Gate
+        let g0 = ((g[0] as i8) << 4) >> 4;
+        let g1 = (g[0] as i8) >> 4;
+        let g2 = ((g[1] as i8) << 4) >> 4;
+        let g3 = (g[1] as i8) >> 4;
+        let g4 = ((g[2] as i8) << 4) >> 4;
+        let g5 = (g[2] as i8) >> 4;
+        let g6 = ((g[3] as i8) << 4) >> 4;
+        let g7 = (g[3] as i8) >> 4;
+        let g_packed: i64 = (g0 as u8 as i64)
+            | ((g1 as u8 as i64) << 8)
+            | ((g2 as u8 as i64) << 16)
+            | ((g3 as u8 as i64) << 24)
+            | ((g4 as u8 as i64) << 32)
+            | ((g5 as u8 as i64) << 40)
+            | ((g6 as u8 as i64) << 48)
+            | ((g7 as u8 as i64) << 56);
+        let g_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_cvtsi64_si128(g_packed)));
+        tot_g = _mm256_fmadd_ps(g_f, x_vec, tot_g);
+
+        // Decode 4 bytes -> 8 ints for Up
+        let u0 = ((u[0] as i8) << 4) >> 4;
+        let u1 = (u[0] as i8) >> 4;
+        let u2 = ((u[1] as i8) << 4) >> 4;
+        let u3 = (u[1] as i8) >> 4;
+        let u4 = ((u[2] as i8) << 4) >> 4;
+        let u5 = (u[2] as i8) >> 4;
+        let u6 = ((u[3] as i8) << 4) >> 4;
+        let u7 = (u[3] as i8) >> 4;
+        let u_packed: i64 = (u0 as u8 as i64)
+            | ((u1 as u8 as i64) << 8)
+            | ((u2 as u8 as i64) << 16)
+            | ((u3 as u8 as i64) << 24)
+            | ((u4 as u8 as i64) << 32)
+            | ((u5 as u8 as i64) << 40)
+            | ((u6 as u8 as i64) << 48)
+            | ((u7 as u8 as i64) << 56);
+        let u_f = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_cvtsi64_si128(u_packed)));
+        tot_u = _mm256_fmadd_ps(u_f, x_vec, tot_u);
+    }
+
+    #[inline(always)]
+    unsafe fn hreduce(v: __m256) -> f32 {
+        let low = _mm256_castps256_ps128(v);
+        let high = _mm256_extractf128_ps(v, 1);
+        let sum128 = _mm_add_ps(low, high);
+        let shuf = _mm_movehl_ps(sum128, sum128);
+        let sum64 = _mm_add_ps(sum128, shuf);
+        let shuf2 = _mm_shuffle_ps(sum64, sum64, 1);
+        let sum32 = _mm_add_ss(sum64, shuf2);
+        _mm_cvtss_f32(sum32)
+    }
+
+    let mut final_g = hreduce(tot_g);
+    let mut final_u = hreduce(tot_u);
+
+    let tail_x = &rem_x[num_chunks_8 * 8..];
+    let tail_g = &rem_g[num_chunks_8 * 4..];
+    let tail_u = &rem_u[num_chunks_8 * 4..];
+
+    for (i, (&bg, &bu)) in tail_g.iter().zip(tail_u).enumerate() {
+        let g0 = ((bg as i8) << 4) >> 4;
+        let g1 = (bg as i8) >> 4;
+        let u0 = ((bu as i8) << 4) >> 4;
+        let u1 = (bu as i8) >> 4;
+        if 2 * i < tail_x.len() {
+            let xv = tail_x[2 * i];
+            final_g += (g0 as f32) * xv;
+            final_u += (u0 as f32) * xv;
+        }
+        if 2 * i + 1 < tail_x.len() {
+            let xv = tail_x[2 * i + 1];
+            final_g += (g1 as f32) * xv;
+            final_u += (u1 as f32) * xv;
+        }
+    }
+
+    (final_g, final_u)
+}
+
+#[inline(always)]
+fn dot_i4_f32_pair(gate_row: &[u8], up_row: &[u8], input: &[f32]) -> (f32, f32) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            // SAFETY: Hardware support verified at runtime
+            return unsafe { dot_i4_f32_pair_avx2(gate_row, up_row, input) };
+        }
+    }
+    (dot_i4_f32(gate_row, input), dot_i4_f32(up_row, input))
+}
+
 /// Kernel Fused Gate-Up Projection & SwiGLU:
 /// Gộp tính toán Gate và Up trong cùng 1 lần duyệt đa luồng Rayon, tái sử dụng vector `input` trong CPU L1 Cache
 /// và tính ngay kích hoạt SiLU mà không cần ghi/đọc qua bộ đệm trung gian.
+#[allow(clippy::too_many_arguments)]
 fn fused_gate_up_swiglu(
     gate_weights: &[u8],
     up_weights: &[u8],
@@ -287,15 +938,25 @@ fn fused_gate_up_swiglu(
     input: &[f32],
     activated: &mut [f32],
     hidden: usize,
+    quant_type: QuantType,
 ) {
     debug_assert_eq!(activated.len(), gate_scales.len());
     debug_assert_eq!(activated.len(), up_scales.len());
 
+    let stride = match quant_type {
+        QuantType::Int8 => hidden,
+        QuantType::Int4 => hidden / 2,
+    };
+
     let compute_lane = |i: usize, target: &mut f32| {
-        let gate_row = &gate_weights[i * hidden..(i + 1) * hidden];
-        let up_row = &up_weights[i * hidden..(i + 1) * hidden];
-        let g = dot_i8_f32(gate_row, input) * gate_scales[i];
-        let u = dot_i8_f32(up_row, input) * up_scales[i];
+        let gate_row = &gate_weights[i * stride..(i + 1) * stride];
+        let up_row = &up_weights[i * stride..(i + 1) * stride];
+        let (dot_g, dot_u) = match quant_type {
+            QuantType::Int8 => dot_i8_f32_pair(gate_row, up_row, input),
+            QuantType::Int4 => dot_i4_f32_pair(gate_row, up_row, input),
+        };
+        let g = dot_g * gate_scales[i];
+        let u = dot_u * up_scales[i];
         let silu = g / (1.0 + (-g).exp());
         *target = silu * u;
     };
@@ -314,21 +975,35 @@ fn fused_gate_up_swiglu(
 }
 
 // Separate accumulators shorten the dependency chain and let LLVM vectorize
-// without target-specific instructions or expanding INT8 weights to a matrix.
-fn matvec_into(weights: &[u8], scales: &[f32], input: &[f32], output: &mut [f32]) {
+// without target-specific instructions or expanding INT8/INT4 weights to a matrix.
+fn matvec_into(
+    weights: &[u8],
+    scales: &[f32],
+    input: &[f32],
+    output: &mut [f32],
+    quant_type: QuantType,
+) {
+    let row_len = match quant_type {
+        QuantType::Int8 => input.len(),
+        QuantType::Int4 => input.len() / 2,
+    };
     let compute = |target: &mut f32, row: &[u8], scale: &f32| {
-        *target = dot_i8_f32(row, input) * scale;
+        let dot = match quant_type {
+            QuantType::Int8 => dot_i8_f32(row, input),
+            QuantType::Int4 => dot_i4_f32(row, input),
+        };
+        *target = dot * scale;
     };
     if weights.len() >= 262_144 {
         output
             .par_iter_mut()
-            .zip(weights.par_chunks_exact(input.len()))
+            .zip(weights.par_chunks_exact(row_len))
             .zip(scales.par_iter())
             .for_each(|((target, row), scale)| compute(target, row, scale));
     } else {
         output
             .iter_mut()
-            .zip(weights.chunks_exact(input.len()))
+            .zip(weights.chunks_exact(row_len))
             .zip(scales)
             .for_each(|((target, row), scale)| compute(target, row, scale));
     }
@@ -336,6 +1011,7 @@ fn matvec_into(weights: &[u8], scales: &[f32], input: &[f32], output: &mut [f32]
 
 /// Phiên bản tuần tự 100% của Fused Gate-Up SwiGLU: không gọi par_iter_mut()
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn fused_gate_up_swiglu_seq(
     gate_weights: &[u8],
     up_weights: &[u8],
@@ -344,15 +1020,25 @@ fn fused_gate_up_swiglu_seq(
     input: &[f32],
     activated: &mut [f32],
     hidden: usize,
+    quant_type: QuantType,
 ) {
     debug_assert_eq!(activated.len(), gate_scales.len());
     debug_assert_eq!(activated.len(), up_scales.len());
 
+    let stride = match quant_type {
+        QuantType::Int8 => hidden,
+        QuantType::Int4 => hidden / 2,
+    };
+
     let compute_lane = |i: usize, target: &mut f32| {
-        let gate_row = &gate_weights[i * hidden..(i + 1) * hidden];
-        let up_row = &up_weights[i * hidden..(i + 1) * hidden];
-        let g = dot_i8_f32(gate_row, input) * gate_scales[i];
-        let u = dot_i8_f32(up_row, input) * up_scales[i];
+        let gate_row = &gate_weights[i * stride..(i + 1) * stride];
+        let up_row = &up_weights[i * stride..(i + 1) * stride];
+        let (dot_g, dot_u) = match quant_type {
+            QuantType::Int8 => dot_i8_f32_pair(gate_row, up_row, input),
+            QuantType::Int4 => dot_i4_f32_pair(gate_row, up_row, input),
+        };
+        let g = dot_g * gate_scales[i];
+        let u = dot_u * up_scales[i];
         let silu = g / (1.0 + (-g).exp());
         *target = silu * u;
     };
@@ -365,13 +1051,27 @@ fn fused_gate_up_swiglu_seq(
 
 /// Phiên bản tuần tự 100% của Down projection: không gọi par_iter_mut()
 #[inline]
-fn matvec_into_seq(weights: &[u8], scales: &[f32], input: &[f32], output: &mut [f32]) {
+fn matvec_into_seq(
+    weights: &[u8],
+    scales: &[f32],
+    input: &[f32],
+    output: &mut [f32],
+    quant_type: QuantType,
+) {
+    let row_len = match quant_type {
+        QuantType::Int8 => input.len(),
+        QuantType::Int4 => input.len() / 2,
+    };
     let compute = |target: &mut f32, row: &[u8], scale: &f32| {
-        *target = dot_i8_f32(row, input) * scale;
+        let dot = match quant_type {
+            QuantType::Int8 => dot_i8_f32(row, input),
+            QuantType::Int4 => dot_i4_f32(row, input),
+        };
+        *target = dot * scale;
     };
     output
         .iter_mut()
-        .zip(weights.chunks_exact(input.len()))
+        .zip(weights.chunks_exact(row_len))
         .zip(scales)
         .for_each(|((target, row), scale)| compute(target, row, scale));
 }
@@ -412,7 +1112,7 @@ mod kernel_tests {
         for cols in [1, 2, 7, 8, 9, 15, 16, 17, 1024, 2048, 2051] {
             let (weights, scales, input) = data(11, cols);
             let mut actual = vec![0.0; 11];
-            matvec_into(&weights, &scales, &input, &mut actual);
+            matvec_into(&weights, &scales, &input, &mut actual, QuantType::Int8);
             for ((row, &scale), &got) in weights.chunks_exact(cols).zip(&scales).zip(&actual) {
                 let expected = row
                     .iter()
@@ -442,7 +1142,7 @@ mod kernel_tests {
             let mut output = vec![0.0; rows];
             let mut expected = vec![0.0; rows];
             scalar(&weights, &scales, &input, &mut expected);
-            matvec_into(&weights, &scales, &input, &mut output);
+            matvec_into(&weights, &scales, &input, &mut output, QuantType::Int8);
             let max_error = output
                 .iter()
                 .zip(&expected)
@@ -450,7 +1150,13 @@ mod kernel_tests {
                 .fold(0.0f32, f32::max);
             for _ in 0..10 {
                 scalar(black_box(&weights), &scales, &input, black_box(&mut output));
-                matvec_into(black_box(&weights), &scales, &input, black_box(&mut output));
+                matvec_into(
+                    black_box(&weights),
+                    &scales,
+                    &input,
+                    black_box(&mut output),
+                    QuantType::Int8,
+                );
             }
             let mut scalar_ms = Vec::new();
             let mut blocked_ms = Vec::new();
@@ -472,6 +1178,7 @@ mod kernel_tests {
                                 black_box(&scales),
                                 black_box(&input),
                                 black_box(&mut output),
+                                QuantType::Int8,
                             );
                         }
                         black_box(&output);
@@ -507,6 +1214,7 @@ mod kernel_tests {
             .map(|i| 0.005 * (1 + i % 13) as f32)
             .collect();
         let expert = Int8Expert::from_raw(hidden, intermediate, weights, scales);
+        assert_eq!(expert.quant_type(), QuantType::Int8);
         let input: Vec<f32> = (0..hidden)
             .map(|i| ((i * 7 % 23) as f32 - 11.0) / 12.0)
             .collect();
@@ -529,6 +1237,159 @@ mod kernel_tests {
                 a.to_bits(),
                 b.to_bits(),
                 "Bit mismatch at lane {i}: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dot_i8_f32_simd_parity_with_scalar() {
+        // Kiểm tra tính nhất quán giữa kernel SIMD AVX2/FMA và hàm tham chiếu scalar cho INT8
+        for len in [1, 2, 7, 8, 9, 15, 16, 31, 32, 33, 64, 127, 128, 1024, 2048] {
+            let row: Vec<u8> = (0..len).map(|i| ((i * 37 + 13) % 256) as u8).collect();
+            let input: Vec<f32> = (0..len)
+                .map(|i| ((i * 19 % 47) as f32 - 23.0) / 24.0)
+                .collect();
+
+            let scalar_res = dot_i8_f32_scalar(&row, &input);
+            let dispatch_res = dot_i8_f32(&row, &input);
+
+            let diff = (scalar_res - dispatch_res).abs();
+            let tolerance = 1e-4 * (1.0 + scalar_res.abs());
+            assert!(
+                diff <= tolerance,
+                "Length {len}: scalar={scalar_res}, dispatch={dispatch_res}, diff={diff}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dot_i4_f32_simd_parity_with_scalar() {
+        // Kiểm tra tính nhất quán giữa kernel SIMD AVX2/FMA và hàm tham chiếu scalar cho INT4
+        for len in [
+            1, 2, 3, 7, 8, 9, 15, 16, 31, 32, 33, 64, 127, 128, 1024, 2048,
+        ] {
+            let byte_count = (len + 1) / 2;
+            let row: Vec<u8> = (0..byte_count)
+                .map(|i| ((i * 41 + 17) % 256) as u8)
+                .collect();
+            let input: Vec<f32> = (0..len)
+                .map(|i| ((i * 29 % 53) as f32 - 26.0) / 27.0)
+                .collect();
+
+            let scalar_res = dot_i4_f32_scalar(&row, &input);
+            let dispatch_res = dot_i4_f32(&row, &input);
+
+            let diff = (scalar_res - dispatch_res).abs();
+            let tolerance = 1e-4 * (1.0 + scalar_res.abs());
+            assert!(
+                diff <= tolerance,
+                "Length {len}: scalar={scalar_res}, dispatch={dispatch_res}, diff={diff}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dot_i8_f32_pair_parity() {
+        // Kiểm tra tính nhất quán của kernel cặp Gate-Up INT8 AVX2 SIMD với các hàm dot đơn lẻ
+        for len in [
+            1, 2, 3, 7, 8, 9, 15, 16, 31, 32, 33, 64, 127, 128, 1024, 2048,
+        ] {
+            let gate_row: Vec<u8> = (0..len).map(|i| ((i * 31 + 7) % 256) as u8).collect();
+            let up_row: Vec<u8> = (0..len).map(|i| ((i * 47 + 13) % 256) as u8).collect();
+            let input: Vec<f32> = (0..len)
+                .map(|i| ((i * 19 % 43) as f32 - 21.0) / 22.0)
+                .collect();
+
+            let ref_g = dot_i8_f32(&gate_row, &input);
+            let ref_u = dot_i8_f32(&up_row, &input);
+            let (pair_g, pair_u) = dot_i8_f32_pair(&gate_row, &up_row, &input);
+
+            let diff_g = (ref_g - pair_g).abs();
+            let tol_g = 1e-4 * (1.0 + ref_g.abs());
+            assert!(
+                diff_g <= tol_g,
+                "Length {len} Gate mismatch: ref={ref_g}, pair={pair_g}, diff={diff_g}"
+            );
+
+            let diff_u = (ref_u - pair_u).abs();
+            let tol_u = 1e-4 * (1.0 + ref_u.abs());
+            assert!(
+                diff_u <= tol_u,
+                "Length {len} Up mismatch: ref={ref_u}, pair={pair_u}, diff={diff_u}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dot_i4_f32_pair_parity() {
+        // Kiểm tra tính nhất quán của kernel cặp Gate-Up INT4 AVX2 SIMD với các hàm dot đơn lẻ
+        for len in [
+            1, 2, 3, 7, 8, 9, 15, 16, 31, 32, 33, 64, 127, 128, 1024, 2048,
+        ] {
+            let byte_count = (len + 1) / 2;
+            let gate_row: Vec<u8> = (0..byte_count)
+                .map(|i| ((i * 37 + 11) % 256) as u8)
+                .collect();
+            let up_row: Vec<u8> = (0..byte_count)
+                .map(|i| ((i * 53 + 23) % 256) as u8)
+                .collect();
+            let input: Vec<f32> = (0..len)
+                .map(|i| ((i * 29 % 53) as f32 - 26.0) / 27.0)
+                .collect();
+
+            let ref_g = dot_i4_f32(&gate_row, &input);
+            let ref_u = dot_i4_f32(&up_row, &input);
+            let (pair_g, pair_u) = dot_i4_f32_pair(&gate_row, &up_row, &input);
+
+            let diff_g = (ref_g - pair_g).abs();
+            let tol_g = 1e-4 * (1.0 + ref_g.abs());
+            assert!(
+                diff_g <= tol_g,
+                "Length {len} INT4 Gate mismatch: ref={ref_g}, pair={pair_g}, diff={diff_g}"
+            );
+
+            let diff_u = (ref_u - pair_u).abs();
+            let tol_u = 1e-4 * (1.0 + ref_u.abs());
+            assert!(
+                diff_u <= tol_u,
+                "Length {len} INT4 Up mismatch: ref={ref_u}, pair={pair_u}, diff={diff_u}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_forward_single_threaded_matches_forward_reuse_int4() {
+        let hidden = 64;
+        let intermediate = 32;
+        let n = (hidden / 2) * intermediate;
+        let weights: Vec<u8> = (0..3 * n).map(|i| ((i * 23 + 7) % 256) as u8).collect();
+        let scales: Vec<f32> = (0..2 * intermediate + hidden)
+            .map(|i| 0.003 * (1 + i % 11) as f32)
+            .collect();
+        let expert = Int8Expert::from_raw(hidden, intermediate, weights, scales);
+        assert_eq!(expert.quant_type(), QuantType::Int4);
+        let input: Vec<f32> = (0..hidden)
+            .map(|i| ((i * 11 % 29) as f32 - 14.0) / 15.0)
+            .collect();
+
+        let mut scratch1 = ExpertScratch::new(hidden, intermediate);
+        let mut scratch2 = ExpertScratch::new(hidden, intermediate);
+
+        let out_reuse = expert
+            .forward_reuse(&input, &mut scratch1)
+            .unwrap()
+            .to_vec();
+        let out_seq = expert
+            .forward_single_threaded(&input, &mut scratch2)
+            .unwrap()
+            .to_vec();
+
+        assert_eq!(out_reuse.len(), out_seq.len());
+        for (i, (a, b)) in out_reuse.iter().zip(&out_seq).enumerate() {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "INT4 Bit mismatch at lane {i}: {a} vs {b}"
             );
         }
     }

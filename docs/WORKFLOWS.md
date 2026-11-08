@@ -11,26 +11,29 @@ Một owner tích hợp. Hai người dùng branch/worktree riêng; không sửa
 
 ## Tiếp nhận trên testbed i7
 
-### Nhận phiên bản bàn giao
+### Nhận gốc phát triển chung sau hợp nhất
 
-Branch bàn giao lần này: **handoff/i5-memory-20261108**. Commit chính xác lấy từ remote sau khi owner push thành công; không dùng HEAD75d5a62 của raw cũ làm revision của bản vá hiện tại. Đọc thông báo bàn giao để đối chiếu commit. Branch Huy là công việc riêng của đồng nghiệp, không tự reset hoặc merge đè.
+Gốc chung là **origin/main**, chứa lịch sử bản i5 và nhánh Huy. Branch handoff/i5-memory-20261108 giữ snapshot trước tích hợp; không dùng branch đó làm nền mới mặc định. Commit chung chính xác được owner thông báo sau push.
 
-Trong checkout riêng, kiểm working tree trước:
+Trong checkout có workingtree sạch:
 
 ```bash
 git status --short
 git fetch origin
-git switch -c i7/verify-i5-memory-20261108 --track origin/handoff/i5-memory-20261108
+git switch main
+git pull --ff-only origin main
 git rev-parse HEAD
 ```
 
-Lệnh switch dùng khi branch local mới chưa tồn tại. Nếu đã có branch đó, switch về branch local rồi cập nhật bằng `git pull --ff-only` khi working tree phù hợp. Không reset/clean để xóa thay đổi. Nếu đang có thay đổi trên Huy hoặc branch khác, giữ chúng và dùng checkout/worktree riêng; không mang diff chưa commit sang phép kiểm rồi gọi đó là cùng revision.
+Nếu chưa có main local, tạo trackingbranch từorigin/main. Không reset/clean để xóa thay đổi. Sau khi hai máy xác nhận cùng commit, mỗi người tạo branch riêng từmain để phát triển, ví dụ work/i5-next và work/i7-next; tránh sửa/push cùng main đồng thời.
+
+Nhánh Huy cũ đã được tích hợp, không bị force-push. Nếu đồng nghiệp có commit cục bộ mới, giữ chúng trên branch đó rồi merge/rebase theo kế hoạch, không ép main ghi đè. Nếu Huy local vẫn ở tip đã merge và không có thay đổi, có thể cập nhật bằng gitmerge --ff-only origin/main, nhưng main vẫn là điểm đồng bộ chung.
 
 ### Đọc đúng kết quả và phạm vi
 
 1. Đọc [SYSTEM_GUIDE](SYSTEM_GUIDE.md), [PLAN](PLAN.md), các mục mới nhất trong [PROGRESS](PROGRESS.md), [benchmark guide](../benchmarks/README.md), [machines](../benchmarks/machines.json) và skill moe-benchmark.
-2. Bản mới có CPU trước load, lookahead telemetry, memorytrace/allocator/TID, KVbufferreuse opt-in và runner có provenance. KVbufferreuse mặc định off; memorytrace off; lookahead mặc định on nhưng các protocol RAM hiện dùng off tường minh.
-3. i5 đã có [phép allocator12request](../benchmarks/experiments/2026-11-08-allocator-i5/README.md): RSS tăng284,547MiB nhưng allocator indicator tăng0,234MiB; free tăng205,777MiB. Đây là bằng chứng giữ vùng đã giải phóng trong cửa sổ đó, chưa chứng minh hết leak/plateau/hardcap hoặc điều gì trên i7. **Không cần lặp cuộc điều tra allocator trên i7 như thể chưa làm.**
+2. Bản hợp nhất có CPU trước load, lookahead telemetry, memorytrace/allocator/TID, KVbufferreuse và các tính năng Huy: INT4/evaluation/routes/sampling/FP8/persistence. KVbufferreuse mặc định off; memorytrace off; lookahead mặc định on nhưng các protocol RAM hiện dùng off tường minh.
+3. i5 đã có [phép allocator12request](../benchmarks/experiments/2026-11-08-allocator-i5/README.md): RSS tăng284,547MiB nhưng allocator indicator tăng0,234MiB; free tăng205,777MiB. Đây là bằng chứng giữ vùng đã giải phóng trong cửa sổ đó, chưa chứng minh hết leak/plateau/hardcap hoặc điều gì trên i7. **Không cần lặp cuộc điều tra allocator trên i7 như thể chưa làm.** Đây là số đo trước merge; chưa có benchmark7B/FP8/INT4 được nghiệm thu trên bản hợp nhất.
 4. Bộ kỳ1 i5/i7 dùng checkpoint khác nhau theo báo cáo; không xếp hạng CPU. Với phép đối chiếu mới, cần cùng revision/checkpoint/suite/prompt/history/context/tokenlimit/cachebudget/số lượt, ghi backend/threads/hardware riêng.
 
 ### Kiểm môi trường và fixture trước
@@ -97,3 +100,10 @@ Server không override dùng cache64MiB/layer cố định. Guard mặc định 
 Guard là kiểm hợp tác, không hard RSS cap; drop buffer không bảo đảm OS thu hồi trang ngay. Status khi model bận có thể là snapshot cũ, nên phân tích peak dùng sampler/HWM, ghi rõ thời điểm. Hoàn tất một cửa sổ hữu hạn không chứng minh ổn định dài hạn hoặc không leak.
 
 Chỉ tái lập phase1-v1 khi được giao rõ mới dùng revision lịch sử d4adefd9e53627bdc1fd250eabab436c3ac54b0d. Không quay engine mới về revision cũ để chạy mặc định hoặc ghép các phiên bản thành chuỗi tăng tốc.
+
+
+## Phân công sau khi nhận chung source
+
+i5 tiếp tục câu hỏi expertcache/I/O theoPLAN. i7 trước mắt xác nhậnchecks/fixture và đánh giá độc lập công cụ chất lượng/routing; chưa tự đổi cùng moduleolmoe.rs mà không thống nhất owner. Nhánh nghiên cứuINT4/FP8 dùng baseline/corpus/config riêng, không gộp số liệu khảo sát cũ thành kết luận bản merge đã nhanh hơn.
+
+CI converter đã bao gồm cả testconverterINT8 vàINT4; local cần môi trường Python cótorch/numpy/safetensors để chạy --converter. Nếu thiếu, báo skipped, không gọi toànbộconverterPASS. Các trường API chưa thực thi đầy đủ được nêu trongARCHITECTURE.

@@ -19,14 +19,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine.model_name(),
         start.elapsed().as_secs_f64()
     );
+    let session_id = args
+        .get(3)
+        .cloned()
+        .or_else(|| std::env::var("MOE_SESSION_ID").ok());
     let start = std::time::Instant::now();
     let output = engine
-        .chat(
+        .chat_with_session(
             vec![ChatMessage {
                 role: "user".into(),
                 content: args[1].clone(),
             }],
             max,
+            session_id,
         )
         .await?;
     println!("{}", serde_json::to_string_pretty(&output)?);

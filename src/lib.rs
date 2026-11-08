@@ -10,9 +10,10 @@ pub mod model;
 pub mod moe;
 pub mod olmoe;
 pub mod quantization;
-mod ram;
+pub mod ram;
 pub mod router;
 pub mod safetensors;
+pub mod sample;
 pub mod tokenizer;
 
 pub use engine::{InferenceEngine, InferenceResponse};

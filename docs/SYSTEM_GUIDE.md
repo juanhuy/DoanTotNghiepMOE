@@ -130,3 +130,8 @@ Dự toán và bước kiểm kế tiếp: [Ngân sách RAM và thiết kế ph�
 Rà trọng tâm08/11: dùng [PLAN](PLAN.md) để theo lộ trình hữu hạn và [Evidence Matrix](thesis/EVIDENCE_MATRIX.md) để chọn benchmark cho từng luận điểm. Điều tra RAM hỗ trợ xác định giới hạn; đóng góp chính vẫn là suy luận/phân tầng expert và đánh đổi bộ nhớ–I/O–độ trễ.
 
 Allocator đã được đo trên model thật08/11: [hồ sơ](../benchmarks/experiments/2026-11-08-allocator-i5/README.md). RSS tăng nhưng chỉ báo allocator đang dùng gần cố định, phần free tăng; kết quả ủng hộ giữ vùng đã giải phóng, chưa chứng minh hếtleak hoặc ổn định dài hạn.
+
+
+## Cập nhật sau hợp nhất i5–Huy
+
+Gốc source chung làmain. Ngoài baselineINT8/FP32KV, bản mới có codeINT4 vàKVFP8 (có mấtmát), perplexity/tradeoff, routeanalysis/hotpin/pilot, sampling vàsessionpersistence.moekv. Đây là tínhnăng đã tiếp nhận, chưa phải mọi lợi ích đã được nghiệm thu. ĐọcARCHITECTURE/PLAN cho invariant/giới hạn vàWORKFLOWS để cả hai máy nhận cùngrevision rồi làm trênbranchriêng. Các benchmarki5 vừa nêu đều trước merge, không dùng như số đo phiên bảnmới.

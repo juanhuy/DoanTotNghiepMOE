@@ -1,6 +1,6 @@
 # Kế hoạch hoàn thiện đồ án
 
-Cập nhật08/11/2026 cho bản bàn giao i5. Báo cáo kỳ1 đã hoàn thành; **nghiệm thu tổng RAM/giai đoạn1 vẫn chưa đóng**. Nhật ký và lệnh nằm trong [PROGRESS](PROGRESS.md); tài liệu này giữ trạng thái và quyết định hiện hành.
+Cập nhật08/11/2026 cho bản tích hợp chung i5–Huy. Báo cáo kỳ1 đã hoàn thành; **nghiệm thu tổng RAM/giai đoạn1 vẫn chưa đóng**. Nhật ký và lệnh nằm trong [PROGRESS](PROGRESS.md); tài liệu này giữ trạng thái và quyết định hiện hành.
 
 ## 1. Câu hỏi chính
 
@@ -11,7 +11,7 @@ Ba câu hỏi thành phần:
 2. Trong cấu hình/ngân sách xác định, cache và nạp expert làm thay đổi lượng công việc và hiệu năng thế nào?
 3. Bộ nhớ thực tế và giới hạn vận hành là gì, kể cả dense/KV/buffer tạm ngoài cache expert?
 
-Phạm vi: inference checkpoint OLMoE merged INT8; expert SwiGLU chạy CPU, dense/GPU tùy cấu hình. Chưa mở INT4, huấn luyện, model mới hoặc đa người dùng. Kết quả âm/đánh đổi cũng có giá trị, không buộc mọi cơ chế đều tăng tốc.
+Phạm vi: inference checkpoint OLMoE mergedINT8 làm baseline; codeINT4/FP8 từ Huy đã tiếp nhận thành tính năng nghiên cứu riêng, chưa nghiệm thu lợi ích/chất lượng. Expert SwiGLU chạy CPU, dense/GPU tùy cấu hình. Chưa mở huấn luyện, model mới hoặc đa người dùng. Kết quả âm/đánh đổi cũng có giá trị, không buộc mọi cơ chế đều tăng tốc.
 
 ## 2. Kết quả hiện tại và mức chắc chắn
 
@@ -34,13 +34,13 @@ Phép allocator có12/12request hoàn tất, sampledRSSpeak3182,594MiB, HWMmax31
 
 Cấu hình cache64MiB/layer vận hành được trong cửa sổ đã kiểm, chưa phải cache tối ưu/chung hai máy. Không nâng cache từ capacityKV tiết kiệm; không đổi OS/guard để vượt failure. Chưa tuyên bố ổn định dài hạn, không leak nhỏ hoặc hardcap tổngRAM.
 
-## 4. Bàn giao phiên bản và vai trò i7
+## 4. Gốc chung sau tích hợp i5 và Huy
 
-Branch bàn giao: **handoff/i5-memory-20261108**. Nhận commit chính xác từ thông báo push/remote, không lấy HEAD75d5a62 trong raw làm revision mới. Raw dirty/sourceZIP trước khi commit giữ nguyên như lúc đo; source hiện tại kiểm đối chiếu bằng snapshot khi cần.
+Theo yêu cầu người dùng, hợp nhất bản i5 và Huy lênmain để hai máy nhận cùng source. Gốc tiếp tục làorigin/main; nhận commit chính xác từ thông báo push rồi gitfetch/switchmain/pullff-only theoWORKFLOWS. Branchhandoff giữ snapshot trướcmerge; raw/sourceZIP cũ không đổi commit/dirtystatus hồi tố.
 
-Theo yêu cầu mới nhất, chuẩn hóa và push bản này để i7 nhận mã. [WORKFLOWS](WORKFLOWS.md#tiếp-nhận-trên-testbed-i7) có lệnh nhận branch, checks/build và smoke HTTP2request trên fixture. **Việc i7 trước mắt là kiểm phiên bản độc lập, không chạy lại cuộc điều tra allocator hoặc mở tối ưu riêng.**
+Bản hợp nhất giữ CPU-first/guard/trace của i5 cùng INT4/evaluation/routes/pilot/sampling/FP8/persistence của Huy. Đã xử lý accountingFP8, modechange/session và precisiondisk; kiểm debug/release/HTTP theoPROGRESS. Đây là tích hợp tínhnăng, không phép đo xác nhận mọi tối ưu đều tốt hơn.
 
-Checkpoint không nằm trong Git. Khi đo thật trên i7 phải dùng --testbed i7, giữ raw/hardware/checkpoint riêng; đối chiếu hai máy cần cùng revision/checkpoint/workload/context/tokenlimit/cachebudget/sốlượt, ghi backend/threads. Chưa chốt cache chung hoặc số đo i7 mới. Không tự reset/merge đè branchHuy.
+i7 nhận mã và chạychecks/smokefixture trước. Checkpoint không nằm trongGit. Kết quải5 trướcmerge không tựlà kếtquảphiênbảnmới hoặc i7. Khi đo hai máy cần cùngrevision/checkpoint/workload/config vàrawriêng.
 
 ## 5. Bước phát triển tiếp trên i5
 

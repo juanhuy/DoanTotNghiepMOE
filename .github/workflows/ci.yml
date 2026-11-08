@@ -46,4 +46,4 @@ jobs:
           python -m pip install -r tools/requirements-converter.txt
           python -m pip freeze
       - name: Converter fixture round trip
-        run: python tools/test_prepare_olmoe.py
+        run: python tools/check.py --converter

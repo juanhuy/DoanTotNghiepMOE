@@ -187,6 +187,41 @@ impl InferenceEngine {
             }
         }
     }
+    pub fn toggle_kv_fp8(&self) -> io::Result<Option<bool>> {
+        match &self.model {
+            Model::Tiny(_) => Ok(None),
+            Model::Olmoe(model) => {
+                let mut model = model.try_lock().map_err(|e| match e {
+                    std::sync::TryLockError::WouldBlock => io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "model is busy generating; retry after current request completes",
+                    ),
+                    std::sync::TryLockError::Poisoned(_) => io::Error::other("model lock poisoned"),
+                })?;
+                let state = model.toggle_kv_fp8();
+                if let Ok(mut cache) = self.cached_status.write() {
+                    *cache = Some(model.expert_status());
+                }
+                Ok(Some(state))
+            }
+        }
+    }
+    pub fn is_kv_fp8(&self) -> bool {
+        match &self.model {
+            Model::Tiny(_) => false,
+            Model::Olmoe(model) => {
+                if let Ok(model) = model.try_lock() {
+                    model.is_kv_fp8()
+                } else {
+                    self.cached_status
+                        .read()
+                        .ok()
+                        .and_then(|c| c.as_ref().map(|s| s.kv_fp8))
+                        .unwrap_or(false)
+                }
+            }
+        }
+    }
     /// Xóa toàn bộ bộ đệm trong hệ thống (KV cache, RAM cache, VRAM cache) để đưa về Cold Start
     pub fn reset_cache(&self) -> io::Result<()> {
         self.reset_cache_with_policy(None)
@@ -264,6 +299,17 @@ impl InferenceEngine {
         max_tokens: usize,
         session_id: Option<String>,
     ) -> io::Result<InferenceResponse> {
+        self.chat_with_session_and_sampling(messages, max_tokens, session_id, None)
+            .await
+    }
+
+    pub async fn chat_with_session_and_sampling(
+        &self,
+        messages: Vec<ChatMessage>,
+        max_tokens: usize,
+        session_id: Option<String>,
+        sampling: Option<crate::sample::SamplingParams>,
+    ) -> io::Result<InferenceResponse> {
         validate_messages(&messages)?;
         validate_session_id(session_id.as_deref())?;
         match &self.model {
@@ -289,14 +335,76 @@ impl InferenceEngine {
                         .lock()
                         .map_err(|_| io::Error::other("model lock poisoned"))?;
                     let prompt = model.render_chat(&messages)?;
-                    model.generate_controlled(
+                    model.generate_controlled_with_sampling(
                         &prompt,
                         max_tokens,
                         session_id.as_deref(),
                         &|| Ok(()),
                         || Ok(()),
                         None,
+                        sampling,
                     )
+                })
+                .await
+                .map_err(io::Error::other)?
+            }
+        }
+    }
+
+    pub async fn encode(&self, text: &str) -> io::Result<Vec<usize>> {
+        match &self.model {
+            Model::Tiny(_) => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "token encoding requires OLMoE model",
+            )),
+            Model::Olmoe(model) => {
+                let model = model
+                    .lock()
+                    .map_err(|_| io::Error::other("model lock poisoned"))?;
+                model.encode(text)
+            }
+        }
+    }
+
+    pub async fn decode(&self, tokens: &[usize]) -> io::Result<String> {
+        match &self.model {
+            Model::Tiny(_) => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "token decoding requires OLMoE model",
+            )),
+            Model::Olmoe(model) => {
+                let model = model
+                    .lock()
+                    .map_err(|_| io::Error::other("model lock poisoned"))?;
+                model.decode(tokens)
+            }
+        }
+    }
+
+    pub async fn compute_perplexity(
+        &self,
+        text: &str,
+    ) -> io::Result<crate::olmoe::PerplexityMetrics> {
+        match &self.model {
+            Model::Tiny(_) => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "perplexity evaluation requires OLMoE model",
+            )),
+            Model::Olmoe(model) => {
+                let permit = self.gate.clone().try_acquire_owned().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "model busy; retry after current generation",
+                    )
+                })?;
+                let model = model.clone();
+                let text = text.to_string();
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    let mut model = model
+                        .lock()
+                        .map_err(|_| io::Error::other("model lock poisoned"))?;
+                    model.compute_perplexity(&text)
                 })
                 .await
                 .map_err(io::Error::other)?
@@ -379,6 +487,24 @@ impl InferenceEngine {
         session_id: Option<String>,
         send_timeout: Duration,
     ) -> io::Result<ChatStream> {
+        self.chat_stream_with_session_and_sampling(
+            messages,
+            max_tokens,
+            session_id,
+            send_timeout,
+            None,
+        )
+        .await
+    }
+
+    pub async fn chat_stream_with_session_and_sampling(
+        &self,
+        messages: Vec<ChatMessage>,
+        max_tokens: usize,
+        session_id: Option<String>,
+        send_timeout: Duration,
+        sampling: Option<crate::sample::SamplingParams>,
+    ) -> io::Result<ChatStream> {
         validate_messages(&messages)?;
         validate_session_id(session_id.as_deref())?;
         if send_timeout.is_zero() {
@@ -416,7 +542,7 @@ impl InferenceEngine {
                     .lock()
                     .map_err(|_| io::Error::other("model lock poisoned"))?;
                 let prompt = model.render_chat(&messages)?;
-                model.generate_controlled(
+                model.generate_controlled_with_sampling(
                     &prompt,
                     max_tokens,
                     session_id.as_deref(),
@@ -456,6 +582,7 @@ impl InferenceEngine {
                             Ok(ChatEvent::Delta(delta.to_owned())),
                         )
                     }),
+                    sampling,
                 )
             })();
             match result {

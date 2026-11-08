@@ -6,7 +6,7 @@ Hai testbed cộng tác là **i5 (máy của Sơn)** và **i7 (máy đồng nghi
 
 ## Nhận bản bàn giao i5 → i7
 
-Branch: **handoff/i5-memory-20261108**. Đọc [WORKFLOWS — tiếp nhận i7](docs/WORKFLOWS.md#tiếp-nhận-trên-testbed-i7) để nhận đúng source, chạy checks và smoke fixture trước model thật. [PLAN](docs/PLAN.md) giữ bước phát triển tiếp, [SYSTEM_GUIDE](docs/SYSTEM_GUIDE.md) giải thích hệ thống; các số đo i5 không phải kết quả i7.
+Gốc phát triển chung sau hợp nhất: **main** (bao gồm bản i5 và nhánh Huy). Branch handoff/i5-memory-20261108 giữ snapshot trước merge. Đọc [WORKFLOWS — tiếp nhận i7](docs/WORKFLOWS.md#tiếp-nhận-trên-testbed-i7) để nhận đúng source, chạy checks và smoke fixture trước model thật. [PLAN](docs/PLAN.md) giữ bước phát triển tiếp, [SYSTEM_GUIDE](docs/SYSTEM_GUIDE.md) giải thích hệ thống; các số đo i5 không phải kết quả i7.
 
 ## Bắt đầu
 
@@ -88,3 +88,8 @@ Phạm vi hiện tại là demo/nghiên cứu local, greedy decoding, một requ
 ## Tài liệu hệ thống
 
 Bắt đầu đọc [Hướng dẫn hệ thống MoE-TierEngine](docs/SYSTEM_GUIDE.md) để hiểu luồng xử lý, thuật toán, tối ưu, thuật ngữ và các file benchmark.
+
+
+## Tính năng tiếp nhận từ Huy
+
+Có converter/loader/kernelINT4, perplexity/tradeoff, routeanalysis/hotpin/pilot, sampling, KVFP8 và persistence.moekv. FP8/persistence là opt-in; precision/sampling/usagecache phải được ghi tường minh khi benchmark. INT4/FP8 là lượng tử hóa có sai số, chưa mặc định bảo toàn chất lượng hay tăng tốc trên mọi máy. Xem [invariant tích hợp](docs/ARCHITECTURE.md#invariant-bổ-sung-sau-hợp-nhất-i5-và-huy-0811) và [hồ sơ khảo sát](benchmarks/experiments/2026-11-03-quantization-tradeoff/README.md).

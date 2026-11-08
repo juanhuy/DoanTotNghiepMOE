@@ -217,6 +217,111 @@ pub(crate) fn causal_attention_into(
     Ok(())
 }
 
+/// Tính toán Causal Attention trên bộ nhớ đệm KV nén FP8 E4M3 (học hỏi từ Colibrì kv_fp8.h)
+/// Giảm 75% lưu lượng đọc bộ nhớ (1 byte/element thay vì 4 bytes), giải mã O(1) qua FP8 LUT
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn causal_attention_fp8_into(
+    query: &[f32],
+    keys: &[u8],
+    key_scales: &[f32],
+    values: &[u8],
+    value_scales: &[f32],
+    num_attention_heads: usize,
+    num_key_value_heads: usize,
+    context: &mut [f32],
+) -> io::Result<()> {
+    if num_attention_heads == 0
+        || num_key_value_heads == 0
+        || num_attention_heads % num_key_value_heads != 0
+        || query.len() != context.len()
+        || query.len() % num_attention_heads != 0
+        || keys.len() != values.len()
+        || key_scales.len() != value_scales.len()
+    {
+        return Err(invalid("attention dimension mismatch"));
+    }
+    let head_width = query.len() / num_attention_heads;
+    let key_value_width = head_width
+        .checked_mul(num_key_value_heads)
+        .ok_or_else(|| invalid("attention dimension overflow"))?;
+    if key_value_width == 0 || keys.len() % key_value_width != 0 {
+        return Err(invalid("attention KV dimension mismatch"));
+    }
+    let positions = keys.len() / key_value_width;
+    if positions == 0 {
+        return Err(invalid("attention requires at least one KV position"));
+    }
+    if positions != key_scales.len() {
+        return Err(invalid("attention key scales count mismatch"));
+    }
+    finite(query)?;
+    finite(key_scales)?;
+    finite(value_scales)?;
+
+    let group = num_attention_heads / num_key_value_heads;
+    let scale = (head_width as f32).sqrt();
+
+    let run_head = |head: usize, output: &mut [f32]| -> io::Result<()> {
+        let key_start = (head / group) * head_width;
+        let query = &query[head * head_width..(head + 1) * head_width];
+        output.fill(0.0);
+        let mut maximum = f32::NEG_INFINITY;
+        let mut normalizer = 0.0f32;
+
+        for p in 0..positions {
+            let k_offset = p * key_value_width + key_start;
+            let k_slice = &keys[k_offset..k_offset + head_width];
+            let k_sc = key_scales[p];
+            let dot = crate::quantization::dot_fp8_f32(query, k_slice, k_sc);
+            let score = dot / scale;
+            if !score.is_finite() {
+                return Err(invalid("non-finite attention score"));
+            }
+            let weight = if score > maximum {
+                let rescale = (maximum - score).exp();
+                for target in output.iter_mut() {
+                    *target *= rescale;
+                }
+                normalizer *= rescale;
+                maximum = score;
+                1.0
+            } else {
+                (score - maximum).exp()
+            };
+            normalizer += weight;
+
+            let v_offset = p * key_value_width + key_start;
+            let v_slice = &values[v_offset..v_offset + head_width];
+            let v_sc = value_scales[p];
+            let weight_val = weight * v_sc;
+            crate::quantization::accumulate_fp8(output, v_slice, weight_val);
+        }
+
+        if !normalizer.is_finite() || normalizer <= 0.0 {
+            return Err(invalid("invalid attention softmax normalizer"));
+        }
+        for value in output.iter_mut() {
+            *value /= normalizer;
+        }
+        finite(output)
+    };
+
+    if num_attention_heads * positions >= 4096 {
+        context
+            .par_chunks_exact_mut(head_width)
+            .enumerate()
+            .try_for_each(|(head, output)| run_head(head, output))?;
+    } else {
+        for head in 0..num_attention_heads {
+            run_head(
+                head,
+                &mut context[head * head_width..(head + 1) * head_width],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn finite(values: &[f32]) -> io::Result<()> {
     if values.iter().any(|v| !v.is_finite()) {
         return Err(invalid("non-finite computation result"));
@@ -397,6 +502,81 @@ mod tests {
             for (observed, expected) in actual.iter().zip(expected) {
                 assert!((observed - expected).abs() < 2e-6);
             }
+        }
+    }
+
+    #[test]
+    fn test_causal_attention_fp8_matches_fp32_within_tolerance() {
+        let heads = 4;
+        let kv_heads = 2;
+        let width = 64;
+        let positions = 8;
+        let kv_width = kv_heads * width;
+
+        let query: Vec<f32> = (0..heads * width)
+            .map(|i| ((i as f32) * 0.13).sin() * 2.0)
+            .collect();
+        let keys_fp32: Vec<f32> = (0..positions * kv_width)
+            .map(|i| ((i as f32) * 0.11).cos() * 1.5)
+            .collect();
+        let values_fp32: Vec<f32> = (0..positions * kv_width)
+            .map(|i| ((i as f32) * 0.07).sin() * 2.5)
+            .collect();
+
+        // 1. Tính chuẩn tham chiếu FP32
+        let mut context_fp32 = vec![0.0f32; heads * width];
+        causal_attention_into(
+            &query,
+            &keys_fp32,
+            &values_fp32,
+            heads,
+            kv_heads,
+            &mut context_fp32,
+        )
+        .unwrap();
+
+        // 2. Lượng tử hóa Keys & Values từng token position sang FP8 E4M3
+        let mut keys_fp8 = vec![0u8; positions * kv_width];
+        let mut key_scales = vec![0.0f32; positions];
+        for p in 0..positions {
+            let src = &keys_fp32[p * kv_width..(p + 1) * kv_width];
+            let dst = &mut keys_fp8[p * kv_width..(p + 1) * kv_width];
+            key_scales[p] = crate::quantization::quantize_row_fp8(src, dst);
+        }
+
+        let mut values_fp8 = vec![0u8; positions * kv_width];
+        let mut value_scales = vec![0.0f32; positions];
+        for p in 0..positions {
+            let src = &values_fp32[p * kv_width..(p + 1) * kv_width];
+            let dst = &mut values_fp8[p * kv_width..(p + 1) * kv_width];
+            value_scales[p] = crate::quantization::quantize_row_fp8(src, dst);
+        }
+
+        // 3. Tính Causal Attention trên dữ liệu FP8
+        let mut context_fp8 = vec![0.0f32; heads * width];
+        causal_attention_fp8_into(
+            &query,
+            &keys_fp8,
+            &key_scales,
+            &values_fp8,
+            &value_scales,
+            heads,
+            kv_heads,
+            &mut context_fp8,
+        )
+        .unwrap();
+
+        // 4. So sánh sai số tuyệt đối (sai số do lượng tử hóa FP8 e4m3 chỉ < 0.08)
+        for (i, (&obs_fp8, &ref_fp32)) in context_fp8.iter().zip(&context_fp32).enumerate() {
+            let delta = (obs_fp8 - ref_fp32).abs();
+            assert!(
+                delta < 0.08,
+                "Sai số attention FP8 tại index {}: obs_fp8={}, ref_fp32={}, delta={}",
+                i,
+                obs_fp8,
+                ref_fp32,
+                delta
+            );
         }
     }
 

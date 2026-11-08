@@ -240,6 +240,31 @@ impl RamGuard {
     }
 }
 
+/// Tính toán ngân sách expert cache tự động cho từng tầng dựa trên bộ nhớ khả dụng (MemAvailable).
+/// Lấy cảm hứng từ bộ điều phối tài nguyên của Colibrì:
+/// Giữ lại 80% MemAvailable của OS, trừ đi dung lượng Dense weights và KV cache dự kiến,
+/// chia đều cho số tầng để tận dụng tối đa RAM máy mà không gây áp lực OOM.
+pub fn plan_auto_cache_bytes() -> io::Result<usize> {
+    let snap = snapshot();
+    let available = snap.available.unwrap_or(4 * 1024 * 1024 * 1024);
+    // Lấy 80% RAM khả dụng làm trần an toàn
+    let safe_ram_budget = (available * 8) / 10;
+    // Trừ 1.5GB cho dense weights + KV + overhead
+    let reserved_dense_and_headroom = 1536 * MIB;
+    let cache_total = safe_ram_budget.saturating_sub(reserved_dense_and_headroom);
+    // OLMoE có 16 tầng
+    let num_layers = 16;
+    let per_layer = cache_total / num_layers;
+    // Giới hạn trong khoảng an toàn: tối thiểu 64 MiB/layer, tối đa 256 MiB/layer
+    let clamped = per_layer.clamp(64 * MIB, 256 * MIB);
+    tracing::info!(
+        available_ram_mib = available / MIB,
+        planned_cache_mib_per_layer = clamped / MIB,
+        "Colibri-inspired auto memory planner: dynamically sized expert cache"
+    );
+    Ok(clamped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

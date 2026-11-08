@@ -213,3 +213,32 @@ async fn engine_cpu_mode_is_applied_before_blocking_model_load() {
     assert!(!result.token_ids.is_empty());
     assert_eq!(engine.expert_status().unwrap().gpu.allocated_vram_bytes, 0);
 }
+
+#[tokio::test]
+async fn test_compute_perplexity_and_token_codec() {
+    let dir = path("unnormalized-mha");
+    let engine = InferenceEngine::load_with_limits(&dir, 64 * 1024 * 1024, 32, 10_000_000)
+        .await
+        .unwrap();
+
+    // 1. Test token encode/decode round-trip
+    let text = "token3 token4";
+    let tokens = engine.encode(text).await.unwrap();
+    assert!(!tokens.is_empty());
+    let decoded = engine.decode(&tokens).await.unwrap();
+    assert_eq!(decoded.trim(), text);
+
+    // 2. Test mathematical cross-entropy and perplexity calculation
+    let eval_text = "token3 token4 token6 token7";
+    let metrics = engine.compute_perplexity(eval_text).await.unwrap();
+    assert_eq!(metrics.token_count, 4);
+    assert_eq!(metrics.evaluated_tokens, 3);
+    assert!(metrics.cross_entropy_loss.is_finite() && metrics.cross_entropy_loss > 0.0);
+    assert!(metrics.perplexity.is_finite() && metrics.perplexity >= 1.0);
+    assert!(metrics.bits_per_character > 0.0);
+    assert!(metrics.tokens_per_second > 0.0);
+    assert!(
+        (metrics.perplexity - metrics.cross_entropy_loss.exp()).abs() < 1e-5,
+        "perplexity must equal exp(loss)"
+    );
+}
