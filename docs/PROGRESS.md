@@ -3853,3 +3853,10 @@ Kết luận và bước tiếp theo:
 - RSS max on3462,1/3472,3, off3422,0/3457,8MiB; VmSwap0; availablemin4415–4757MiB (thấp hơn lượt trước, trên sàn1536). pswpout +5175page block0.
 - Lưu hồ sơ P1 benchmarks/experiments/2026-11-10-gpu-tier-chat-i5 (53 file run + preflight/preview/nvidia-smi, khóa56 file CHECKSUMS PASS). Cập nhật mục lục (27 hồ sơ, P1=13), SCENARIOS, PLAN (S5 có bằng chứng, S6 tiếp), EVIDENCE_MATRIX.
 - Kết luận: trên i5, cấu hình tốt nhất quan sát được là GPU dense + tầng VRAM expert tắt, cả prefill lẫn chat/decode. Tiêu chí chốt trước để cân nhắc đổi mặc định MOE_GPU_EXPERT_TIER đã đạt; chưa đổi vì ảnh hưởng i7/UI — chờ người dùng quyết định.
+
+## 2026-11-10 — Phân tích mặc định tầng VRAM expert và giao nhiệm vụ i7
+
+- Người dùng hỏi có nên đổi mặc định MOE_GPU_EXPERT_TIER khi máy đối tác là i7. Phân tích: i5 pool VRAM 298/1024 expert (~29%, đo) nên xoay vòng và upload5–41GiB/request; i7 RTX5060 Laptop ~7,5GB (hồ sơ kỳ1) ước tính chứa ~85–90% expert (chưa đo) và PCIe nhanh hơn, nên tầng VRAM có thể có lợi trên i7. Quyết định cùng người dùng: giữ mặc định on, khuyến nghị i5 vận hành off, giao i7 chạy hai protocol gpu-tier-long-v1 và gpu-tier-chat-v1 rồi quyết định theo bảng trong WORKFLOWS.
+- WORKFLOWS thêm mục "Nhiệm vụ i7: tầng VRAM expert bật/tắt": nhận source, kiểm GPU thật (EXECUTED/SKIPPED), fixture on/off, checkpoint, preflight, hai lệnh đo --testbed i7, cách lưu raw/CHECKSUMS/PROGRESS, bảng quyết định và cấu hình khuyến nghị i5. PLAN cập nhật việc tiếp theo (S6 trên i5, song song i7).
+- Thêm tools/preflight_memory.py (3 mẫu cách5s, không engine/build khác, pswpout ổn định, MemAvailable tối thiểu; exit0 chỉ khi đủ điều kiện) thay script tạm ngoài repo đã dùng cho S1–S5 cùng logic, và tools/test_preflight_memory.py (2 test) đăng ký trong tools/check.py. python3 tools/check.py PASS; smoke preflight thật eligible. Không đổi engine/binary, không đo mới.
+- Máy i7 chỉ nhận được các commit ngày10/11 sau khi owner i5 push/gửi branch; chưa push trong tác vụ này.

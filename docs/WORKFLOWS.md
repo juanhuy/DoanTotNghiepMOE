@@ -86,6 +86,70 @@ python3 tools/check_ram_stability.py --testbed i7 --gpu cpu --lookahead off \
 
 Đây chỉ là preview, không yêu cầu chạy12request ngay. 4threads giữ cấu hình chẩn đoán, không được đo là tối ưu cho i7. Thu3mẫu5s trước tải; hoãn nếu pswpout tăng hoặc MemAvailable dưới1536MiB. Không nới guard/đổi OS để vượt lỗi, không chạy CPU và GPU cùng lúc. CPU đã chọn trước load không khởi tạo CUDA; nếu chọn auto phải ghi trạng thái GPU thực và ngân sách VRAM, không ghép với CPU như cùng điều kiện.
 
+## Nhiệm vụ i7: tầng VRAM expert bật/tắt (giao 10/11/2026)
+
+**Vì sao giao:** trên i5 (GTX1650 Max-Q 4GB), khi dense chạy GPU, tắt tầng VRAM expert nhanh hơn ở prefill ([P1](../benchmarks/experiments/2026-11-10-gpu-expert-tier-i5/README.md), TTFT on/off1,21–1,45) và chat/decode ([P1](../benchmarks/experiments/2026-11-10-gpu-tier-chat-i5/README.md), total1,39–1,87×, decode trung vị3,13→5,53tok/s). Nguyên nhân quan sát: pool VRAM i5 chỉ chứa298/1024 expert (~29%) nên xoay vòng, upload5–41GiB/request. i7 (RTX5060 Laptop ~7,5GB theo hồ sơ kỳ1) có thể chứa phần lớn expert, nên kết quả có thể **ngược lại** — đây là câu hỏi cần đo, không suy từ i5. Mặc định `MOE_GPU_EXPERT_TIER` (hiện on) chỉ được quyết định sau khi có kết quả i7. Đọc [ARCHITECTURE: công tắc tầng VRAM](ARCHITECTURE.md#công-tắc-tầng-vram-expert-moe_gpu_expert_tier-1011) trước khi chạy.
+
+**1. Nhận đúng source.** Cần commit chứa protocol này (main i5 từ ede12d0 trở đi, owner i5 thông báo commit đã publish). Trên checkout sạch làm theo mục "Nhận gốc phát triển chung" ở trên, rồi tạo branch riêng, ví dụ `git switch -c work/i7-gpu-tier`. Ghi `git rev-parse HEAD`, `git status --short` (phải rỗng), `rustc -V`, OS/kernel/WSL.
+
+**2. Kiểm môi trường và GPU thật (trước mọi phép đo, không chạy song song):**
+
+```bash
+nvidia-smi --query-gpu=name,memory.total,memory.used,driver_version --format=csv
+python3 tools/check.py --rust --release --web
+cargo test --locked --lib gpu -- --nocapture --test-threads=1 2>&1 | grep -E "EXECUTED|SKIPPED|Available|Total VRAM|Dense Offloaded|test result"
+cargo build --release --locked --bin moe-tier-engine && sha256sum target/release/moe-tier-engine
+```
+
+Phải thấy `Available: true`, `Dense Offloaded: true` và các dòng `EXECUTED ... CUDA`, gồm `gpu_expert_tier_off_keeps_dense_on_gpu_without_vram_uploads`. Nếu là SKIPPED thì CUDA chưa chạy: dừng, ghi lý do, không đo. Kiểm fixture server hai chế độ:
+
+```bash
+for m in on off; do python3 tools/check_ram_stability.py --testbed i7 --gpu auto --gpu-expert-tier $m \
+  --lookahead off --memory-trace on --cache 1 --context 64 --cycles 2 --max-tokens 3 --keep-cache \
+  --threads 2 --model-dir tests/fixtures/olmoe/unnormalized-mha --output-root /tmp/moe-tier-fixture-$m; done
+```
+
+Cả hai `completed`, text giống nhau, status `gpu_expert_tier_enabled` đúng chế độ.
+
+**3. Checkpoint.** Dùng checkpoint INT8 merged trên máy i7 qua `--model-dir <đường-dẫn>`; không có file `.moe_usage` trong thư mục. Runner tự hash và lưu manifest. Hai phép dưới so sánh bật/tắt **trong nội bộ i7**, không cần cùng checkpoint với i5; vẫn ghi hash để đối chiếu.
+
+**4. Hai phép đo, đúng thứ tự, mỗi phép một lượt.** Protocol giữ nguyên như i5 ([SCENARIOS](../benchmarks/SCENARIOS.md): `gpu-tier-long-v1`, `gpu-tier-chat-v1`). Harness cố định CPU4 threads/cache64/context512 để giữ protocol; 4 threads không phải cấu hình tối ưu của i7 và phải ghi rõ. Trước mỗi phép: đóng ứng dụng nặng, không build/test/inference khác, rồi:
+
+```bash
+nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu --format=csv > /tmp/i7-nvidia-pre.csv
+python3 tools/preflight_memory.py --output /tmp/i7-preflight.json --min-available-mib 5120
+```
+
+Chỉ chạy khi preflight in `"eligible": true` (exit 0); không đạt thì chờ hoặc ghi hoãn, không nới ngưỡng. Phép A — prefill (16 request, max1):
+
+```bash
+python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-tier-model-ab \
+  --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
+  --max-tokens 1 --lookahead off --model-dir <đường-dẫn-checkpoint>
+```
+
+Phép B — chat nhiều lượt/decode (32 request, max64), sau preflight mới:
+
+```bash
+python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-tier-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 \
+  --max-tokens 64 --lookahead off --model-dir <đường-dẫn-checkpoint>
+```
+
+Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng nếu text/usage lệch, GPU/dense không bật, tier off mà vẫn có VRAM traffic, hoặc watchdog. Lỗi thì giữ raw và báo, **không chạy lại để lấy số đẹp, không đổi ngưỡng/threads/cache**.
+
+**5. Đọc và lưu kết quả.** Trong `result.json` của mỗi phép: `off_faster`/`on_faster`, `pairs[].timers` (ratio on/off), `pairs[].work` (expert_vram_loads, expert_vram_upload_bytes/ms, expert_file_loads, decode_tokens_per_second ở phép B), `gpu_status_start` và `vram_experts_resident` trong status (số slot pool VRAM thực trên i7). Chuyển nguyên thư mục run từ `benchmarks/runs/i7/` vào `benchmarks/experiments/<ngày>-gpu-tier-i7/` cùng preflight/nvidia-smi, tạo `CHECKSUMS.sha256` (`sha256sum`), viết README ngắn theo mẫu hồ sơ i5, thêm vào mục lục benchmark và ghi một mục PROGRESS trên branch i7 (lệnh, commit, binary hash, checkpoint hash, hardware, pass/fail, giới hạn). Không sửa hồ sơ i5, không so số tuyệt đối với i5 (khác GPU/CPU/checkpoint).
+
+**6. Quyết định sau khi có kết quả (owner hai máy thống nhất):**
+
+| Kết quả i7 | Quyết định |
+| --- | --- |
+| `off_faster` ở cả A và B | Đổi mặc định MOE_GPU_EXPERT_TIER sang off cho cả hai máy (sửa engine/runner/test/tài liệu, kiểm đầy đủ) |
+| `on_faster` ở A và/hoặc B | Giữ mặc định on; ghi cấu hình riêng: i5 off, i7 on. Báo cáo nêu tầng VRAM có lợi phụ thuộc tỉ lệ pool/working set và PCIe |
+| Không nhất quán | Giữ mặc định on; i5 vẫn khuyến nghị off; ghi i7 chưa kết luận |
+
+**Cấu hình khuyến nghị hiện tại cho i5 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, CPU4, victim, batch prefill off. Áp dụng cho demo/vận hành i5 trong phạm vi đã đo; không áp sang i7 trước khi có kết quả trên.
+
 ## Bàn giao điều tra prefill/RAM (08/11/2026)
 
 Mục này giữ anchor cho các hồ sơ trước. Điều tra hiện đã có kết quả allocator nêu trên; hướng i5 tiếp theo ở PLAN. Nếu cần mở lại, câu hỏi phải cụ thể: indicator cuối request có tăng không, hay chủ yếu là allocator giữ vùng đã free? Không tự bật trim/đổi allocator/tăng cache hoặc cài profiler và lặp7B chỉ vì RSS chưa phẳng.
