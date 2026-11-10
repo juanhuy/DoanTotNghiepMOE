@@ -376,6 +376,68 @@ class GateUpModelTests(unittest.TestCase):
         import check_ram_stability as ram
         self.assertEqual(ram.parser().parse_args(["--testbed", "i5", "--gpu", "cpu", "--cache", "64"]).prefill_prefetch, "on")
 
+    def chat_record(self, mode):
+        prompts, _ = model.workload_prompts("mixed")
+        r = self.tier_record(mode)
+        base = r["turns"][0]
+        r["turns"], session = [], None
+        for i, prompt in enumerate(prompts):
+            turn = copy.deepcopy(base)
+            follow = i % 4 == 1
+            session = session if follow else f"s{i}"
+            turn["session_id"] = session
+            turn["messages"] = ([{"role": "user", "content": prompts[i - 1]}, {"role": "assistant", "content": "same"}]
+                                if follow else []) + [{"role": "user", "content": prompt}]
+            turn["response"]["usage"]["completion_tokens"] = 64
+            turn["response"]["metrics"].update(decode_ms=100.0, decode_tokens_per_second=6.0,
+                                               decode_expert_io_ms=1.0, cached_prompt_tokens=11 if follow else 0)
+            r["turns"].append(turn)
+        return r
+
+    def test_chat_tier_block_validation(self):
+        on, off = self.chat_record("on"), self.chat_record("off")
+        model.validate_block(on, "on", workload="mixed", gpu_tier=True)
+        model.validate_block(off, "off", workload="mixed", gpu_tier=True)
+        model.compare_blocks(on, off, gpu_tier=True)
+        self.assertEqual(model.measured_turns("mixed"), (4, 5, 6, 7))
+        for change in ("history", "session", "traffic", "tokens", "dense"):
+            r = self.chat_record("off")
+            if change == "history":
+                r["turns"][5]["messages"] = r["turns"][5]["messages"][-1:]
+            elif change == "session":
+                r["turns"][6]["session_id"] = r["turns"][5]["session_id"]
+            elif change == "traffic":
+                r["turns"][7]["response"]["metrics"]["expert_vram_loads"] = 1
+            elif change == "tokens":
+                r["turns"][3]["response"]["usage"]["completion_tokens"] = 65
+            else:
+                r["status_start"]["gpu"]["dense_offloaded"] = False
+            with self.assertRaises(ValueError):
+                model.validate_block(r, "off", workload="mixed", gpu_tier=True)
+
+    def test_chat_tier_summary_and_dry_run(self):
+        import io, contextlib, json
+        import run_benchmark as common
+        records = [self.chat_record(m) for m in ("on", "off", "off", "on")]
+        pairs = model.paired_summary(records, turns=model.measured_turns("mixed"), gpu_tier=True)
+        self.assertEqual(len(pairs), 8)
+        self.assertEqual(pairs[0]["work"]["decode_tokens_per_second"], {"on": 6.0, "off": 6.0})
+        base = ["--testbed", "i5", "--gpu", "auto", "--gpu-tier-model-ab", "--expert-batch-workload", "mixed",
+                "--threads", "4", "--cache", "64", "--context", "512", "--max-tokens", "64",
+                "--lookahead", "off", "--allow-dirty", "--dry-run"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(common.execute(common.parser().parse_args(base)), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual((protocol["total_requests"], protocol["measured_turns"], protocol["max_tokens"]),
+                         (32, [4, 5, 6, 7], 64))
+        max1 = list(base)
+        max1[max1.index("--max-tokens") + 1] = "1"
+        for bad in (max1,
+                    [x if x != "--gpu-tier-model-ab" else "--backend-model-ab" for x in base]):
+            with self.assertRaises(ValueError):
+                common.execute(common.parser().parse_args(bad))
+
 
 if __name__ == "__main__":
     unittest.main()

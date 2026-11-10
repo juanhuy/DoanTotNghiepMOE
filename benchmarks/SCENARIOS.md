@@ -541,3 +541,21 @@ python3 tools/run_benchmark.py --testbed i5 --gpu cpu --prefill-prefetch-model-a
 ```
 
 **Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-prefill-prefetch-i5/README.md) run20261110T074027.992428Z-prefetch-model-ffcb…, HEADed0f3b4 sạch, 16/16completed, text và5 work counter khớp. Rule: không nhất quán — TTFT on/off cặp0 1,240/1,172, cặp1 0,959/0,928. Preload128/request (13–15% lần nạp), RSS đỉnh +~100MiB. Không rerun.
+
+## Chat/decode với tầng VRAM expert bật/tắt S5 (gpu-tier-chat-v1, 10/11)
+
+Bước S5 của PLAN, bổ sung phần còn thiếu: tầng VRAM expert bật/tắt đã đo ở prefill/max1 ([P1](experiments/2026-11-10-gpu-expert-tier-i5/README.md)); câu hỏi bây giờ là decode max64 và chat nhiều lượt (follow-up có lịch sử/prefix cache, chuyển phiên) có cùng chiều không. Kết quả dùng để quyết định mặc định MOE_GPU_EXPERT_TIER và cung cấp token/s cho báo cáo.
+
+Chốt trước đo:
+- Binary 64048653… (engine không đổi so với S4; chỉ harness thêm chế độ chat). tools/check.py PASS 101 Python; Rust kiểm ở S4 trên cùng source engine.
+- Workload mixed v1 ×2 nhóm mỗi process: Mars, follow-up "What planet did I just ask about?" cùng phiên với lịch sử thật, Python phiên mới, Love phiên mới. Nhóm 1 (turn0–3) warmup thu riêng, nhóm 2 (turn4–7) đo. Reset chỉ trước turn0/keepcache. ABBA tier on→off→off→on, 4 process mới, `--gpu auto`, max64, CPU4/victim/cache64MiB-layer/context512, Gate–Up paired, batch off, lookahead off, FP32KV/KVreuse off/trace on/greedy. Tổng 32 request.
+- Dense GPU và expert CPU giống nhau hai phía, tầng VRAM chỉ đổi nơi lấy cùng trọng số → text/usage/finish/lịch sử phải khớp mọi turn; lệch thì dừng. Block off không có VRAM upload/load/resident.
+- Rule đối xứng trên 8 so sánh (4 prompt × 2 cặp): total_ms VÀ decode_ms on/off ≥1,05 ở cả 8 → tắt nhanh hơn; ≤1/1,05 ở cả 8 → bật nhanh hơn; còn lại → không nhất quán. Báo thêm TTFT, decode token/s (mẫu số = decode tokens theo engine), cached prompt tokens, expert I/O/VRAM. Một lượt, không rerun/bỏ mẫu.
+- Đổi mặc định MOE_GPU_EXPERT_TIER sang off chỉ khi rule "tắt nhanh hơn" ở đây VÀ ở phép prefill trước đều đạt; vẫn ghi phạm vi i5/cache64.
+- Guard5120/headroom1024/watchdog RSS5632/available1536/process swap128MiB; preflight 3 mẫu cách5s available≥5120MiB/pswpout không tăng; ghi nvidia-smi trước chạy.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 \
+  --max-tokens 64 --lookahead off --dry-run
+```

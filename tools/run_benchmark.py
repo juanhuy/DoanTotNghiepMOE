@@ -69,7 +69,7 @@ def parser():
                      help="GPU auto, VRAM expert tier on vs off ABBA on long-prefill, max-tokens1, batch off")
     cli.add_argument("--backend-model-ab", action="store_true",
                      help="cpu vs auto backend ABBA on long-prefill, max-tokens1, batch off; requires --gpu auto")
-    cli.add_argument("--expert-batch-workload", choices=("kv-switch", "long-prefill"), default="kv-switch",
+    cli.add_argument("--expert-batch-workload", choices=("kv-switch", "long-prefill", "mixed"), default="kv-switch",
                      help="--expert-batch-model-ab workload; kv-switch is the 09/11 Mars/Python protocol")
     cli.add_argument("--expert-batch-kernel", action="store_true",
                      help="INT8 multi-token expert prototype, resident real weights, CPU4")

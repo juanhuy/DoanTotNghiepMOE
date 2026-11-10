@@ -26,6 +26,7 @@ WORK_COUNTERS = ("expert_cache_hits", "expert_cache_misses", "expert_cache_evict
 BACKEND_COUNTERS = (*WORK_COUNTERS, "expert_io_ms", "expert_file_read_ms", "expert_vram_loads",
                     "expert_vram_upload_bytes", "expert_vram_download_bytes",
                     "expert_vram_upload_ms", "expert_vram_download_ms")
+DECODE_COUNTERS = ("decode_tokens_per_second", "decode_ms", "decode_expert_io_ms", "cached_prompt_tokens")
 PREFETCH_COUNTERS = ("prefill_prefetch_loads", "prefill_prefetch_bytes", "prefill_prefetch_load_errors",
                      "expert_io_ms", "expert_file_read_ms", "prefill_expert_io_ms")
 
@@ -46,9 +47,15 @@ def fixed_environment():
                 os.environ[key] = value
 
 
+# S5 chat/decode protocol: two mixed groups per process, group 1 warmup, group 2 measured.
+CHAT_GROUPS = 2
+
+
 def workload_prompts(workload):
     if workload == "kv-switch":
         return ("Where is Mars", "Explain a Python dictionary."), None
+    if workload == "mixed":
+        return tuple(ram.workload_spec("mixed")["prompts"]) * CHAT_GROUPS, None
     spec = ram.workload_spec(workload)
     if workload != "long-prefill":
         raise ValueError("expert batch model workload must be kv-switch or long-prefill")
@@ -56,7 +63,52 @@ def workload_prompts(workload):
 
 
 def measured_turns(workload):
+    if workload == "mixed":
+        group = len(ram.workload_spec("mixed")["prompts"])
+        return tuple(range(group * (CHAT_GROUPS - 1), group * CHAT_GROUPS))
     return (0, 1) if workload == "kv-switch" else tuple(ram.workload_spec(workload)["measured_turns"])
+
+
+def validate_chat_tier_block(record, mode):
+    """GPU auto, tier selector, mixed chat with follow-up history, max64 decode."""
+    prompts, _ = workload_prompts("mixed")
+    if record.get("status") != "completed" or record.get("watchdog_violations"):
+        raise ValueError("block failed or watchdog stopped; stop protocol")
+    turns = record.get("turns", [])
+    if len(turns) != len(prompts):
+        raise ValueError("expected two mixed groups")
+    enabled = mode == "on"
+    for status in [record["status_start"], *(t["status"] for t in turns)]:
+        gpu = status["gpu"]
+        if (status.get("gate_up_mode") != "paired" or status.get("expert_quantization") != "int8"
+                or status.get("kv_fp8") is not False or status.get("gpu_mode_at_load") != "auto"
+                or status.get("lookahead_enabled") is not False
+                or status.get("kv_buffer_reuse_enabled") is not False
+                or status.get("expert_batch_prefill_enabled") is not False
+                or status.get("session_dir") is not None
+                or status.get("gpu_expert_tier_enabled") is not enabled
+                or gpu["enabled"] is not True or gpu.get("dense_offloaded") is not True
+                or not gpu["allocated_vram_bytes"]):
+            raise ValueError("actual mode/precision/backend/tier mismatch")
+    for index, (turn, prompt) in enumerate(zip(turns, prompts)):
+        follow_up = index % 4 == 1
+        if turn["messages"][-1] != {"role": "user", "content": prompt}:
+            raise ValueError("workload drift")
+        if follow_up != (len(turn["messages"]) == 3) or follow_up != (turn["session_id"] == turns[index - 1]["session_id"]):
+            raise ValueError("follow-up session/history structure mismatch")
+        if not follow_up and index and turn["session_id"] in {t["session_id"] for t in turns[:index]}:
+            raise ValueError("expected a new session")
+        m = turn["response"]["metrics"]
+        if (m.get("gate_up_mode") != "paired" or m.get("prefill_expert_batch2_calls")
+                or m.get("prefill_expert_batch4_calls") or not 0 < turn["response"]["usage"]["completion_tokens"] <= 64):
+            raise ValueError("request mode or token limit mismatch")
+        if not enabled and (m.get("expert_vram_upload_bytes") or m.get("expert_vram_loads")
+                            or turn["status"]["gpu"].get("vram_experts_resident")):
+            raise ValueError("tier off but VRAM expert traffic observed")
+        trace = m.get("memory_trace")
+        if (not isinstance(trace, dict) or trace.get("outcome") != "completed"
+                or trace != turn["status"].get("last_memory_trace")):
+            raise ValueError("trace/status mismatch")
 
 
 def validate_block(record, mode, expert_batch=False, workload="kv-switch", backend=False, gpu_tier=False,
@@ -75,6 +127,8 @@ def validate_block(record, mode, expert_batch=False, workload="kv-switch", backe
                     or (loads <= 0 if enabled else loads != 0) or m.get("prefill_prefetch_load_errors")):
                 raise ValueError("prefill prefetch did not execute expected path")
         return
+    if gpu_tier and workload == "mixed":
+        return validate_chat_tier_block(record, mode)
     if gpu_tier:
         validate_block(record, "auto", workload=workload, backend=True)
         enabled = mode == "on"
@@ -171,7 +225,7 @@ def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tie
 
 def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu_tier=False, prefetch=False):
     summary = []
-    counters = PREFETCH_COUNTERS if prefetch else BACKEND_COUNTERS
+    counters = PREFETCH_COUNTERS if prefetch else BACKEND_COUNTERS + DECODE_COUNTERS if gpu_tier else BACKEND_COUNTERS
     if gpu_tier or prefetch:
         backend = True
     baseline_name,candidate_name = ("on","off") if (gpu_tier or prefetch) else ("cpu","auto") if backend else ("off","on") if expert_batch else ("separate","paired")
@@ -203,14 +257,17 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
     if sum((expert_batch, backend, gpu_tier, prefetch)) > 1:
         raise ValueError("choose one model A/B selector")
+    chat = gpu_tier and workload == "mixed"
+    if workload == "mixed" and not gpu_tier:
+        raise ValueError("mixed chat workload is only defined for --gpu-tier-model-ab")
     if backend or gpu_tier or prefetch:
-        if expert_batch or workload != "long-prefill":
-            raise ValueError("backend A/B uses long-prefill workload only, batch prefill off")
+        if expert_batch or (workload != "long-prefill" and not chat):
+            raise ValueError("backend A/B uses long-prefill workload only (GPU tier also mixed chat), batch prefill off")
     elif workload != "kv-switch" and not expert_batch:
         raise ValueError("--expert-batch-workload applies only to --expert-batch-model-ab")
     prompts, expected_tokens = workload_prompts(workload)
     measured = measured_turns(workload)
-    expected_max = 1 if (expert_batch or backend or gpu_tier or prefetch) else 64
+    expected_max = 64 if chat else 1 if (expert_batch or backend or gpu_tier or prefetch) else 64
     modes = ("on","off","off","on") if (gpu_tier or prefetch) else ("cpu","auto","auto","cpu") if backend else ("off","on","on","off") if expert_batch else MODES
     if ((args.gpu != ("auto" if (backend or gpu_tier) else "cpu")) or args.threads != 4 or args.cache != 64 or args.context != 512
             or args.max_tokens != expected_max or args.lookahead != "off" or args.http_session
@@ -303,7 +360,20 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
             record["prefetch_hurts"] = all(t >= 1.05 and f >= 1.05 for t, f in ratios)
             record["decision_rule"] = ("on/off TTFT and prefill ratio<=1/1.05 in all 4 => prefetch helps; >=1.05 in all 4 "
                                        "=> prefetch hurts; otherwise no consistent difference. Same work counters required")
-        if gpu_tier:
+        if chat:
+            record["gpu_status_start"] = {r["status_start"]["gpu_expert_tier_enabled"]: r["status_start"]["gpu"] for r in records}
+
+            def decode_ratio(p):
+                d = p["work"]["decode_ms"]
+                if any(type(v) not in (int, float) or not v > 0 for v in d.values()):
+                    raise ValueError("invalid decode timer")
+                return d["on"] / d["off"]
+            ratios = [(p["timers"]["total_ms"]["baseline_over_candidate"], decode_ratio(p)) for p in record["pairs"]]
+            record["off_faster"] = all(t >= 1.05 and d >= 1.05 for t, d in ratios)
+            record["on_faster"] = all(t <= 1 / 1.05 and d <= 1 / 1.05 for t, d in ratios)
+            record["decision_rule"] = ("chat max64: tier on/off total_ms and decode_ms ratio>=1.05 in all 8 => off faster; "
+                                       "<=1/1.05 in all 8 => on faster; otherwise no consistent difference. GPU dense both sides")
+        elif gpu_tier:
             record["gpu_status_start"] = {r["status_start"]["gpu_expert_tier_enabled"]: r["status_start"]["gpu"] for r in records}
             record["off_faster"] = all(
                 p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"] >= 1.05
