@@ -559,3 +559,5 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
   --expert-batch-workload mixed --threads 4 --cache 64 --context 512 \
   --max-tokens 64 --lookahead off --dry-run
 ```
+
+**Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-gpu-tier-chat-i5/README.md) run20261110T081514.310194Z-gpu-tier-model-55a1…, HEAD2cea0cd sạch, 32/32completed, text/usage/lịch sử khớp. Rule "tắt nhanh hơn" ĐẠT 8/8: total on/off1,390–1,874, decode1,404–1,952, TTFT1,011–1,504; decode tok/s trung vị on3,13/off5,53. Upload VRAM33182–40816MiB/request. Không rerun.
