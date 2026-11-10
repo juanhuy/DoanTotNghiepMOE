@@ -322,6 +322,60 @@ class GateUpModelTests(unittest.TestCase):
         import check_ram_stability as ram
         self.assertEqual(ram.parser().parse_args(["--testbed", "i5", "--gpu", "auto", "--cache", "64"]).gpu_expert_tier, "on")
 
+    def prefetch_record(self, mode):
+        r = self.long_record("off")
+        r["config"]["prefill_prefetch"] = mode
+        for status in [r["status_start"], *(t["status"] for t in r["turns"])]:
+            status["prefill_prefetch_enabled"] = mode == "on"
+        for t in r["turns"]:
+            t["response"]["metrics"].update(prefill_prefetch_enabled=mode == "on",
+                                           prefill_prefetch_loads=40 if mode == "on" else 0,
+                                           prefill_prefetch_bytes=4 if mode == "on" else 0,
+                                           prefill_prefetch_load_errors=0, attention_ms=5.0, lm_head_ms=2.0)
+        return r
+
+    def test_prefetch_block_validation_requires_same_work(self):
+        on, off = self.prefetch_record("on"), self.prefetch_record("off")
+        model.validate_block(on, "on", workload="long-prefill", prefetch=True)
+        model.validate_block(off, "off", workload="long-prefill", prefetch=True)
+        model.compare_blocks(on, off, prefetch=True)
+        off["turns"][2]["response"]["metrics"]["expert_file_loads"] += 1
+        with self.assertRaises(ValueError):
+            model.compare_blocks(on, off, prefetch=True)  # unlike backend/tier, work must match
+        for change in ("no_loads", "off_loads", "errors", "label"):
+            mode = "off" if change == "off_loads" else "on"
+            r = self.prefetch_record(mode)
+            m = r["turns"][3]["response"]["metrics"]
+            if change == "no_loads":
+                m["prefill_prefetch_loads"] = 0
+            elif change == "off_loads":
+                m["prefill_prefetch_loads"] = 1
+            elif change == "errors":
+                m["prefill_prefetch_load_errors"] = 1
+            else:
+                r["status_start"]["prefill_prefetch_enabled"] = mode != "on"
+            with self.assertRaises(ValueError):
+                model.validate_block(r, mode, workload="long-prefill", prefetch=True)
+
+    def test_prefetch_summary_and_dry_run(self):
+        import io, contextlib, json
+        import run_benchmark as common
+        records = [self.prefetch_record(m) for m in ("on", "off", "off", "on")]
+        pairs = model.paired_summary(records, turns=(2, 3), prefetch=True)
+        self.assertEqual(pairs[0]["work"]["prefill_prefetch_loads"], {"on": 40, "off": 0})
+        base = ["--testbed", "i5", "--gpu", "cpu", "--prefill-prefetch-model-ab", "--expert-batch-workload",
+                "long-prefill", "--threads", "4", "--cache", "64", "--context", "512", "--max-tokens", "1",
+                "--lookahead", "off", "--allow-dirty", "--dry-run"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(common.execute(common.parser().parse_args(base)), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual((protocol["kind"], protocol["modes"]), ("prefill_prefetch_model_ab", ["on", "off", "off", "on"]))
+        with self.assertRaises(ValueError):
+            common.execute(common.parser().parse_args([x if x != "cpu" else "auto" for x in base]))
+        import check_ram_stability as ram
+        self.assertEqual(ram.parser().parse_args(["--testbed", "i5", "--gpu", "cpu", "--cache", "64"]).prefill_prefetch, "on")
+
 
 if __name__ == "__main__":
     unittest.main()

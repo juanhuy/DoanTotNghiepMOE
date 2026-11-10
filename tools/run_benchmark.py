@@ -63,6 +63,8 @@ def parser():
                      help="Decode speculative next-layer prefetch; demand/prefill unchanged")
     cli.add_argument("--expert-batch-model-ab", action="store_true",
                      help="fixed CPU batched expert prefill ABBA, max-tokens1")
+    cli.add_argument("--prefill-prefetch-model-ab", action="store_true",
+                     help="CPU prefill preload on vs off (demand-only) ABBA on long-prefill, max-tokens1, batch off")
     cli.add_argument("--gpu-tier-model-ab", action="store_true",
                      help="GPU auto, VRAM expert tier on vs off ABBA on long-prefill, max-tokens1, batch off")
     cli.add_argument("--backend-model-ab", action="store_true",
@@ -272,8 +274,11 @@ def write_exclusive_json(path, data):
 
 
 def execute(args, root=WORKSPACE_DIR):
-    if sum(bool(getattr(args, key, False)) for key in ("gpu_tier_model_ab", "backend_model_ab", "expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
+    if sum(bool(getattr(args, key, False)) for key in ("prefill_prefetch_model_ab", "gpu_tier_model_ab", "backend_model_ab", "expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
         raise ValueError("choose one Gate-Up protocol")
+    if getattr(args, "prefill_prefetch_model_ab", False):
+        import benchmark_gate_up_model
+        return benchmark_gate_up_model.execute(args, root, prefetch=True)
     if getattr(args, "gpu_tier_model_ab", False):
         import benchmark_gate_up_model
         return benchmark_gate_up_model.execute(args, root, gpu_tier=True)

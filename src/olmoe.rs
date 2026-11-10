@@ -130,6 +130,8 @@ pub struct ExpertStatusReport {
     pub expert_batch_prefill_enabled: bool,
     /// MOE_GPU_EXPERT_TIER: VRAM expert storage tier requested at load (dense GPU unaffected).
     pub gpu_expert_tier_enabled: bool,
+    /// MOE_PREFILL_PREFETCH: router-known prefill preload (decode lookahead is separate).
+    pub prefill_prefetch_enabled: bool,
     pub gate_up_mode: &'static str,
     pub expert_quantization: &'static str,
     pub kv_buffer_reuse_enabled: bool,
@@ -409,6 +411,9 @@ struct RequestProfile {
     cache_evictions: u64,
     prefill_expert_batch2_calls: u64,
     prefill_expert_batch4_calls: u64,
+    prefill_prefetch_loads: u64,
+    prefill_prefetch_bytes: u64,
+    prefill_prefetch_load_errors: u64,
     bytes_read: u64,
 }
 
@@ -571,6 +576,7 @@ pub struct OlmoeModel {
     victim_expert_cache: bool,
     expert_batch_prefill_enabled: bool,
     gpu_expert_tier_enabled: bool,
+    prefill_prefetch_enabled: bool,
     gate_up_mode: GateUpMode,
     expert_quantization: &'static str,
     lookahead_enabled: bool,
@@ -658,6 +664,11 @@ impl OlmoeModel {
             Ok(value) => parse_gpu_expert_tier_mode(Some(&value))?,
             Err(std::env::VarError::NotPresent) => true,
             Err(_) => return Err(invalid("MOE_GPU_EXPERT_TIER must be on or off")),
+        };
+        let prefill_prefetch_enabled = match std::env::var("MOE_PREFILL_PREFETCH") {
+            Ok(value) => parse_prefill_prefetch_mode(Some(&value))?,
+            Err(std::env::VarError::NotPresent) => true,
+            Err(_) => return Err(invalid("MOE_PREFILL_PREFETCH must be on or off")),
         };
         let memory_trace_enabled = match std::env::var("MOE_MEMORY_TRACE") {
             Ok(value) => parse_memory_trace_mode(Some(&value))?,
@@ -997,6 +1008,7 @@ impl OlmoeModel {
             ram_guard,
             expert_batch_prefill_enabled,
             gpu_expert_tier_enabled,
+            prefill_prefetch_enabled,
             gate_up_mode,
             expert_quantization,
             dense_bytes: dense_budget - budget,
@@ -1181,6 +1193,7 @@ impl OlmoeModel {
         ExpertStatusReport {
             expert_batch_prefill_enabled: self.expert_batch_prefill_enabled,
             gpu_expert_tier_enabled: self.gpu_expert_tier_enabled,
+            prefill_prefetch_enabled: self.prefill_prefetch_enabled,
             gate_up_mode: self.gate_up_mode.as_str(),
             expert_quantization: self.expert_quantization,
             kv_buffer_reuse_enabled: self.kv_buffer_reuse_enabled,
@@ -1601,7 +1614,7 @@ impl OlmoeModel {
         gpu_dense: Option<&crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
         max_prefetch_experts: usize,
-    ) -> (HashMap<usize, Int8Expert>, Duration) {
+    ) -> (HashMap<usize, Int8Expert>, Duration, u64) {
         use rayon::prelude::*;
 
         let missing_ids: Vec<usize> = expert_ids
@@ -1622,7 +1635,7 @@ impl OlmoeModel {
             .collect();
 
         if missing_ids.len() < 2 {
-            return (HashMap::new(), Duration::ZERO);
+            return (HashMap::new(), Duration::ZERO, 0);
         }
 
         // Colibrì-inspired Sequential SSD locality: sắp xếp tăng dần theo EID để chuyển đổi
@@ -1642,17 +1655,24 @@ impl OlmoeModel {
         }
 
         let started = Instant::now();
-        let loaded: HashMap<usize, Int8Expert> = missing_ids
+        let results: Vec<(usize, io::Result<Int8Expert>)> = missing_ids
             .into_par_iter()
             .zip(buffers.into_par_iter())
-            .filter_map(|(eid, (w, s))| {
-                Int8Expert::load_reusing(index, layer_id, eid, d, intermediate_size, w, s)
-                    .ok()
-                    .map(|exp| (eid, exp))
+            .map(|(eid, (w, s))| {
+                (
+                    eid,
+                    Int8Expert::load_reusing(index, layer_id, eid, d, intermediate_size, w, s),
+                )
             })
             .collect();
         let elapsed = started.elapsed();
-        (loaded, elapsed)
+        // A failed preload is counted; the demand path retries and surfaces its own error.
+        let errors = results.iter().filter(|(_, r)| r.is_err()).count() as u64;
+        let loaded = results
+            .into_iter()
+            .filter_map(|(eid, r)| r.ok().map(|exp| (eid, exp)))
+            .collect();
+        (loaded, elapsed, errors)
     }
 
     /// Dự đoán danh sách expert của tầng tiếp theo (Lookahead Speculative Routing)
@@ -2772,6 +2792,7 @@ impl OlmoeModel {
         let hd = d / c.num_attention_heads;
         let kd = hd * c.num_key_value_heads;
         let batch_enabled = self.expert_batch_prefill_enabled && tokens.len() > 1;
+        let prefetch_enabled = self.prefill_prefetch_enabled;
         let mut batch2 = batch_enabled.then(|| BatchScratch::<2>::new(d, c.intermediate_size));
         let mut batch4 = batch_enabled.then(|| BatchScratch::<4>::new(d, c.intermediate_size));
         let batch_scratch_bytes = batch2.as_ref().map_or(0, BatchScratch::allocated_bytes)
@@ -3026,24 +3047,32 @@ impl OlmoeModel {
                 .filter_map(|(eid, uses)| if !uses.is_empty() { Some(eid) } else { None })
                 .collect();
 
-            let (mut preloaded, prefetch_io) = Self::prefetch_missing_experts(
-                layer_id,
-                &active_expert_ids,
-                d,
-                intermediate_size,
-                index,
-                layer,
-                gpu_dense.as_ref(),
-                gpu_tier.is_enabled(),
-                c.num_experts_per_tok,
-            );
-            profile.expert_io += prefetch_io;
-            profile.file_io += prefetch_io;
-            profile.file_loads += preloaded.len() as u64;
-            profile.file_bytes += preloaded
+            let (mut preloaded, prefetch_io, prefetch_errors) = if prefetch_enabled {
+                Self::prefetch_missing_experts(
+                    layer_id,
+                    &active_expert_ids,
+                    d,
+                    intermediate_size,
+                    index,
+                    layer,
+                    gpu_dense.as_ref(),
+                    gpu_tier.is_enabled(),
+                    c.num_experts_per_tok,
+                )
+            } else {
+                (HashMap::new(), Duration::ZERO, 0)
+            };
+            let preloaded_bytes = preloaded
                 .values()
                 .map(|e| e.resident_bytes() as u64)
                 .sum::<u64>();
+            profile.expert_io += prefetch_io;
+            profile.file_io += prefetch_io;
+            profile.file_loads += preloaded.len() as u64;
+            profile.file_bytes += preloaded_bytes;
+            profile.prefill_prefetch_loads += preloaded.len() as u64;
+            profile.prefill_prefetch_bytes += preloaded_bytes;
+            profile.prefill_prefetch_load_errors += prefetch_errors;
 
             for (expert_id, uses) in expert_uses.iter().enumerate().take(c.num_experts) {
                 if uses.is_empty() {
@@ -4050,6 +4079,10 @@ impl OlmoeModel {
                 expert_batch_prefill_enabled: self.expert_batch_prefill_enabled,
                 prefill_expert_batch2_calls: profile.prefill_expert_batch2_calls,
                 prefill_expert_batch4_calls: profile.prefill_expert_batch4_calls,
+                prefill_prefetch_enabled: self.prefill_prefetch_enabled,
+                prefill_prefetch_loads: profile.prefill_prefetch_loads,
+                prefill_prefetch_bytes: profile.prefill_prefetch_bytes,
+                prefill_prefetch_load_errors: profile.prefill_prefetch_load_errors,
                 gate_up_mode: self.gate_up_mode.as_str(),
                 kv_buffer_reuse: profile.kv_buffer_reuse.clone(),
                 memory_trace: None, // Final boundary is attached by generate_controlled.
@@ -4136,6 +4169,14 @@ fn gpu_expert_cache_budget(tier_enabled: bool, usable_vram: Option<usize>, dense
         usable_vram.map_or(0, |usable| usable.saturating_sub(dense))
     } else {
         0
+    }
+}
+
+fn parse_prefill_prefetch_mode(value: Option<&str>) -> io::Result<bool> {
+    match value {
+        None | Some("on") => Ok(true),
+        Some("off") => Ok(false),
+        _ => Err(invalid("MOE_PREFILL_PREFETCH must be on or off")),
     }
 }
 
@@ -4525,6 +4566,10 @@ mod memory_trace_tests {
         assert!(parse_gpu_expert_tier_mode(Some("on")).unwrap());
         assert!(!parse_gpu_expert_tier_mode(Some("off")).unwrap());
         assert!(parse_gpu_expert_tier_mode(Some("0")).is_err());
+        assert!(parse_prefill_prefetch_mode(None).unwrap());
+        assert!(parse_prefill_prefetch_mode(Some("on")).unwrap());
+        assert!(!parse_prefill_prefetch_mode(Some("off")).unwrap());
+        assert!(parse_prefill_prefetch_mode(Some("demand")).is_err());
         assert_eq!(gpu_expert_cache_budget(true, Some(3000), 1000), 2000);
         assert_eq!(gpu_expert_cache_budget(true, Some(500), 1000), 0);
         assert_eq!(gpu_expert_cache_budget(true, None, 1000), 0);
@@ -6148,7 +6193,7 @@ mod routing_and_topk_tests {
         assert_eq!(layer.recycled_bytes(), 512);
         layer.recycle((Vec::with_capacity(384), Vec::with_capacity(32)), 900);
         assert_eq!(layer.recycled_buffers.len(), 1);
-        let (prefetched, _) = OlmoeModel::prefetch_missing_experts(
+        let (prefetched, _, errors) = OlmoeModel::prefetch_missing_experts(
             0,
             &[0, 1, 2, 3],
             16,
@@ -6164,6 +6209,7 @@ mod routing_and_topk_tests {
             2,
             "do not allocate all missing experts at once"
         );
+        assert_eq!(errors, 0);
         assert!(
             prefetched
                 .values()
@@ -6171,6 +6217,86 @@ mod routing_and_topk_tests {
                 .sum::<usize>()
                 <= 1024
         );
+    }
+
+    #[test]
+    fn prefill_prefetch_off_matches_on_and_counts_only_preloads() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/olmoe")
+                .join(fixture);
+            // Small RAM cache so several routed experts miss in the same prefill layer.
+            let mut on = OlmoeModel::load(&directory, 900, 64, 10_000_000).unwrap();
+            let mut off = OlmoeModel::load(&directory, 900, 64, 10_000_000).unwrap();
+            on.set_gpu_enabled(false);
+            off.set_gpu_enabled(false);
+            off.prefill_prefetch_enabled = false;
+            let prompt = "[BOS]token3 token4 token6 token8 token3 token4 token6 token8 ";
+            let a = on.generate(prompt, 3).unwrap();
+            let b = off.generate(prompt, 3).unwrap();
+            assert_eq!(a.token_ids, b.token_ids, "{fixture}");
+            let (am, bm) = (a.metrics.unwrap(), b.metrics.unwrap());
+            assert!(am.prefill_prefetch_enabled && !bm.prefill_prefetch_enabled);
+            assert!(
+                am.prefill_prefetch_loads > 0,
+                "{fixture}: trigger needs preloads"
+            );
+            assert!(am.prefill_prefetch_loads <= am.expert_file_loads);
+            assert_eq!(bm.prefill_prefetch_loads, 0);
+            assert_eq!(bm.prefill_prefetch_bytes, 0);
+            assert_eq!(
+                am.prefill_prefetch_load_errors + bm.prefill_prefetch_load_errors,
+                0
+            );
+            // Preload changes when experts are read, not which or how many.
+            assert_eq!(am.expert_file_loads, bm.expert_file_loads, "{fixture}");
+            assert_eq!(am.expert_file_bytes_read, bm.expert_file_bytes_read);
+            assert_eq!(am.expert_cache_hits, bm.expert_cache_hits);
+            let payload = (on.config.hidden_size * on.config.intermediate_size * 3
+                + (on.config.intermediate_size * 2 + on.config.hidden_size) * 4)
+                as u64;
+            assert_eq!(
+                am.prefill_prefetch_bytes,
+                am.prefill_prefetch_loads * payload
+            );
+            for (model, expected) in [(&on, true), (&off, false)] {
+                assert_eq!(model.expert_status().prefill_prefetch_enabled, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn prefill_prefetch_errors_are_counted_not_returned_as_loaded() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let copy = tempfile::tempdir().unwrap();
+        for entry in fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            fs::copy(entry.path(), copy.path().join(entry.file_name())).unwrap();
+        }
+        let mut model = OlmoeModel::load(copy.path(), 900, 64, 10_000_000).unwrap();
+        model.set_gpu_enabled(false);
+        // Index is built; only the private copy's payload disappears afterwards.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(copy.path().join("model.safetensors"))
+            .unwrap()
+            .set_len(0)
+            .unwrap();
+        let layer = &mut model.layers[0];
+        let (loaded, _, errors) = OlmoeModel::prefetch_missing_experts(
+            0,
+            &[0, 1, 2, 3],
+            16,
+            8,
+            &model.index,
+            layer,
+            None,
+            false,
+            3,
+        );
+        assert!(loaded.is_empty());
+        assert_eq!(errors, 3);
     }
 
     #[test]

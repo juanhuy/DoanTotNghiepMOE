@@ -37,6 +37,13 @@ pub struct GenerationMetrics {
     /// Number of shared-weight kernel calls, not unique prompt tokens.
     pub prefill_expert_batch2_calls: u64,
     pub prefill_expert_batch4_calls: u64,
+    /// MOE_PREFILL_PREFETCH: parallel preload of router-selected missing experts per prefill layer.
+    pub prefill_prefetch_enabled: bool,
+    /// Subset of expert_file_loads/bytes loaded by the prefill preload, not by demand.
+    pub prefill_prefetch_loads: u64,
+    pub prefill_prefetch_bytes: u64,
+    /// Preload failures; the demand path then retries and reports its own error.
+    pub prefill_prefetch_load_errors: u64,
     pub gate_up_mode: &'static str,
     pub kv_buffer_reuse: KvBufferReuseMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]

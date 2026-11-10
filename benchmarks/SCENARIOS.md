@@ -522,3 +522,20 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
 ```
 
 **Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-gpu-expert-tier-i5/README.md) run20261110T070546.777634Z-gpu-tier-model-bc40…, HEAD4f319b7 sạch, 16/16completed, text khớp. Rule "tắt nhanh hơn" ĐẠT: TTFT on/off bakery1,446/1,211, library1,319/1,429; attention ~1; expert_compute on/off1,085–1,193. Warmup library cặp1 0,951. Mặc định on chưa đổi. Không rerun.
+
+## Prefetch prefill bật/tắt S4 (prefill-prefetch-long-v1, 10/11)
+
+Bước S4 của PLAN, cơ chế 1 (prefill nạp trước expert router đã chọn). Cơ chế 2 (decode lookahead) được kiểm bằng fixture và coverage hồi cứu từ raw S1, không đo hiệu năng vì gate gần như không mở (PROGRESS 10/11). Câu hỏi: preload song song có giảm TTFT/prefill so với demand-only không?
+
+Chốt trước đo:
+- Binary 64048653c5016318647985aaf44b3af845e301910ff3c10d0e15e2e9c3d46fcb thêm công tắc MOE_PREFILL_PREFETCH (mặc định on) và counter preload. Kiểm trước: python3 tools/check.py --rust --release --web PASS (Rust 136 tests/profile, 8 ignored, fmt/Clippy, 99 Python, 7 Node); fixture server on/off text và file loads khớp.
+- Workload long-prefill v1 (warmup turn0–1 thu riêng, đo turn2–3). ABBA on→off→off→on, 4 process mới, CPU (cấu hình baseline S1/S2): `--gpu cpu`, CPU4/victim/cache64MiB-layer/context512, Gate–Up paired, batch off, lookahead off, FP32KV/KVreuse off/trace on/greedy, max1.
+- Validator: on có prefill_prefetch_loads>0 mọi turn, off bằng 0, không lỗi preload. Text/usage/finish **và 5 work counter** (hits/misses/evictions/file loads/bytes) phải khớp giữa mọi block — prefetch chỉ đổi thời điểm nạp.
+- Rule đối xứng: on/off TTFT VÀ prefill ≤1/1,05 ở cả 4 → prefetch có lợi; ≥1,05 ở cả 4 → prefetch có hại; còn lại → không nhất quán. Một lượt, không rerun/bỏ mẫu.
+- Guard5120/headroom1024/watchdog RSS5632/available1536/process swap128MiB; preflight 3 mẫu cách5s available≥5120MiB/pswpout không tăng.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu cpu --prefill-prefetch-model-ab \
+  --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
+  --max-tokens 1 --lookahead off --dry-run
+```

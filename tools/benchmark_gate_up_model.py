@@ -26,6 +26,8 @@ WORK_COUNTERS = ("expert_cache_hits", "expert_cache_misses", "expert_cache_evict
 BACKEND_COUNTERS = (*WORK_COUNTERS, "expert_io_ms", "expert_file_read_ms", "expert_vram_loads",
                     "expert_vram_upload_bytes", "expert_vram_download_bytes",
                     "expert_vram_upload_ms", "expert_vram_download_ms")
+PREFETCH_COUNTERS = ("prefill_prefetch_loads", "prefill_prefetch_bytes", "prefill_prefetch_load_errors",
+                     "expert_io_ms", "expert_file_read_ms", "prefill_expert_io_ms")
 
 
 @contextlib.contextmanager
@@ -57,7 +59,22 @@ def measured_turns(workload):
     return (0, 1) if workload == "kv-switch" else tuple(ram.workload_spec(workload)["measured_turns"])
 
 
-def validate_block(record, mode, expert_batch=False, workload="kv-switch", backend=False, gpu_tier=False):
+def validate_block(record, mode, expert_batch=False, workload="kv-switch", backend=False, gpu_tier=False,
+                   prefetch=False):
+    if prefetch:
+        # CPU, batch off, max1 path shared with the batch protocol; then the prefetch selector.
+        validate_block(record, "off", expert_batch=True, workload=workload)
+        enabled = mode == "on"
+        for status in [record["status_start"], *(t["status"] for t in record["turns"])]:
+            if status.get("prefill_prefetch_enabled") is not enabled:
+                raise ValueError("prefill prefetch actual mode mismatch")
+        for turn in record["turns"]:
+            m = turn["response"]["metrics"]
+            loads = m.get("prefill_prefetch_loads")
+            if (m.get("prefill_prefetch_enabled") is not enabled or type(loads) is not int
+                    or (loads <= 0 if enabled else loads != 0) or m.get("prefill_prefetch_load_errors")):
+                raise ValueError("prefill prefetch did not execute expected path")
+        return
     if gpu_tier:
         validate_block(record, "auto", workload=workload, backend=True)
         enabled = mode == "on"
@@ -133,11 +150,11 @@ def validate_block(record, mode, expert_batch=False, workload="kv-switch", backe
             raise ValueError("trace/status mismatch")
 
 
-def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tier=False):
+def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tier=False, prefetch=False):
     for key in ("source_sha256", "binary_sha256", "checkpoint"):
         if reference[key] != actual[key]:
             raise ValueError("source/binary/checkpoint drift")
-    ignore = (("gpu_expert_tier" if gpu_tier else "gpu" if backend else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
+    ignore = (("prefill_prefetch" if prefetch else "gpu_expert_tier" if gpu_tier else "gpu" if backend else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
     if ({k: v for k, v in reference["config"].items() if k not in ignore}
             != {k: v for k, v in actual["config"].items() if k not in ignore}):
         raise ValueError("config drift")
@@ -152,11 +169,12 @@ def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tie
                 raise ValueError("expert workload changed")
 
 
-def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu_tier=False):
+def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu_tier=False, prefetch=False):
     summary = []
-    if gpu_tier:
+    counters = PREFETCH_COUNTERS if prefetch else BACKEND_COUNTERS
+    if gpu_tier or prefetch:
         backend = True
-    baseline_name,candidate_name = ("on","off") if gpu_tier else ("cpu","auto") if backend else ("off","on") if expert_batch else ("separate","paired")
+    baseline_name,candidate_name = ("on","off") if (gpu_tier or prefetch) else ("cpu","auto") if backend else ("off","on") if expert_batch else ("separate","paired")
     keys = ("total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms","attention_ms","lm_head_ms") if backend else (
         "total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms") if expert_batch else (
         "total_ms","prefill_ms","decode_ms","time_to_first_token_ms","expert_compute_ms")
@@ -176,24 +194,24 @@ def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu
             if backend:
                 entry["work"] = {key: {baseline_name: a["response"]["metrics"].get(key),
                                        candidate_name: b["response"]["metrics"].get(key)}
-                                 for key in BACKEND_COUNTERS}
+                                 for key in counters}
             summary.append(entry)
     return summary
 
 
-def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
+def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefetch=False):
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
-    if gpu_tier and backend:
-        raise ValueError("choose backend or GPU tier A/B")
-    if backend or gpu_tier:
+    if sum((expert_batch, backend, gpu_tier, prefetch)) > 1:
+        raise ValueError("choose one model A/B selector")
+    if backend or gpu_tier or prefetch:
         if expert_batch or workload != "long-prefill":
             raise ValueError("backend A/B uses long-prefill workload only, batch prefill off")
     elif workload != "kv-switch" and not expert_batch:
         raise ValueError("--expert-batch-workload applies only to --expert-batch-model-ab")
     prompts, expected_tokens = workload_prompts(workload)
     measured = measured_turns(workload)
-    expected_max = 1 if (expert_batch or backend or gpu_tier) else 64
-    modes = ("on","off","off","on") if gpu_tier else ("cpu","auto","auto","cpu") if backend else ("off","on","on","off") if expert_batch else MODES
+    expected_max = 1 if (expert_batch or backend or gpu_tier or prefetch) else 64
+    modes = ("on","off","off","on") if (gpu_tier or prefetch) else ("cpu","auto","auto","cpu") if backend else ("off","on","on","off") if expert_batch else MODES
     if ((args.gpu != ("auto" if (backend or gpu_tier) else "cpu")) or args.threads != 4 or args.cache != 64 or args.context != 512
             or args.max_tokens != expected_max or args.lookahead != "off" or args.http_session
             or args.suite or args.case or args.compare_lookahead or args.compare_cache_policies):
@@ -207,7 +225,7 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
     dirty = bool(common.checked_text(["git", "status", "--porcelain", "--untracked-files=normal"], root, env))
     if dirty and not args.allow_dirty:
         raise ValueError("dirty tree; --allow-dirty is exploratory only")
-    protocol = {"kind": "gpu_tier_model_ab" if gpu_tier else "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
+    protocol = {"kind": "prefill_prefetch_model_ab" if prefetch else "gpu_tier_model_ab" if gpu_tier else "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
                 "git_dirty": dirty, "modes": modes, "model_dir": str(model),
                 "requests_per_block": len(prompts), "total_requests": 4 * len(prompts), "threads": 4,
                 "cache_mib_per_layer": 64, "context": 512, "max_tokens": expected_max,
@@ -225,7 +243,7 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
         print(json.dumps(protocol, indent=2))
         return 0
     now = datetime.datetime.now(datetime.timezone.utc)
-    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
+    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-prefetch-model-" if prefetch else "-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
     directory = common.absolute(args.output_root, root) / args.testbed / run_id
     directory.mkdir(parents=True, exist_ok=False)
     record = {**protocol, "run_id": run_id, "status": "failed", "blocks": []}
@@ -239,7 +257,7 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
                 gpu_arg = "auto" if gpu_tier else mode if backend else "cpu"
                 argv = ["--testbed", args.testbed, "--gpu", gpu_arg, "--lookahead", "off",
                         "--memory-trace", "on", "--kv-buffer-reuse", "off",
-                        "--gate-up-mode", "paired" if (expert_batch or backend or gpu_tier) else mode,
+                        "--gate-up-mode", "paired" if (expert_batch or backend or gpu_tier or prefetch) else mode,
                         "--workload", workload, "--cache", "64", "--context", "512",
                         "--cycles", str(len(prompts)), "--max-tokens", str(expected_max), "--keep-cache", "--threads", "4",
                         "--model-dir", str(model), "--output-root", str(block_root),
@@ -247,8 +265,10 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
                         "--stop-rss-mib", "5632", "--min-available-mib", "1536", "--stop-swap-mib", "128"]
                 if expert_batch:
                     argv.extend(["--expert-batch-prefill", mode])
-                if backend or gpu_tier:
+                if backend or gpu_tier or prefetch:
                     argv.extend(["--expert-batch-prefill", "off"])
+                if prefetch:
+                    argv.extend(["--prefill-prefetch", mode])
                 if gpu_tier:
                     argv.extend(["--gpu-expert-tier", mode])
                 if args.allow_dirty:
@@ -263,18 +283,26 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
                 if code:
                     raise ValueError("block failed; no further blocks")
                 validate_block(current, mode, expert_batch=expert_batch, workload=workload, backend=backend,
-                               gpu_tier=gpu_tier)
+                               gpu_tier=gpu_tier, prefetch=prefetch)
                 if records:
-                    compare_blocks(records[0], current, expert_batch=expert_batch, backend=backend, gpu_tier=gpu_tier)
+                    compare_blocks(records[0], current, expert_batch=expert_batch, backend=backend, gpu_tier=gpu_tier,
+                                   prefetch=prefetch)
                 records.append(current)
                 if kernel.source_files(root) != before:
                     raise ValueError("source changed during protocol")
         record["pairs"] = paired_summary(records, expert_batch=expert_batch, turns=measured, backend=backend,
-                                         gpu_tier=gpu_tier)
+                                         gpu_tier=gpu_tier, prefetch=prefetch)
         if record["warmup_turns"]:
             record["warmup_pairs_excluded"] = paired_summary(records, expert_batch=expert_batch,
                                                              turns=tuple(record["warmup_turns"]), backend=backend,
-                                                             gpu_tier=gpu_tier)
+                                                             gpu_tier=gpu_tier, prefetch=prefetch)
+        if prefetch:
+            ratios = [(p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"],
+                       p["timers"]["prefill_ms"]["baseline_over_candidate"]) for p in record["pairs"]]
+            record["prefetch_helps"] = all(t <= 1 / 1.05 and f <= 1 / 1.05 for t, f in ratios)
+            record["prefetch_hurts"] = all(t >= 1.05 and f >= 1.05 for t, f in ratios)
+            record["decision_rule"] = ("on/off TTFT and prefill ratio<=1/1.05 in all 4 => prefetch helps; >=1.05 in all 4 "
+                                       "=> prefetch hurts; otherwise no consistent difference. Same work counters required")
         if gpu_tier:
             record["gpu_status_start"] = {r["status_start"]["gpu_expert_tier_enabled"]: r["status_start"]["gpu"] for r in records}
             record["off_faster"] = all(
