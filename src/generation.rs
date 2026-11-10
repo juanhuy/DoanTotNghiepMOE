@@ -33,6 +33,11 @@ pub struct LookaheadMetrics {
 
 #[derive(Debug, Default, Serialize)]
 pub struct GenerationMetrics {
+    pub expert_batch_prefill_enabled: bool,
+    /// Number of shared-weight kernel calls, not unique prompt tokens.
+    pub prefill_expert_batch2_calls: u64,
+    pub prefill_expert_batch4_calls: u64,
+    pub gate_up_mode: &'static str,
     pub kv_buffer_reuse: KvBufferReuseMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_trace: Option<RequestMemoryTrace>,

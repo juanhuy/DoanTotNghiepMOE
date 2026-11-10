@@ -9,7 +9,7 @@ use crate::{
         RequestMemoryTrace,
     },
     gpu::GpuMode,
-    int8_expert::{ExpertScratch, Int8Expert},
+    int8_expert::{batch_prototype::BatchScratch, ExpertScratch, GateUpMode, Int8Expert},
     quantization::quantize_row_fp8,
     safetensors::TensorIndex,
 };
@@ -127,6 +127,9 @@ pub struct LayerExpertStatus {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ExpertStatusReport {
+    pub expert_batch_prefill_enabled: bool,
+    pub gate_up_mode: &'static str,
+    pub expert_quantization: &'static str,
     pub kv_buffer_reuse_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_kv_buffer_reuse: Option<KvBufferReuseMetrics>,
@@ -402,6 +405,8 @@ struct RequestProfile {
     cache_hits: u64,
     cache_misses: u64,
     cache_evictions: u64,
+    prefill_expert_batch2_calls: u64,
+    prefill_expert_batch4_calls: u64,
     bytes_read: u64,
 }
 
@@ -562,6 +567,9 @@ pub struct OlmoeModel {
     session_clock: u64,
     session_cache_bytes: usize,
     victim_expert_cache: bool,
+    expert_batch_prefill_enabled: bool,
+    gate_up_mode: GateUpMode,
+    expert_quantization: &'static str,
     lookahead_enabled: bool,
     gpu_mode_at_load: GpuMode,
     gpu_tier: crate::gpu::GpuTierManager,
@@ -685,6 +693,33 @@ impl OlmoeModel {
         let active_set_bytes = expert_bytes
             .checked_mul(config.num_experts_per_tok)
             .ok_or_else(|| invalid("active expert set size overflow"))?;
+        let gate_up_mode = GateUpMode::from_environment()?;
+        let expert_dtypes: Vec<_> = index
+            .tensors()
+            .iter()
+            .filter(|(name, _)| name.ends_with(".merged_weight"))
+            .map(|(_, tensor)| tensor.dtype)
+            .collect();
+        let expert_quantization = if expert_dtypes
+            .iter()
+            .all(|d| *d == crate::safetensors::DType::I8)
+        {
+            "int8"
+        } else if expert_dtypes
+            .iter()
+            .all(|d| *d == crate::safetensors::DType::U8)
+        {
+            "int4"
+        } else {
+            "mixed"
+        };
+        let expert_batch_prefill_enabled = match std::env::var("MOE_EXPERT_BATCH_PREFILL") {
+            Ok(value) => {
+                parse_expert_batch_prefill_mode(Some(&value), gpu_mode, expert_quantization)?
+            }
+            Err(std::env::VarError::NotPresent) => false,
+            Err(_) => return Err(invalid("invalid MOE_EXPERT_BATCH_PREFILL")),
+        };
         let ram_guard = crate::ram::RamGuard::from_environment()?;
         let dense_planned = index
             .tensors()
@@ -947,6 +982,9 @@ impl OlmoeModel {
             strict_session_prefix_reference: false,
             config,
             ram_guard,
+            expert_batch_prefill_enabled,
+            gate_up_mode,
+            expert_quantization,
             dense_bytes: dense_budget - budget,
             index,
             embedding,
@@ -1127,6 +1165,9 @@ impl OlmoeModel {
             system_telemetry.gpu_vram_used_mib = Some(gpu_status.allocated_vram_bytes / 1048576);
         }
         ExpertStatusReport {
+            expert_batch_prefill_enabled: self.expert_batch_prefill_enabled,
+            gate_up_mode: self.gate_up_mode.as_str(),
+            expert_quantization: self.expert_quantization,
             kv_buffer_reuse_enabled: self.kv_buffer_reuse_enabled,
             last_kv_buffer_reuse: self.last_kv_buffer_reuse.clone(),
             memory_trace_enabled: self.memory_trace_enabled,
@@ -2715,6 +2756,11 @@ impl OlmoeModel {
         let d = c.hidden_size;
         let hd = d / c.num_attention_heads;
         let kd = hd * c.num_key_value_heads;
+        let batch_enabled = self.expert_batch_prefill_enabled && tokens.len() > 1;
+        let mut batch2 = batch_enabled.then(|| BatchScratch::<2>::new(d, c.intermediate_size));
+        let mut batch4 = batch_enabled.then(|| BatchScratch::<4>::new(d, c.intermediate_size));
+        let batch_scratch_bytes = batch2.as_ref().map_or(0, BatchScratch::allocated_bytes)
+            + batch4.as_ref().map_or(0, BatchScratch::allocated_bytes);
         let mut batch = vec![0.0; tokens.len() * d];
         for (&token, output) in tokens.iter().zip(batch.chunks_exact_mut(d)) {
             if token >= c.vocab_size {
@@ -2772,7 +2818,8 @@ impl OlmoeModel {
                 + expert_uses
                     .iter()
                     .map(|v| v.capacity() * std::mem::size_of::<(usize, usize, f32)>())
-                    .sum::<usize>();
+                    .sum::<usize>()
+                + batch_scratch_bytes;
             self.record_memory(
                 profile,
                 "prefill_buffers_live",
@@ -3015,7 +3062,22 @@ impl OlmoeModel {
                 // Dispatch tokens sharing this expert together. Each task owns a scratch
                 // slot and uses the serial kernel, avoiding nested row-level fork/joins.
                 // Copy results back in route order before the deterministic Top-K reduction.
-                for routes in uses.chunks(dispatch_width) {
+                let mut use_offset = 0;
+                while use_offset < uses.len() {
+                    let remaining = uses.len() - use_offset;
+                    let width = if batch_enabled {
+                        if remaining >= 4 {
+                            4
+                        } else if remaining >= 2 {
+                            2
+                        } else {
+                            1
+                        }
+                    } else {
+                        dispatch_width.min(remaining)
+                    };
+                    let routes = &uses[use_offset..use_offset + width];
+                    use_offset += width;
                     check()?;
                     let expert_started = Instant::now();
                     if routes.len() == 1 {
@@ -3031,6 +3093,37 @@ impl OlmoeModel {
                             .zip(result)
                         {
                             *target = weight * value;
+                        }
+                    } else if batch_enabled {
+                        let outputs: &[Vec<f32>] = if routes.len() == 2 {
+                            let buffer = batch2.as_mut().expect("batch2 prepared");
+                            let inputs = std::array::from_fn(|t| {
+                                let token = routes[t].0;
+                                &hidden_batch[token * d..(token + 1) * d]
+                            });
+                            expert.forward_batch_prototype(inputs, buffer)?;
+                            profile.prefill_expert_batch2_calls += 1;
+                            &buffer.outputs
+                        } else {
+                            let buffer = batch4.as_mut().expect("batch4 prepared");
+                            let inputs = std::array::from_fn(|t| {
+                                let token = routes[t].0;
+                                &hidden_batch[token * d..(token + 1) * d]
+                            });
+                            expert.forward_batch_prototype(inputs, buffer)?;
+                            profile.prefill_expert_batch4_calls += 1;
+                            &buffer.outputs
+                        };
+                        profile.expert_compute += expert_started.elapsed();
+                        check()?;
+                        for (&(token, slot, weight), output) in routes.iter().zip(outputs) {
+                            let contribution = (token * c.num_experts_per_tok + slot) * d;
+                            for (target, value) in contributions[contribution..contribution + d]
+                                .iter_mut()
+                                .zip(output)
+                            {
+                                *target = weight * value;
+                            }
                         }
                     } else {
                         scratch.expert_scratches[..routes.len()]
@@ -3117,6 +3210,10 @@ impl OlmoeModel {
             .collect();
         let mut profile = RequestProfile::default();
         let mut scratch = StepScratch::new(&self.config);
+        scratch.expert.gate_up_mode = self.gate_up_mode;
+        for expert_scratch in &mut scratch.expert_scratches {
+            expert_scratch.gate_up_mode = self.gate_up_mode;
+        }
         let mut logits = Vec::with_capacity(tokens.len());
         for &token in tokens {
             self.step(token, &mut kv, &mut profile, &mut scratch, &|| Ok(()))?;
@@ -3690,6 +3787,11 @@ impl OlmoeModel {
                     .saturating_mul(self.layers.len()),
             )
             .saturating_add(reserve)
+            .saturating_add(if self.expert_batch_prefill_enabled {
+                (self.config.hidden_size + self.config.intermediate_size) * 48
+            } else {
+                0
+            })
             .saturating_add(64 * 1024 * 1024);
         check()?;
         guard.check(request_reserve)?;
@@ -3760,6 +3862,10 @@ impl OlmoeModel {
             );
         }
         let mut scratch = StepScratch::new(&self.config);
+        scratch.expert.gate_up_mode = self.gate_up_mode;
+        for expert_scratch in &mut scratch.expert_scratches {
+            expert_scratch.gate_up_mode = self.gate_up_mode;
+        }
         let prefill_started = Instant::now();
         self.prefill(
             &tokens[cached_prompt_tokens..],
@@ -3926,6 +4032,10 @@ impl OlmoeModel {
             prompt_tokens: tokens.len(),
             finish_reason,
             metrics: Some(GenerationMetrics {
+                expert_batch_prefill_enabled: self.expert_batch_prefill_enabled,
+                prefill_expert_batch2_calls: profile.prefill_expert_batch2_calls,
+                prefill_expert_batch4_calls: profile.prefill_expert_batch4_calls,
+                gate_up_mode: self.gate_up_mode.as_str(),
                 kv_buffer_reuse: profile.kv_buffer_reuse.clone(),
                 memory_trace: None, // Final boundary is attached by generate_controlled.
                 lookahead_enabled: self.lookahead_enabled,
@@ -3972,6 +4082,21 @@ fn kv_capacity_bytes(kv: &[Kv], container_bytes: usize) -> usize {
     kv.iter().fold(container_bytes, |total, cache| {
         total.saturating_add(cache.allocated_bytes())
     })
+}
+
+fn parse_expert_batch_prefill_mode(
+    value: Option<&str>,
+    gpu: GpuMode,
+    precision: &str,
+) -> io::Result<bool> {
+    match value {
+        None | Some("off") => Ok(false),
+        Some("on") if gpu == GpuMode::Cpu && precision == "int8" => Ok(true),
+        Some("on") => Err(invalid(
+            "expert batch prefill requires explicit CPU mode and INT8",
+        )),
+        _ => Err(invalid("MOE_EXPERT_BATCH_PREFILL must be on or off")),
+    }
 }
 
 fn parse_memory_trace_mode(value: Option<&str>) -> io::Result<bool> {
@@ -4517,6 +4642,155 @@ mod memory_trace_tests {
         let result = traced.take_evicted_kv(&[3], "b", kd, 3, &mut reuse);
         assert!(result.is_none());
         assert!(traced.sessions.contains_key("a"));
+    }
+
+    #[test]
+    fn expert_batch_prefill_parser_restricts_precision_and_backend() {
+        assert!(!parse_expert_batch_prefill_mode(None, GpuMode::Cpu, "int8").unwrap());
+        assert!(!parse_expert_batch_prefill_mode(Some("off"), GpuMode::Auto, "int4").unwrap());
+        assert!(parse_expert_batch_prefill_mode(Some("on"), GpuMode::Cpu, "int8").unwrap());
+        for (value, gpu, quant) in [
+            ("auto", GpuMode::Cpu, "int8"),
+            ("on", GpuMode::Auto, "int8"),
+            ("on", GpuMode::Cpu, "int4"),
+        ] {
+            assert!(parse_expert_batch_prefill_mode(Some(value), gpu, quant).is_err());
+        }
+    }
+
+    #[test]
+    fn expert_batch_prefill_matches_tokenwise_logits_across_route_tails() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            for length in [1, 2, 3, 4, 5, 7, 9] {
+                let mut baseline = model(fixture);
+                let mut candidate = model(fixture);
+                candidate.expert_batch_prefill_enabled = true;
+                let tokens: Vec<_> = (0..length).map(|i| [0, 3, 4, 6][i % 4]).collect();
+                let expected = baseline.logits(&tokens).unwrap().pop().unwrap();
+                let mut kv: Vec<_> = (0..candidate.layers.len()).map(|_| Kv::default()).collect();
+                let mut profile = RequestProfile::default();
+                let mut scratch = StepScratch::new(&candidate.config);
+                candidate
+                    .prefill(&tokens, &mut kv, &mut profile, &mut scratch, &|| Ok(()))
+                    .unwrap();
+                for (a, b) in scratch.logits.iter().zip(expected) {
+                    assert!(
+                        (a - b).abs() < 2e-5,
+                        "{fixture} length={length}: {a} vs {b}"
+                    );
+                }
+                if length >= 7 {
+                    assert!(profile.prefill_expert_batch4_calls > 0);
+                }
+                let kd = candidate.config.hidden_size / candidate.config.num_attention_heads
+                    * candidate.config.num_key_value_heads;
+                assert!(kv.iter().all(|k| k.positions(kd) == length));
+            }
+        }
+    }
+
+    #[test]
+    fn expert_batch_prefill_preserves_sessions_and_accounts_local_buffers() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut baseline = model(fixture);
+            let mut candidate = model(fixture);
+            candidate.expert_batch_prefill_enabled = true;
+            let extra = (candidate.config.hidden_size + candidate.config.intermediate_size) * 48;
+            let prompt = "[BOS]token3 token4 token6 token3 token4 token6 token3 token4 token6 ";
+            for (index, (text, id)) in [
+                (prompt, "a"),
+                (prompt, "a"),
+                ("[BOS]token8 token3 token4 ", "b"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let a = baseline
+                    .generate_controlled(text, 3, Some(id), &|| Ok(()), || Ok(()), None)
+                    .unwrap();
+                let b = candidate
+                    .generate_controlled(text, 3, Some(id), &|| Ok(()), || Ok(()), None)
+                    .unwrap();
+                assert_eq!(a.token_ids, b.token_ids);
+                assert_eq!(a.finish_reason, b.finish_reason);
+                let am = a.metrics.unwrap();
+                let bm = b.metrics.unwrap();
+                assert_eq!(am.cached_prompt_tokens, bm.cached_prompt_tokens);
+                assert_eq!(am.expert_file_loads, bm.expert_file_loads);
+                assert!(bm.expert_batch_prefill_enabled);
+                assert_eq!(
+                    am.prefill_expert_batch2_calls + am.prefill_expert_batch4_calls,
+                    0
+                );
+                let at = am.memory_trace.unwrap();
+                let bt = bm.memory_trace.unwrap();
+                assert_eq!(at.samples.len(), bt.samples.len());
+                if index == 0 {
+                    assert!(bm.prefill_expert_batch4_calls > 0);
+                    assert_eq!(
+                        stage(&bt, "prefill_buffers_live").prefill_capacity_bytes,
+                        stage(&at, "prefill_buffers_live").prefill_capacity_bytes + extra
+                    );
+                }
+                assert_eq!(stage(&bt, "after_prefill").prefill_capacity_bytes, 0);
+            }
+            let failure = candidate.generate_controlled(
+                prompt,
+                3,
+                Some("cancel"),
+                &|| Err(io::Error::new(io::ErrorKind::Interrupted, "cancel")),
+                || Ok(()),
+                None,
+            );
+            assert!(failure.is_err());
+            assert!(candidate.generate(prompt, 3).is_ok());
+        }
+    }
+
+    #[test]
+    fn gate_up_model_modes_preserve_logits_generation_and_prefix_sessions() {
+        for fixture in ["unnormalized-mha", "normalized-gqa"] {
+            let mut paired = model(fixture);
+            let mut separate = model(fixture);
+            separate.gate_up_mode = GateUpMode::Separate;
+            let tokens = [0, 3, 4, 6];
+            let a = paired.logits(&tokens).unwrap();
+            let b = separate.logits(&tokens).unwrap();
+            for (a, b) in a.iter().flatten().zip(b.iter().flatten()) {
+                assert!((a - b).abs() < 2e-5);
+            }
+            paired.reset_cache();
+            separate.reset_cache();
+            for (prompt, id) in [
+                ("[BOS]token3 token4 ", "a"),
+                ("[BOS]token3 token4 token6 ", "a"),
+                ("[BOS]token8 ", "b"),
+            ] {
+                let a = paired
+                    .generate_controlled(prompt, 3, Some(id), &|| Ok(()), || Ok(()), None)
+                    .unwrap();
+                let b = separate
+                    .generate_controlled(prompt, 3, Some(id), &|| Ok(()), || Ok(()), None)
+                    .unwrap();
+                assert_eq!(a.token_ids, b.token_ids);
+                assert_eq!(a.finish_reason, b.finish_reason);
+                let ma = a.metrics.unwrap();
+                let mb = b.metrics.unwrap();
+                assert_eq!(ma.gate_up_mode, "paired");
+                assert_eq!(mb.gate_up_mode, "separate");
+                assert_eq!(ma.cached_prompt_tokens, mb.cached_prompt_tokens);
+                assert_eq!(paired.expert_status().expert_quantization, "int8");
+                assert_eq!(separate.expert_status().gate_up_mode, "separate");
+            }
+        }
+        assert_eq!(
+            "separate".parse::<GateUpMode>().unwrap(),
+            GateUpMode::Separate
+        );
+        assert_eq!("paired".parse::<GateUpMode>().unwrap(), GateUpMode::Paired);
+        for value in ["", "auto", "on"] {
+            assert!(value.parse::<GateUpMode>().is_err());
+        }
     }
 
     fn totals(trace: &RequestMemoryTrace) {

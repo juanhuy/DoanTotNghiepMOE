@@ -61,6 +61,16 @@ def parser():
                      help="HTTP-only: alternate inclusive/victim within one loaded server")
     cli.add_argument("--lookahead", choices=("on", "off"), default="on",
                      help="Decode speculative next-layer prefetch; demand/prefill unchanged")
+    cli.add_argument("--expert-batch-model-ab", action="store_true",
+                     help="fixed CPU batched expert prefill ABBA, max-tokens1")
+    cli.add_argument("--expert-batch-kernel", action="store_true",
+                     help="INT8 multi-token expert prototype, resident real weights, CPU4")
+    cli.add_argument("--gate-up-resident", action="store_true",
+                     help="bounded real-weight resident Gate-Up A/B, CPU four threads")
+    cli.add_argument("--gate-up-model-ab", action="store_true",
+                     help="Fixed CPU INT8 Gate-Up ABBA model protocol (four fresh processes)")
+    cli.add_argument("--gate-up-kernel", action="store_true",
+                     help="Synthetic INT8 separate-vs-paired SIMD benchmark; CPU, one thread, no checkpoint")
     cli.add_argument("--compare-lookahead", action="store_true",
                      help="HTTP topics only: paired on/off blocks in alternating order")
     cli.add_argument("--case", help="Suite case ID (requires --suite); omitted means all")
@@ -256,6 +266,25 @@ def write_exclusive_json(path, data):
 
 
 def execute(args, root=WORKSPACE_DIR):
+    if sum(bool(getattr(args, key, False)) for key in ("expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
+        raise ValueError("choose one Gate-Up protocol")
+    if getattr(args, "expert_batch_model_ab", False):
+        import benchmark_gate_up_model
+        return benchmark_gate_up_model.execute(args, root, expert_batch=True)
+    if getattr(args, "expert_batch_kernel", False):
+        import benchmark_gate_up_resident
+        return benchmark_gate_up_resident.execute(args, root, batch=True)
+    if getattr(args, "gate_up_resident", False):
+        import benchmark_gate_up_resident
+        return benchmark_gate_up_resident.execute(args, root)
+    if getattr(args, "gate_up_model_ab", False):
+        if getattr(args, "gate_up_kernel", False):
+            raise ValueError("choose one Gate-Up protocol")
+        import benchmark_gate_up_model
+        return benchmark_gate_up_model.execute(args, root)
+    if getattr(args, "gate_up_kernel", False):
+        import benchmark_gate_up
+        return benchmark_gate_up.execute(args, root)
     if args.compare_lookahead and not args.http_session:
         raise ValueError("--compare-lookahead requires --http-session")
     if args.http_scenario and not args.http_session:

@@ -16,6 +16,38 @@ pub enum QuantType {
     Int4,
 }
 
+/// Selected once when loading a model; both variants preserve expert precision.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GateUpMode {
+    Separate,
+    Paired,
+}
+impl GateUpMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Separate => "separate",
+            Self::Paired => "paired",
+        }
+    }
+    pub(crate) fn from_environment() -> io::Result<Self> {
+        match std::env::var("MOE_GATE_UP_MODE") {
+            Ok(value) => value.parse(),
+            Err(std::env::VarError::NotPresent) => Ok(Self::Paired),
+            Err(_) => Err(invalid("invalid MOE_GATE_UP_MODE")),
+        }
+    }
+}
+impl std::str::FromStr for GateUpMode {
+    type Err = io::Error;
+    fn from_str(value: &str) -> io::Result<Self> {
+        match value {
+            "separate" => Ok(Self::Separate),
+            "paired" => Ok(Self::Paired),
+            _ => Err(invalid("MOE_GATE_UP_MODE must be separate or paired")),
+        }
+    }
+}
+
 pub struct Int8Expert {
     hidden: usize,
     intermediate: usize,
@@ -25,6 +57,7 @@ pub struct Int8Expert {
 }
 
 pub(crate) struct ExpertScratch {
+    pub(crate) gate_up_mode: GateUpMode,
     pub(crate) activated: Vec<f32>,
     pub(crate) output: Vec<f32>,
 }
@@ -32,6 +65,7 @@ pub(crate) struct ExpertScratch {
 impl ExpertScratch {
     pub(crate) fn new(hidden: usize, intermediate: usize) -> Self {
         Self {
+            gate_up_mode: GateUpMode::Paired,
             activated: vec![0.0; intermediate],
             output: vec![0.0; hidden],
         }
@@ -249,6 +283,7 @@ impl Int8Expert {
             &mut scratch.activated,
             self.hidden,
             self.quant_type,
+            scratch.gate_up_mode,
         );
         matvec_into(
             &self.weights[2 * n..],
@@ -289,6 +324,7 @@ impl Int8Expert {
             &mut scratch.activated,
             self.hidden,
             self.quant_type,
+            scratch.gate_up_mode,
         );
         matvec_into_seq(
             &self.weights[2 * n..],
@@ -939,6 +975,7 @@ fn fused_gate_up_swiglu(
     activated: &mut [f32],
     hidden: usize,
     quant_type: QuantType,
+    mode: GateUpMode,
 ) {
     debug_assert_eq!(activated.len(), gate_scales.len());
     debug_assert_eq!(activated.len(), up_scales.len());
@@ -951,9 +988,15 @@ fn fused_gate_up_swiglu(
     let compute_lane = |i: usize, target: &mut f32| {
         let gate_row = &gate_weights[i * stride..(i + 1) * stride];
         let up_row = &up_weights[i * stride..(i + 1) * stride];
-        let (dot_g, dot_u) = match quant_type {
-            QuantType::Int8 => dot_i8_f32_pair(gate_row, up_row, input),
-            QuantType::Int4 => dot_i4_f32_pair(gate_row, up_row, input),
+        let (dot_g, dot_u) = match (quant_type, mode) {
+            (QuantType::Int8, GateUpMode::Paired) => dot_i8_f32_pair(gate_row, up_row, input),
+            (QuantType::Int8, GateUpMode::Separate) => {
+                (dot_i8_f32(gate_row, input), dot_i8_f32(up_row, input))
+            }
+            (QuantType::Int4, GateUpMode::Paired) => dot_i4_f32_pair(gate_row, up_row, input),
+            (QuantType::Int4, GateUpMode::Separate) => {
+                (dot_i4_f32(gate_row, input), dot_i4_f32(up_row, input))
+            }
         };
         let g = dot_g * gate_scales[i];
         let u = dot_u * up_scales[i];
@@ -1021,6 +1064,7 @@ fn fused_gate_up_swiglu_seq(
     activated: &mut [f32],
     hidden: usize,
     quant_type: QuantType,
+    mode: GateUpMode,
 ) {
     debug_assert_eq!(activated.len(), gate_scales.len());
     debug_assert_eq!(activated.len(), up_scales.len());
@@ -1033,9 +1077,15 @@ fn fused_gate_up_swiglu_seq(
     let compute_lane = |i: usize, target: &mut f32| {
         let gate_row = &gate_weights[i * stride..(i + 1) * stride];
         let up_row = &up_weights[i * stride..(i + 1) * stride];
-        let (dot_g, dot_u) = match quant_type {
-            QuantType::Int8 => dot_i8_f32_pair(gate_row, up_row, input),
-            QuantType::Int4 => dot_i4_f32_pair(gate_row, up_row, input),
+        let (dot_g, dot_u) = match (quant_type, mode) {
+            (QuantType::Int8, GateUpMode::Paired) => dot_i8_f32_pair(gate_row, up_row, input),
+            (QuantType::Int8, GateUpMode::Separate) => {
+                (dot_i8_f32(gate_row, input), dot_i8_f32(up_row, input))
+            }
+            (QuantType::Int4, GateUpMode::Paired) => dot_i4_f32_pair(gate_row, up_row, input),
+            (QuantType::Int4, GateUpMode::Separate) => {
+                (dot_i4_f32(gate_row, input), dot_i4_f32(up_row, input))
+            }
         };
         let g = dot_g * gate_scales[i];
         let u = dot_u * up_scales[i];
@@ -1126,6 +1176,417 @@ mod kernel_tests {
                 );
             }
         }
+    }
+
+    struct GateUpBenchCase {
+        expert: Int8Expert,
+        input: Vec<f32>,
+        scratch: ExpertScratch,
+    }
+
+    impl GateUpBenchCase {
+        fn new(hidden: usize, intermediate: usize, seed: u64) -> Self {
+            let mut state = seed;
+            let mut next = || {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state
+            };
+            let weights = (0..3 * hidden * intermediate)
+                .map(|_| next() as u8)
+                .collect();
+            let scales = (0..2 * intermediate + hidden)
+                .map(|row| {
+                    let cols = if row < 2 * intermediate {
+                        hidden
+                    } else {
+                        intermediate
+                    };
+                    (0.5 + (next() % 1000) as f32 / 1000.0) / (127.0 * (cols as f32).sqrt())
+                })
+                .collect();
+            let input = (0..hidden)
+                .map(|_| (next() % 2001) as f32 / 1000.0 - 1.0)
+                .collect();
+            Self {
+                expert: Int8Expert {
+                    hidden,
+                    intermediate,
+                    weights,
+                    scales,
+                    quant_type: QuantType::Int8,
+                },
+                input,
+                scratch: ExpertScratch {
+                    gate_up_mode: GateUpMode::Paired,
+                    activated: vec![0.0; intermediate],
+                    output: vec![0.0; hidden],
+                },
+            }
+        }
+
+        // Both variants use SIMD-capable dot products, identical scale/SiLU and
+        // identical down projection. Buffers are allocated before timing.
+        fn run(&mut self, paired: bool, full_expert: bool) -> &[f32] {
+            if paired && full_expert {
+                return self
+                    .expert
+                    .forward_single_threaded(&self.input, &mut self.scratch)
+                    .unwrap();
+            }
+            let e = &self.expert;
+            let n = e.hidden * e.intermediate;
+            if full_expert {
+                assert_eq!(self.input.len(), e.hidden);
+                assert_eq!(self.scratch.activated.len(), e.intermediate);
+                assert_eq!(self.scratch.output.len(), e.hidden);
+                finite(&self.input).unwrap();
+            }
+            if paired {
+                fused_gate_up_swiglu_seq(
+                    &e.weights[..n],
+                    &e.weights[n..2 * n],
+                    &e.scales[..e.intermediate],
+                    &e.scales[e.intermediate..2 * e.intermediate],
+                    &self.input,
+                    &mut self.scratch.activated,
+                    e.hidden,
+                    QuantType::Int8,
+                    GateUpMode::Paired,
+                );
+            } else {
+                for (row, activated) in self.scratch.activated.iter_mut().enumerate() {
+                    let start = row * e.hidden;
+                    let gate = dot_i8_f32(&e.weights[start..start + e.hidden], &self.input)
+                        * e.scales[row];
+                    let up = dot_i8_f32(&e.weights[n + start..n + start + e.hidden], &self.input)
+                        * e.scales[e.intermediate + row];
+                    *activated = (gate / (1.0 + (-gate).exp())) * up;
+                }
+            }
+            if full_expert {
+                matvec_into_seq(
+                    &e.weights[2 * n..],
+                    &e.scales[2 * e.intermediate..],
+                    &self.scratch.activated,
+                    &mut self.scratch.output,
+                    QuantType::Int8,
+                );
+                finite(&self.scratch.output).unwrap();
+                &self.scratch.output
+            } else {
+                &self.scratch.activated
+            }
+        }
+    }
+
+    #[test]
+    fn gate_up_separate_and_paired_match_through_swiglu_and_down_projection() {
+        for (hidden, intermediate) in [(7, 5), (32, 9), (33, 17), (2048, 1024)] {
+            for seed in [17, 73, 991] {
+                let mut case = GateUpBenchCase::new(hidden, intermediate, seed);
+                for full in [false, true] {
+                    let reference = case.run(false, full).to_vec();
+                    let actual = case.run(true, full);
+                    assert_eq!(actual.len(), reference.len());
+                    for (a, b) in actual.iter().zip(&reference) {
+                        assert!(a.is_finite() && b.is_finite());
+                        assert!((a-b).abs() < 2e-5, "hidden={hidden} intermediate={intermediate} seed={seed} full={full}: {a} vs {b}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "release-only paired INT8 Gate-Up benchmark; use run_benchmark.py --gate-up-kernel"]
+    fn benchmark_gate_up_paired() {
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(!cfg!(debug_assertions), "requires --release");
+        }
+        assert_eq!(std::env::var("RAYON_NUM_THREADS").unwrap(), "1");
+        let testbed = std::env::var("MOE_GATE_UP_TESTBED").unwrap();
+        assert!(matches!(testbed.as_str(), "i5" | "i7"));
+        let avx2_fma = {
+            #[cfg(target_arch = "x86_64")]
+            {
+                is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                false
+            }
+        };
+        assert!(
+            avx2_fma,
+            "this protocol requires both AVX2 and FMA; refuse scalar fallback"
+        );
+        let mut measurements = Vec::new();
+        let mut parity = Vec::new();
+        for seed in [17, 73, 991] {
+            let mut case = GateUpBenchCase::new(2048, 1024, seed);
+            for full in [false, true] {
+                let scope = if full { "full_expert" } else { "gate_up_silu" };
+                let expected = case.run(false, full).to_vec();
+                assert!(expected.iter().all(|x| x.is_finite()));
+                let actual = case.run(true, full);
+                let max_error = actual
+                    .iter()
+                    .zip(&expected)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(actual.iter().all(|x| x.is_finite()));
+                assert!(max_error < 2e-5, "parity before timing failed: {max_error}");
+                parity
+                    .push(serde_json::json!({"seed":seed,"scope":scope,"max_abs_error":max_error}));
+                for _ in 0..10 {
+                    black_box(case.run(false, full));
+                    black_box(case.run(true, full));
+                }
+                for pair in 0..9 {
+                    for position in 0..2 {
+                        let paired = (pair + position) % 2 == 1;
+                        let started = Instant::now();
+                        for _ in 0..100 {
+                            black_box(black_box(&mut case).run(paired, full));
+                        }
+                        let elapsed_ns = started.elapsed().as_nanos() as u64;
+                        measurements.push(serde_json::json!({
+                            "seed":seed,"scope":scope,"pair":pair,"position":position,
+                            "variant":if paired {"paired_simd"} else {"separate_simd"},
+                            "iterations":100,"elapsed_ns":elapsed_ns
+                        }));
+                    }
+                }
+            }
+        }
+        let report = serde_json::json!({
+            "schema_version":1,"kind":"gate_up_kernel","protocol":"gate-up-int8-v1",
+            "testbed":testbed,"hidden":2048,"intermediate":1024,
+            "seeds":[17,73,991],"pairs_per_seed_scope":9,"iterations":100,
+            "warmup_per_variant_scope":10,"threads":1,"avx2_fma":avx2_fma,
+            "dataset":"synthetic xorshift64 v1; fixed source recipe; no model weights",
+            "scopes":["gate_up_silu","full_expert"],"parity":parity,"samples":measurements,
+            "notes":["resident preallocated buffers; no file I/O; sequential expert task",
+                "full expert candidate uses production forward_single_threaded",
+                "no CPU affinity/frequency isolation; no inference speedup or L1 traffic claim"]
+        });
+        let path = std::env::var("MOE_GATE_UP_REPORT").unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .unwrap();
+        serde_json::to_writer_pretty(file, &report).unwrap();
+    }
+
+    fn resident_gate_up_batch(cases: &mut [GateUpBenchCase], row_parallel: bool) {
+        use std::hint::black_box;
+        if row_parallel {
+            let case = &mut cases[0];
+            black_box(
+                case.expert
+                    .forward_reuse(black_box(&case.input), &mut case.scratch)
+                    .unwrap(),
+            );
+        } else {
+            cases.par_iter_mut().for_each(|case| {
+                black_box(
+                    case.expert
+                        .forward_single_threaded(black_box(&case.input), &mut case.scratch)
+                        .unwrap(),
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn resident_batch_uses_both_production_paths_and_modes() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            for row_parallel in [false, true] {
+                let mut cases: Vec<_> = (17..25)
+                    .map(|seed| GateUpBenchCase::new(33, 17, seed))
+                    .collect();
+                for case in &mut cases {
+                    case.scratch.gate_up_mode = GateUpMode::Separate;
+                }
+                resident_gate_up_batch(&mut cases, row_parallel);
+                let expected: Vec<_> = cases.iter().map(|c| c.scratch.output.clone()).collect();
+                for case in &mut cases {
+                    case.scratch.gate_up_mode = GateUpMode::Paired;
+                }
+                resident_gate_up_batch(&mut cases, row_parallel);
+                for (case, reference) in
+                    cases
+                        .iter()
+                        .zip(expected)
+                        .take(if row_parallel { 1 } else { 8 })
+                {
+                    for (a, b) in case.scratch.output.iter().zip(reference) {
+                        assert!(a.is_finite() && b.is_finite() && (a - b).abs() < 2e-5);
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "bounded real-weight resident benchmark; use --gate-up-resident"]
+    fn benchmark_gate_up_resident() {
+        use std::hint::black_box;
+        use std::time::Instant;
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(!cfg!(debug_assertions), "requires release");
+        }
+        assert_eq!(std::env::var("RAYON_NUM_THREADS").unwrap(), "4");
+        assert_eq!(rayon::current_num_threads(), 4);
+        let testbed = std::env::var("MOE_GATE_UP_TESTBED").unwrap();
+        assert!(matches!(testbed.as_str(), "i5" | "i7"));
+        #[cfg(target_arch = "x86_64")]
+        let avx2_fma = is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma");
+        #[cfg(not(target_arch = "x86_64"))]
+        let avx2_fma = false;
+        assert!(avx2_fma);
+        let directory = std::env::var("MOE_RESIDENT_MODEL").unwrap();
+        let config: serde_json::Value = serde_json::from_reader(
+            std::fs::File::open(std::path::Path::new(&directory).join("config.json")).unwrap(),
+        )
+        .unwrap();
+        for (key, value) in [
+            ("hidden_size", 2048),
+            ("intermediate_size", 1024),
+            ("num_hidden_layers", 16),
+            ("num_experts", 64),
+            ("num_experts_per_tok", 8),
+        ] {
+            assert_eq!(config[key].as_u64(), Some(value));
+        }
+        let index = TensorIndex::open(&directory).unwrap();
+        // Fixed representative layers/IDs; no routing or post-measurement selection.
+        let mut groups: Vec<Vec<GateUpBenchCase>> = [0, 7, 15]
+            .into_iter()
+            .map(|layer| {
+                (0..8)
+                    .map(|expert| {
+                        let loaded =
+                            Int8Expert::load(&index, layer, expert, 2048, 1024, 8 * 1024 * 1024)
+                                .unwrap();
+                        assert_eq!(loaded.quant_type, QuantType::Int8);
+                        GateUpBenchCase {
+                            expert: loaded,
+                            input: vec![0.0; 2048],
+                            scratch: ExpertScratch::new(2048, 1024),
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        let payload_bytes: usize = groups
+            .iter()
+            .flatten()
+            .map(|c| c.expert.resident_bytes())
+            .sum();
+        assert!(payload_bytes <= 256 * 1024 * 1024);
+        let process_before = std::fs::read_to_string("/proc/self/status").unwrap();
+        let io_before = std::fs::read_to_string("/proc/self/io").unwrap();
+        let mut parity = Vec::new();
+        let mut samples = Vec::new();
+        for (layer, cases) in [0, 7, 15].into_iter().zip(&mut groups) {
+            for seed in [17u64, 73, 991] {
+                let mut state = seed;
+                // Synthetic activations, real checkpoint weights/scales. Same for all variants.
+                for case in cases.iter_mut() {
+                    for x in &mut case.input {
+                        state ^= state << 13;
+                        state ^= state >> 7;
+                        state ^= state << 17;
+                        *x = (state % 2001) as f32 / 1000.0 - 1.0;
+                    }
+                }
+                for (scope, row_parallel) in [("expert_tasks8", false), ("row_parallel", true)] {
+                    for c in cases.iter_mut() {
+                        c.scratch.gate_up_mode = GateUpMode::Separate;
+                    }
+                    resident_gate_up_batch(cases, row_parallel);
+                    let references: Vec<Vec<f32>> =
+                        cases.iter().map(|c| c.scratch.output.clone()).collect();
+                    for c in cases.iter_mut() {
+                        c.scratch.gate_up_mode = GateUpMode::Paired;
+                    }
+                    resident_gate_up_batch(cases, row_parallel);
+                    let used = if row_parallel { 1 } else { 8 };
+                    let mut max_abs_error = 0.0f32;
+                    for (c, reference) in cases.iter().zip(&references).take(used) {
+                        for (a, b) in c.scratch.output.iter().zip(reference) {
+                            assert!(a.is_finite() && b.is_finite());
+                            max_abs_error = max_abs_error.max((a - b).abs());
+                        }
+                    }
+                    assert!(
+                        max_abs_error < 2e-5,
+                        "layer={layer} seed={seed} scope={scope} error={max_abs_error}"
+                    );
+                    parity.push(serde_json::json!({"layer":layer,"seed":seed,"scope":scope,"max_abs_error":max_abs_error}));
+                    for _ in 0..10 {
+                        for mode in [GateUpMode::Separate, GateUpMode::Paired] {
+                            for c in cases.iter_mut() {
+                                c.scratch.gate_up_mode = mode;
+                            }
+                            resident_gate_up_batch(cases, row_parallel);
+                        }
+                    }
+                    for pair in 0..9 {
+                        for position in 0..2 {
+                            let paired = (pair + position) % 2 == 1;
+                            for c in cases.iter_mut() {
+                                c.scratch.gate_up_mode = if paired {
+                                    GateUpMode::Paired
+                                } else {
+                                    GateUpMode::Separate
+                                };
+                            }
+                            let started = Instant::now();
+                            for _ in 0..40 {
+                                resident_gate_up_batch(black_box(cases), row_parallel);
+                            }
+                            let elapsed_ns = started.elapsed().as_nanos() as u64;
+                            samples.push(serde_json::json!({
+                                "layer":layer,"seed":seed,"scope":scope,"pair":pair,"position":position,
+                                "variant":if paired {"paired_simd"} else {"separate_simd"},
+                                "iterations":40,"elapsed_ns":elapsed_ns
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+        let process_after = std::fs::read_to_string("/proc/self/status").unwrap();
+        let io_after = std::fs::read_to_string("/proc/self/io").unwrap();
+        let report = serde_json::json!({
+            "schema_version":1,"kind":"gate_up_resident","protocol":"gate-up-resident-v1",
+            "testbed":testbed,"hidden":2048,"intermediate":1024,"threads":4,
+            "avx2_fma":avx2_fma,"layers":[0,7,15],"expert_ids":[0,1,2,3,4,5,6,7],
+            "seeds":[17,73,991],"scopes":["expert_tasks8","row_parallel"],
+            "pairs_per_case":9,"iterations":40,"warmup_per_variant_scope":10,
+            "payload_bytes":payload_bytes,"payload_budget_bytes":256*1024*1024,
+            "dataset":"real INT8 weights/scales; synthetic xorshift64 activations; no model forward",
+            "process_before":process_before,"process_after":process_after,
+            "io_before":io_before,"io_after":io_after,
+            "parity":parity,"samples":samples
+        });
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(std::env::var("MOE_GATE_UP_REPORT").unwrap())
+            .unwrap();
+        serde_json::to_writer_pretty(file, &report).unwrap();
     }
 
     #[test]
@@ -1394,3 +1855,5 @@ mod kernel_tests {
         }
     }
 }
+
+pub(crate) mod batch_prototype;
