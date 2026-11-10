@@ -63,6 +63,8 @@ def parser():
                      help="Decode speculative next-layer prefetch; demand/prefill unchanged")
     cli.add_argument("--expert-batch-model-ab", action="store_true",
                      help="fixed CPU batched expert prefill ABBA, max-tokens1")
+    cli.add_argument("--backend-model-ab", action="store_true",
+                     help="cpu vs auto backend ABBA on long-prefill, max-tokens1, batch off; requires --gpu auto")
     cli.add_argument("--expert-batch-workload", choices=("kv-switch", "long-prefill"), default="kv-switch",
                      help="--expert-batch-model-ab workload; kv-switch is the 09/11 Mars/Python protocol")
     cli.add_argument("--expert-batch-kernel", action="store_true",
@@ -268,8 +270,11 @@ def write_exclusive_json(path, data):
 
 
 def execute(args, root=WORKSPACE_DIR):
-    if sum(bool(getattr(args, key, False)) for key in ("expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
+    if sum(bool(getattr(args, key, False)) for key in ("backend_model_ab", "expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
         raise ValueError("choose one Gate-Up protocol")
+    if getattr(args, "backend_model_ab", False):
+        import benchmark_gate_up_model
+        return benchmark_gate_up_model.execute(args, root, backend=True)
     if getattr(args, "expert_batch_model_ab", False):
         import benchmark_gate_up_model
         return benchmark_gate_up_model.execute(args, root, expert_batch=True)

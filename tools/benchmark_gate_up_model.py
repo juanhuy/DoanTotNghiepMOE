@@ -21,6 +21,11 @@ REMOVED_ENV = ("MOE_SESSION_DIR", "ROUTE_TRACE", "MOE_ROUTE_TRACE",
                "MOE_USAGE_PATH", "MOE_PILOT_CONF_LIMIT")
 WORK_COUNTERS = ("expert_cache_hits", "expert_cache_misses", "expert_cache_evictions",
                  "expert_file_loads", "expert_file_bytes_read")
+# Backend A/B changes dense compute AND adds the VRAM expert tier, so these differ by design;
+# they are recorded per sample instead of being required equal.
+BACKEND_COUNTERS = (*WORK_COUNTERS, "expert_io_ms", "expert_file_read_ms", "expert_vram_loads",
+                    "expert_vram_upload_bytes", "expert_vram_download_bytes",
+                    "expert_vram_upload_ms", "expert_vram_download_ms")
 
 
 @contextlib.contextmanager
@@ -52,26 +57,39 @@ def measured_turns(workload):
     return (0, 1) if workload == "kv-switch" else tuple(ram.workload_spec(workload)["measured_turns"])
 
 
-def validate_block(record, mode, expert_batch=False, workload="kv-switch"):
-    gate_mode = "paired" if expert_batch else mode
+def validate_block(record, mode, expert_batch=False, workload="kv-switch", backend=False):
+    gate_mode = "paired" if (expert_batch or backend) else mode
+    gpu_mode = mode if backend else "cpu"
     prompts, expected_tokens = workload_prompts(workload)
     if record.get("status") != "completed" or record.get("watchdog_violations"):
         raise ValueError("block failed or watchdog stopped; stop protocol")
     turns = record.get("turns", [])
     if len(turns) != len(prompts) or len({t["session_id"] for t in turns}) != len(prompts):
         raise ValueError("expected independent sessions, one per request")
-    if not record.get("cpu_start_library_probe", {}).get("available"):
-        raise ValueError("CPU library probe unavailable")
-    if record["cpu_start_library_probe"]["cuda_libraries"]:
-        raise ValueError("CPU block mapped CUDA libraries")
+    if gpu_mode == "cpu":
+        if not record.get("cpu_start_library_probe", {}).get("available"):
+            raise ValueError("CPU library probe unavailable")
+        if record["cpu_start_library_probe"]["cuda_libraries"]:
+            raise ValueError("CPU block mapped CUDA libraries")
     for status in [record["status_start"], *(t["status"] for t in turns)]:
+        gpu = status["gpu"]
+        backend_ok = (not gpu["enabled"] and not gpu["allocated_vram_bytes"]) if gpu_mode == "cpu" else (
+            gpu["enabled"] is True and gpu.get("dense_offloaded") is True and gpu["allocated_vram_bytes"] > 0)
         if (status.get("gate_up_mode") != gate_mode or status.get("expert_quantization") != "int8"
-                or status.get("kv_fp8") is not False or status.get("gpu_mode_at_load") != "cpu"
+                or status.get("kv_fp8") is not False or status.get("gpu_mode_at_load") != gpu_mode
                 or status.get("lookahead_enabled") is not False
                 or status.get("kv_buffer_reuse_enabled") is not False
-                or status.get("session_dir") is not None
-                or status["gpu"]["enabled"] or status["gpu"]["allocated_vram_bytes"]):
+                or status.get("session_dir") is not None or not backend_ok):
             raise ValueError("actual mode/precision/backend mismatch")
+    if backend:
+        for status in [record["status_start"], *(t["status"] for t in turns)]:
+            if status.get("expert_batch_prefill_enabled") is not False:
+                raise ValueError("backend A/B requires batch prefill off")
+        for turn in turns:
+            m = turn["response"]["metrics"]
+            if (turn["response"]["usage"].get("completion_tokens") != 1
+                    or m.get("prefill_expert_batch2_calls") or m.get("prefill_expert_batch4_calls")):
+                raise ValueError("max1/batch-off backend workload not observed")
     if expert_batch:
         enabled = mode == "on"
         for status in [record["status_start"], *(t["status"] for t in turns)]:
@@ -101,11 +119,11 @@ def validate_block(record, mode, expert_batch=False, workload="kv-switch"):
             raise ValueError("trace/status mismatch")
 
 
-def compare_blocks(reference, actual, expert_batch=False):
+def compare_blocks(reference, actual, expert_batch=False, backend=False):
     for key in ("source_sha256", "binary_sha256", "checkpoint"):
         if reference[key] != actual[key]:
             raise ValueError("source/binary/checkpoint drift")
-    ignore = (("expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
+    ignore = (("gpu" if backend else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
     if ({k: v for k, v in reference["config"].items() if k not in ignore}
             != {k: v for k, v in actual["config"].items() if k not in ignore}):
         raise ValueError("config drift")
@@ -115,16 +133,18 @@ def compare_blocks(reference, actual, expert_batch=False):
         for key in ("text", "usage", "finish_reason"):
             if before["response"][key] != after["response"][key]:
                 raise ValueError("HTTP output parity failed")
-        for key in WORK_COUNTERS:
+        for key in () if backend else WORK_COUNTERS:
             if before["response"]["metrics"][key] != after["response"]["metrics"][key]:
                 raise ValueError("expert workload changed")
 
 
-def paired_summary(records, expert_batch=False, turns=(0, 1)):
+def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False):
     summary = []
-    baseline_name,candidate_name = ("off","on") if expert_batch else ("separate","paired")
-    keys = ("total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms") if expert_batch else (
+    baseline_name,candidate_name = ("cpu","auto") if backend else ("off","on") if expert_batch else ("separate","paired")
+    keys = ("total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms","attention_ms","lm_head_ms") if backend else (
+        "total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms") if expert_batch else (
         "total_ms","prefill_ms","decode_ms","time_to_first_token_ms","expert_compute_ms")
+    ratio_name = "baseline_over_candidate" if (expert_batch or backend) else "separate_over_paired"
     for pair, (baseline, candidate) in enumerate(((records[0], records[1]), (records[3], records[2]))):
         for position, index in enumerate(turns):
             a, b = baseline["turns"][index], candidate["turns"][index]
@@ -133,22 +153,30 @@ def paired_summary(records, expert_batch=False, turns=(0, 1)):
                 av, bv = a["response"]["metrics"][key], b["response"]["metrics"][key]
                 if any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in (av, bv)):
                     raise ValueError("invalid timer")
-                metrics[key] = {baseline_name: av, candidate_name: bv, "baseline_over_candidate" if expert_batch else "separate_over_paired": av / bv}
+                metrics[key] = {baseline_name: av, candidate_name: bv, ratio_name: av / bv}
             metrics["client_wall_ms"] = {baseline_name: a["response"]["client_wall_ms"],
                                           candidate_name: b["response"]["client_wall_ms"]}
-            summary.append({"pair": pair, "prompt_position": position, "turn": index, "timers": metrics})
+            entry = {"pair": pair, "prompt_position": position, "turn": index, "timers": metrics}
+            if backend:
+                entry["work"] = {key: {baseline_name: a["response"]["metrics"].get(key),
+                                       candidate_name: b["response"]["metrics"].get(key)}
+                                 for key in BACKEND_COUNTERS}
+            summary.append(entry)
     return summary
 
 
-def execute(args, root, expert_batch=False):
+def execute(args, root, expert_batch=False, backend=False):
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
-    if workload != "kv-switch" and not expert_batch:
+    if backend:
+        if expert_batch or workload != "long-prefill":
+            raise ValueError("backend A/B uses long-prefill workload only, batch prefill off")
+    elif workload != "kv-switch" and not expert_batch:
         raise ValueError("--expert-batch-workload applies only to --expert-batch-model-ab")
     prompts, expected_tokens = workload_prompts(workload)
     measured = measured_turns(workload)
-    expected_max = 1 if expert_batch else 64
-    modes = ("off","on","on","off") if expert_batch else MODES
-    if (args.gpu != "cpu" or args.threads != 4 or args.cache != 64 or args.context != 512
+    expected_max = 1 if (expert_batch or backend) else 64
+    modes = ("cpu","auto","auto","cpu") if backend else ("off","on","on","off") if expert_batch else MODES
+    if ((args.gpu != ("auto" if backend else "cpu")) or args.threads != 4 or args.cache != 64 or args.context != 512
             or args.max_tokens != expected_max or args.lookahead != "off" or args.http_session
             or args.suite or args.case or args.compare_lookahead or args.compare_cache_policies):
         raise ValueError("model Gate-Up protocol requires CPU/threads4/cache64/context512/max64/lookahead off; no other suite")
@@ -161,7 +189,7 @@ def execute(args, root, expert_batch=False):
     dirty = bool(common.checked_text(["git", "status", "--porcelain", "--untracked-files=normal"], root, env))
     if dirty and not args.allow_dirty:
         raise ValueError("dirty tree; --allow-dirty is exploratory only")
-    protocol = {"kind": "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
+    protocol = {"kind": "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
                 "git_dirty": dirty, "modes": modes, "model_dir": str(model),
                 "requests_per_block": len(prompts), "total_requests": 4 * len(prompts), "threads": 4,
                 "cache_mib_per_layer": 64, "context": 512, "max_tokens": expected_max,
@@ -179,7 +207,7 @@ def execute(args, root, expert_batch=False):
         print(json.dumps(protocol, indent=2))
         return 0
     now = datetime.datetime.now(datetime.timezone.utc)
-    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
+    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
     directory = common.absolute(args.output_root, root) / args.testbed / run_id
     directory.mkdir(parents=True, exist_ok=False)
     record = {**protocol, "run_id": run_id, "status": "failed", "blocks": []}
@@ -190,8 +218,9 @@ def execute(args, root, expert_batch=False):
         with fixed_environment():
             for index, mode in enumerate(modes):
                 block_root = directory / f"block-{index}-{mode}"
-                argv = ["--testbed", args.testbed, "--gpu", "cpu", "--lookahead", "off",
-                        "--memory-trace", "on", "--kv-buffer-reuse", "off", "--gate-up-mode", "paired" if expert_batch else mode,
+                argv = ["--testbed", args.testbed, "--gpu", mode if backend else "cpu", "--lookahead", "off",
+                        "--memory-trace", "on", "--kv-buffer-reuse", "off",
+                        "--gate-up-mode", "paired" if (expert_batch or backend) else mode,
                         "--workload", workload, "--cache", "64", "--context", "512",
                         "--cycles", str(len(prompts)), "--max-tokens", str(expected_max), "--keep-cache", "--threads", "4",
                         "--model-dir", str(model), "--output-root", str(block_root),
@@ -199,6 +228,8 @@ def execute(args, root, expert_batch=False):
                         "--stop-rss-mib", "5632", "--min-available-mib", "1536", "--stop-swap-mib", "128"]
                 if expert_batch:
                     argv.extend(["--expert-batch-prefill", mode])
+                if backend:
+                    argv.extend(["--expert-batch-prefill", "off"])
                 if args.allow_dirty:
                     argv.append("--allow-dirty")
                 code = ram.execute(ram.parser().parse_args(argv))
@@ -210,16 +241,24 @@ def execute(args, root, expert_batch=False):
                                          "run_id": current["run_id"], "status": current["status"]})
                 if code:
                     raise ValueError("block failed; no further blocks")
-                validate_block(current, mode, expert_batch=expert_batch, workload=workload)
+                validate_block(current, mode, expert_batch=expert_batch, workload=workload, backend=backend)
                 if records:
-                    compare_blocks(records[0], current, expert_batch=expert_batch)
+                    compare_blocks(records[0], current, expert_batch=expert_batch, backend=backend)
                 records.append(current)
                 if kernel.source_files(root) != before:
                     raise ValueError("source changed during protocol")
-        record["pairs"] = paired_summary(records, expert_batch=expert_batch, turns=measured)
+        record["pairs"] = paired_summary(records, expert_batch=expert_batch, turns=measured, backend=backend)
         if record["warmup_turns"]:
             record["warmup_pairs_excluded"] = paired_summary(records, expert_batch=expert_batch,
-                                                             turns=tuple(record["warmup_turns"]))
+                                                             turns=tuple(record["warmup_turns"]), backend=backend)
+        if backend:
+            record["gpu_status_start"] = {r["status_start"]["gpu_mode_at_load"]: r["status_start"]["gpu"] for r in records}
+            record["passes_backend_rule"] = all(
+                p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"] >= 1.05
+                and p["timers"]["prefill_ms"]["baseline_over_candidate"] >= 1.05
+                for p in record["pairs"])
+            record["decision_rule"] = ("each pair/prompt TTFT and prefill cpu/auto ratio>=1.05; same text/usage/finish; "
+                                       "composite backend (GPU dense + VRAM expert tier), expert SwiGLU stays CPU")
         if expert_batch:
             record["passes_ttft_rule"] = all(
                 p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"] >= 1.05

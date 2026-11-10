@@ -200,6 +200,79 @@ class GateUpModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             model.execute(gate, common.WORKSPACE_DIR, expert_batch=False)
 
+    def backend_record(self, mode):
+        r = self.long_record("off")
+        r["config"].pop("expert_batch_prefill")
+        r["config"]["gpu"] = mode
+        gpu = ({"enabled": False, "allocated_vram_bytes": 0, "dense_offloaded": False} if mode == "cpu"
+               else {"enabled": True, "allocated_vram_bytes": 1 << 30, "dense_offloaded": True})
+        for status in [r["status_start"], *(t["status"] for t in r["turns"])]:
+            status["gpu_mode_at_load"] = mode
+            status["gpu"] = dict(gpu)
+        if mode == "auto":
+            r.pop("cpu_start_library_probe")
+            for t in r["turns"]:
+                t["response"]["metrics"]["expert_file_loads"] = 1  # VRAM tier changes work: allowed
+        for t in r["turns"]:
+            t["response"]["metrics"].update(attention_ms=5.0, lm_head_ms=2.0, expert_io_ms=1.0,
+                                           expert_vram_loads=3 if mode == "auto" else 0)
+        return r
+
+    def test_backend_block_validation_and_composite_work(self):
+        a, b = self.backend_record("cpu"), self.backend_record("auto")
+        model.validate_block(a, "cpu", workload="long-prefill", backend=True)
+        model.validate_block(b, "auto", workload="long-prefill", backend=True)
+        model.compare_blocks(a, b, backend=True)  # work counters may differ, outputs may not
+        with self.assertRaises(ValueError):
+            model.compare_blocks(a, b, expert_batch=True)
+        bad_text = self.backend_record("auto")
+        bad_text["turns"][2]["response"]["text"] = "different"
+        with self.assertRaises(ValueError):
+            model.compare_blocks(a, bad_text, backend=True)
+
+    def test_backend_refuses_wrong_backend_state(self):
+        for change in ("auto_disabled", "auto_no_dense", "cpu_cuda_libs", "batch_on", "mode_label"):
+            mode = "cpu" if change == "cpu_cuda_libs" else "auto"
+            r = self.backend_record(mode)
+            if change == "auto_disabled":
+                r["turns"][1]["status"]["gpu"]["enabled"] = False
+            elif change == "auto_no_dense":
+                r["status_start"]["gpu"]["dense_offloaded"] = False
+            elif change == "cpu_cuda_libs":
+                r["cpu_start_library_probe"]["cuda_libraries"] = ["libcuda.so.1"]
+            elif change == "batch_on":
+                r["turns"][0]["response"]["metrics"]["prefill_expert_batch2_calls"] = 4
+            else:
+                r["status_start"]["gpu_mode_at_load"] = "cpu"
+            with self.assertRaises(ValueError):
+                model.validate_block(r, mode, workload="long-prefill", backend=True)
+
+    def test_backend_summary_names_and_work_record(self):
+        records = [self.backend_record(m) for m in ("cpu", "auto", "auto", "cpu")]
+        records[0]["turns"][2]["response"]["metrics"]["attention_ms"] = 20.0
+        pairs = model.paired_summary(records, turns=(2, 3), backend=True)
+        self.assertEqual(pairs[0]["timers"]["attention_ms"]["baseline_over_candidate"], 4)
+        self.assertEqual(pairs[0]["work"]["expert_vram_loads"], {"cpu": 0, "auto": 3})
+        self.assertIn("lm_head_ms", pairs[0]["timers"])
+
+    def test_backend_dry_run_scope(self):
+        import io, contextlib, json
+        import run_benchmark as common
+        base = ["--testbed", "i5", "--backend-model-ab", "--expert-batch-workload", "long-prefill",
+                "--threads", "4", "--cache", "64", "--context", "512", "--max-tokens", "1",
+                "--lookahead", "off", "--allow-dirty", "--dry-run"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(common.execute(common.parser().parse_args(["--gpu", "auto", *base])), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual(protocol["kind"], "backend_model_ab")
+        self.assertEqual(protocol["modes"], ["cpu", "auto", "auto", "cpu"])
+        self.assertEqual(protocol["total_requests"], 16)
+        for bad in (["--gpu", "cpu", *base],
+                    ["--gpu", "auto", *[x if x != "long-prefill" else "kv-switch" for x in base]]):
+            with self.assertRaises(ValueError):
+                common.execute(common.parser().parse_args(bad))
+
 
 if __name__ == "__main__":
     unittest.main()

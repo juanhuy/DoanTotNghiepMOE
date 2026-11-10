@@ -481,3 +481,23 @@ python3 tools/run_benchmark.py --testbed i5 --gpu cpu --expert-batch-model-ab \
 Bỏ --dry-run sau preflight; tree sạch thì không dùng --allow-dirty.
 
 **Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-expert-batch-long-i5/README.md) run20261110T045405.090137Z-expert-batch-model-6536…, HEAD9cf3b0b sạch, 16/16completed, output/counter khớp. Primary ĐẠT: TTFT ratio bakery1,0820/1,0646, library1,0941/1,0892, prefill tương ứng ≥1,0645. Expert_compute ratio1,416–1,506. Warmup (loại theo protocol) bakery cặp1 1,0335. Không rerun.
+
+## Đối chứng backend CPU/GPU S3 (backend-long-v1, 10/11)
+
+Bước S3 của PLAN sau khi probe CUDA/cuBLAS thực chạy (PROGRESS 10/11). Câu hỏi: trên i5 (GTX1650 Max-Q), chọn `--gpu auto` thay `--gpu cpu` thay đổi TTFT/prefill và công việc expert thế nào với cùng binary/checkpoint/cấu hình?
+
+**Đây là đối chứng gói backend, không phải một yếu tố đơn lẻ:** auto vừa chạy dense/attention/LM head bằng cuBLAS vừa tự dùng VRAM còn lại làm tầng lưu expert L1 (victim). Engine chưa có công tắc tách hai phần; không sửa engine cho bước này. Phân tách đóng góp bằng timer/counter thành phần (attention_ms, lm_head_ms, expert_compute/io, file loads, VRAM loads/upload/download), không gán toàn bộ chênh lệch cho một cơ chế. Expert SwiGLU tính CPU ở cả hai phía.
+
+Chốt trước đo:
+- Workload long-prefill v1 như S2 (bakery64/library128, 4 request/process, warmup turn0–1 thu riêng, đo turn2–3, session mới mỗi request, reset chỉ trước turn0/keepcache). Một ABBA cpu→auto→auto→cpu, 4 process mới, 8 sample chính + 8 warmup.
+- Max1 (TTFT/prefill); không đo decode vì greedy 7B có thể đổi token khi GPU/CPU lệch số nhỏ, làm workload hai phía khác nhau. CPU4/victim/cache64MiB-layer/context512, Gate–Up paired, batch prefill off, FP32KV/KVreuse off/lookahead off/trace on/greedy. Cùng binary d12a3939…/checkpoint.
+- Text/usage/finish/prompt tokens phải khớp mọi turn mọi block. Block cpu: GPU disabled/0 VRAM, không map CUDA. Block auto: gpu enabled, dense_offloaded, allocated VRAM>0 ở start và mọi turn. Work counters ghi từng sample, không yêu cầu bằng nhau (khác do thiết kế).
+- Rule: TTFT VÀ prefill cpu/auto ≥1,05 ở từng prompt trong CẢ hai cặp → "auto có lợi trong phạm vi đo"; không đạt → "chưa chứng minh lợi ích", vẫn công bố. Một lượt, không đổi ngưỡng/rerun/bỏ mẫu.
+- RAM: dense vẫn giữ trên host ở auto; thêm CUDA context/thư viện và pinned staging một expert. Dự toán RSS ≤ khoảng3,6GiB, dưới guard. Guard5120/headroom1024/watchdog RSS5632/available1536/process swap128MiB, báo RSS/VRAM theo block. Preflight 3 mẫu cách5s available≥5120MiB/pswpout không tăng/không engine-build khác; ghi VRAM đã dùng trước chạy (nvidia-smi).
+- VRAM allocated là logical theo engine, không phải toàn bộ cấp phát vật lý của driver/context.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu auto --backend-model-ab \
+  --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
+  --max-tokens 1 --lookahead off --dry-run
+```
