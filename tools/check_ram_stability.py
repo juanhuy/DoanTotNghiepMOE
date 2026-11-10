@@ -76,6 +76,8 @@ def parser():
     cli.add_argument('--workload', choices=('mixed', 'kv-switch', 'long-prefill'), default='mixed')
     cli.add_argument('--expert-batch-prefill', choices=('on', 'off'), default='off')
     cli.add_argument('--gate-up-mode', choices=('separate', 'paired'), default='paired')
+    cli.add_argument('--gpu-expert-tier', choices=('on', 'off'), default='on',
+                     help='VRAM expert storage tier when --gpu auto; dense GPU unaffected')
     cli.add_argument('--cache', type=common.nonnegative, required=True, help='MiB per layer')
     cli.add_argument('--model-dir', type=Path, default=Path('models/olmoe-1b-7b-int8'))
     cli.add_argument('--threads', type=common.positive, default=8)
@@ -137,6 +139,7 @@ def execute(args):
                MOE_CACHE_BYTES_PER_LAYER=str(args.cache * 1024**2), MOE_CONTEXT=str(args.context),
                MOE_GPU_MODE=args.gpu, MOE_LOOKAHEAD_PREFETCH=args.lookahead,
                MOE_MEMORY_TRACE=args.memory_trace, MOE_KV_BUFFER_REUSE=args.kv_buffer_reuse, MOE_GATE_UP_MODE=args.gate_up_mode, MOE_EXPERT_BATCH_PREFILL=args.expert_batch_prefill,
+               MOE_GPU_EXPERT_TIER=args.gpu_expert_tier,
                MOE_EXPERT_CACHE_POLICY='victim', MOE_RAM_LIMIT_BYTES=str(args.ram_limit_mib * 1024**2),
                MOE_RAM_HEADROOM_BYTES=str(args.headroom_mib * 1024**2))
     stop = threading.Event()
@@ -198,6 +201,8 @@ def execute(args):
                     record['cpu_start_library_probe'] = {'available': False, 'error': type(error).__name__}
             if status.get('expert_batch_prefill_enabled') is not (args.expert_batch_prefill == 'on'):
                 raise RuntimeError('expert batch prefill mismatch; rebuild the server')
+            if status.get('gpu_expert_tier_enabled') is not (args.gpu_expert_tier == 'on'):
+                raise RuntimeError('GPU expert tier mismatch; rebuild the server')
             if status.get('gate_up_mode') != args.gate_up_mode:
                 raise RuntimeError('Gate-Up mode mismatch; rebuild the server')
             if status.get('lookahead_enabled') is not (args.lookahead == 'on'):

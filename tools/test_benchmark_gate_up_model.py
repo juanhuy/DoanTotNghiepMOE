@@ -273,6 +273,55 @@ class GateUpModelTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 common.execute(common.parser().parse_args(bad))
 
+    def tier_record(self, mode):
+        r = self.backend_record("auto")
+        r["config"]["gpu_expert_tier"] = mode
+        for status in [r["status_start"], *(t["status"] for t in r["turns"])]:
+            status["gpu_expert_tier_enabled"] = mode == "on"
+            status["gpu"]["vram_experts_resident"] = 298 if mode == "on" else 0
+        for t in r["turns"]:
+            t["response"]["metrics"].update(expert_vram_loads=70 if mode == "on" else 0,
+                                           expert_vram_upload_bytes=5 if mode == "on" else 0)
+        return r
+
+    def test_gpu_tier_block_validation_and_parity(self):
+        on, off = self.tier_record("on"), self.tier_record("off")
+        model.validate_block(on, "on", workload="long-prefill", gpu_tier=True)
+        model.validate_block(off, "off", workload="long-prefill", gpu_tier=True)
+        model.compare_blocks(on, off, gpu_tier=True)
+        with self.assertRaises(ValueError):
+            model.compare_blocks(on, off, backend=True)  # tier config key differs: not a backend pair
+        for change in ("traffic", "label", "cpu"):
+            r = self.tier_record("off")
+            if change == "traffic":
+                r["turns"][3]["response"]["metrics"]["expert_vram_upload_bytes"] = 1
+            elif change == "label":
+                r["status_start"]["gpu_expert_tier_enabled"] = True
+            else:
+                r["status_start"]["gpu"]["enabled"] = False
+            with self.assertRaises(ValueError):
+                model.validate_block(r, "off", workload="long-prefill", gpu_tier=True)
+
+    def test_gpu_tier_summary_and_dry_run(self):
+        import io, contextlib, json
+        import run_benchmark as common
+        records = [self.tier_record(m) for m in ("on", "off", "off", "on")]
+        pairs = model.paired_summary(records, turns=(2, 3), gpu_tier=True)
+        self.assertEqual(pairs[0]["work"]["expert_vram_loads"], {"on": 70, "off": 0})
+        self.assertEqual(pairs[0]["timers"]["time_to_first_token_ms"]["baseline_over_candidate"], 1)
+        base = ["--testbed", "i5", "--gpu-tier-model-ab", "--expert-batch-workload", "long-prefill",
+                "--threads", "4", "--cache", "64", "--context", "512", "--max-tokens", "1",
+                "--lookahead", "off", "--allow-dirty", "--dry-run"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(common.execute(common.parser().parse_args(["--gpu", "auto", *base])), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual((protocol["kind"], protocol["modes"]), ("gpu_tier_model_ab", ["on", "off", "off", "on"]))
+        with self.assertRaises(ValueError):
+            common.execute(common.parser().parse_args(["--gpu", "cpu", *base]))
+        import check_ram_stability as ram
+        self.assertEqual(ram.parser().parse_args(["--testbed", "i5", "--gpu", "auto", "--cache", "64"]).gpu_expert_tier, "on")
+
 
 if __name__ == "__main__":
     unittest.main()

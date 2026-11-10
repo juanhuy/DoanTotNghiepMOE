@@ -503,3 +503,20 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --backend-model-ab \
   --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
   --max-tokens 1 --lookahead off --dry-run
 ```
+
+## Tầng VRAM expert bật/tắt S3 (gpu-tier-long-v1, 10/11)
+
+Câu hỏi tiếp theo của [đối chứng backend S3](experiments/2026-11-10-backend-cpu-gpu-i5/README.md): khi GPU dense đã bật, tầng VRAM expert (upload đồng bộ khoảng 5,3GiB/request) làm TTFT/prefill tốt hơn hay kém hơn? Công tắc mới MOE_GPU_EXPERT_TIER (xem ARCHITECTURE) tách riêng tầng này; mọi thứ khác giữ nguyên.
+
+Chốt trước đo:
+- Binary mới bae0afbea6a1be12a568f182d36232f54f684811b4de9b4ed48ecea724b29e90 (thêm công tắc; mặc định on giữ hành vi cũ). Kiểm trước: python3 tools/check.py --rust --release --web PASS (Rust 134 tests/profile, 8 ignored, fmt/Clippy, 97 Python, 7 Node); test CUDA tier off EXECUTED; fixture server auto on/off text khớp, status đúng. Không so số tuyệt đối với S2/S3 (binary khác).
+- Workload long-prefill v1 (bakery64/library128, warmup turn0–1 thu riêng, đo turn2–3, session mới mỗi request, reset chỉ trước turn0). Một ABBA tier on→off→off→on, 4 process mới, --gpu auto ở cả bốn. Max1, CPU4/victim/cache64MiB-layer/context512, Gate–Up paired, batch off, FP32KV/KVreuse off/lookahead off/trace on/greedy.
+- Validator: GPU enabled/dense offloaded mọi turn; status tier đúng; block off không được có VRAM upload/load/resident expert. Text/usage/finish/prompt tokens khớp; work counters ghi từng sample.
+- Rule (đối xứng, chốt trước): ratio on/off của TTFT VÀ prefill ≥1,05 ở cả 4 so sánh → "tắt tầng VRAM nhanh hơn"; ≤1/1,05 ở cả 4 → "tầng VRAM có lợi"; còn lại → "không có khác biệt nhất quán". Một lượt, không đổi ngưỡng/rerun/bỏ mẫu.
+- Guard5120/headroom1024/watchdog RSS5632/available1536/process swap128MiB. Preflight 3 mẫu cách5s available≥5120MiB/pswpout không tăng/không engine-build khác; ghi nvidia-smi trước chạy.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
+  --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
+  --max-tokens 1 --lookahead off --dry-run
+```

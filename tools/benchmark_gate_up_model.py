@@ -57,7 +57,21 @@ def measured_turns(workload):
     return (0, 1) if workload == "kv-switch" else tuple(ram.workload_spec(workload)["measured_turns"])
 
 
-def validate_block(record, mode, expert_batch=False, workload="kv-switch", backend=False):
+def validate_block(record, mode, expert_batch=False, workload="kv-switch", backend=False, gpu_tier=False):
+    if gpu_tier:
+        validate_block(record, "auto", workload=workload, backend=True)
+        enabled = mode == "on"
+        turns = record["turns"]
+        for status in [record["status_start"], *(t["status"] for t in turns)]:
+            if status.get("gpu_expert_tier_enabled") is not enabled:
+                raise ValueError("GPU expert tier actual mode mismatch")
+        if not enabled:
+            for turn in turns:
+                m = turn["response"]["metrics"]
+                if (m.get("expert_vram_upload_bytes") or m.get("expert_vram_loads")
+                        or turn["status"]["gpu"].get("vram_experts_resident")):
+                    raise ValueError("tier off but VRAM expert traffic observed")
+        return
     gate_mode = "paired" if (expert_batch or backend) else mode
     gpu_mode = mode if backend else "cpu"
     prompts, expected_tokens = workload_prompts(workload)
@@ -119,11 +133,11 @@ def validate_block(record, mode, expert_batch=False, workload="kv-switch", backe
             raise ValueError("trace/status mismatch")
 
 
-def compare_blocks(reference, actual, expert_batch=False, backend=False):
+def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tier=False):
     for key in ("source_sha256", "binary_sha256", "checkpoint"):
         if reference[key] != actual[key]:
             raise ValueError("source/binary/checkpoint drift")
-    ignore = (("gpu" if backend else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
+    ignore = (("gpu_expert_tier" if gpu_tier else "gpu" if backend else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
     if ({k: v for k, v in reference["config"].items() if k not in ignore}
             != {k: v for k, v in actual["config"].items() if k not in ignore}):
         raise ValueError("config drift")
@@ -133,14 +147,16 @@ def compare_blocks(reference, actual, expert_batch=False, backend=False):
         for key in ("text", "usage", "finish_reason"):
             if before["response"][key] != after["response"][key]:
                 raise ValueError("HTTP output parity failed")
-        for key in () if backend else WORK_COUNTERS:
+        for key in () if (backend or gpu_tier) else WORK_COUNTERS:
             if before["response"]["metrics"][key] != after["response"]["metrics"][key]:
                 raise ValueError("expert workload changed")
 
 
-def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False):
+def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu_tier=False):
     summary = []
-    baseline_name,candidate_name = ("cpu","auto") if backend else ("off","on") if expert_batch else ("separate","paired")
+    if gpu_tier:
+        backend = True
+    baseline_name,candidate_name = ("on","off") if gpu_tier else ("cpu","auto") if backend else ("off","on") if expert_batch else ("separate","paired")
     keys = ("total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms","attention_ms","lm_head_ms") if backend else (
         "total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms") if expert_batch else (
         "total_ms","prefill_ms","decode_ms","time_to_first_token_ms","expert_compute_ms")
@@ -165,18 +181,20 @@ def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False):
     return summary
 
 
-def execute(args, root, expert_batch=False, backend=False):
+def execute(args, root, expert_batch=False, backend=False, gpu_tier=False):
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
-    if backend:
+    if gpu_tier and backend:
+        raise ValueError("choose backend or GPU tier A/B")
+    if backend or gpu_tier:
         if expert_batch or workload != "long-prefill":
             raise ValueError("backend A/B uses long-prefill workload only, batch prefill off")
     elif workload != "kv-switch" and not expert_batch:
         raise ValueError("--expert-batch-workload applies only to --expert-batch-model-ab")
     prompts, expected_tokens = workload_prompts(workload)
     measured = measured_turns(workload)
-    expected_max = 1 if (expert_batch or backend) else 64
-    modes = ("cpu","auto","auto","cpu") if backend else ("off","on","on","off") if expert_batch else MODES
-    if ((args.gpu != ("auto" if backend else "cpu")) or args.threads != 4 or args.cache != 64 or args.context != 512
+    expected_max = 1 if (expert_batch or backend or gpu_tier) else 64
+    modes = ("on","off","off","on") if gpu_tier else ("cpu","auto","auto","cpu") if backend else ("off","on","on","off") if expert_batch else MODES
+    if ((args.gpu != ("auto" if (backend or gpu_tier) else "cpu")) or args.threads != 4 or args.cache != 64 or args.context != 512
             or args.max_tokens != expected_max or args.lookahead != "off" or args.http_session
             or args.suite or args.case or args.compare_lookahead or args.compare_cache_policies):
         raise ValueError("model Gate-Up protocol requires CPU/threads4/cache64/context512/max64/lookahead off; no other suite")
@@ -189,7 +207,7 @@ def execute(args, root, expert_batch=False, backend=False):
     dirty = bool(common.checked_text(["git", "status", "--porcelain", "--untracked-files=normal"], root, env))
     if dirty and not args.allow_dirty:
         raise ValueError("dirty tree; --allow-dirty is exploratory only")
-    protocol = {"kind": "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
+    protocol = {"kind": "gpu_tier_model_ab" if gpu_tier else "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
                 "git_dirty": dirty, "modes": modes, "model_dir": str(model),
                 "requests_per_block": len(prompts), "total_requests": 4 * len(prompts), "threads": 4,
                 "cache_mib_per_layer": 64, "context": 512, "max_tokens": expected_max,
@@ -207,7 +225,7 @@ def execute(args, root, expert_batch=False, backend=False):
         print(json.dumps(protocol, indent=2))
         return 0
     now = datetime.datetime.now(datetime.timezone.utc)
-    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
+    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
     directory = common.absolute(args.output_root, root) / args.testbed / run_id
     directory.mkdir(parents=True, exist_ok=False)
     record = {**protocol, "run_id": run_id, "status": "failed", "blocks": []}
@@ -218,9 +236,10 @@ def execute(args, root, expert_batch=False, backend=False):
         with fixed_environment():
             for index, mode in enumerate(modes):
                 block_root = directory / f"block-{index}-{mode}"
-                argv = ["--testbed", args.testbed, "--gpu", mode if backend else "cpu", "--lookahead", "off",
+                gpu_arg = "auto" if gpu_tier else mode if backend else "cpu"
+                argv = ["--testbed", args.testbed, "--gpu", gpu_arg, "--lookahead", "off",
                         "--memory-trace", "on", "--kv-buffer-reuse", "off",
-                        "--gate-up-mode", "paired" if (expert_batch or backend) else mode,
+                        "--gate-up-mode", "paired" if (expert_batch or backend or gpu_tier) else mode,
                         "--workload", workload, "--cache", "64", "--context", "512",
                         "--cycles", str(len(prompts)), "--max-tokens", str(expected_max), "--keep-cache", "--threads", "4",
                         "--model-dir", str(model), "--output-root", str(block_root),
@@ -228,8 +247,10 @@ def execute(args, root, expert_batch=False, backend=False):
                         "--stop-rss-mib", "5632", "--min-available-mib", "1536", "--stop-swap-mib", "128"]
                 if expert_batch:
                     argv.extend(["--expert-batch-prefill", mode])
-                if backend:
+                if backend or gpu_tier:
                     argv.extend(["--expert-batch-prefill", "off"])
+                if gpu_tier:
+                    argv.extend(["--gpu-expert-tier", mode])
                 if args.allow_dirty:
                     argv.append("--allow-dirty")
                 code = ram.execute(ram.parser().parse_args(argv))
@@ -241,16 +262,29 @@ def execute(args, root, expert_batch=False, backend=False):
                                          "run_id": current["run_id"], "status": current["status"]})
                 if code:
                     raise ValueError("block failed; no further blocks")
-                validate_block(current, mode, expert_batch=expert_batch, workload=workload, backend=backend)
+                validate_block(current, mode, expert_batch=expert_batch, workload=workload, backend=backend,
+                               gpu_tier=gpu_tier)
                 if records:
-                    compare_blocks(records[0], current, expert_batch=expert_batch, backend=backend)
+                    compare_blocks(records[0], current, expert_batch=expert_batch, backend=backend, gpu_tier=gpu_tier)
                 records.append(current)
                 if kernel.source_files(root) != before:
                     raise ValueError("source changed during protocol")
-        record["pairs"] = paired_summary(records, expert_batch=expert_batch, turns=measured, backend=backend)
+        record["pairs"] = paired_summary(records, expert_batch=expert_batch, turns=measured, backend=backend,
+                                         gpu_tier=gpu_tier)
         if record["warmup_turns"]:
             record["warmup_pairs_excluded"] = paired_summary(records, expert_batch=expert_batch,
-                                                             turns=tuple(record["warmup_turns"]), backend=backend)
+                                                             turns=tuple(record["warmup_turns"]), backend=backend,
+                                                             gpu_tier=gpu_tier)
+        if gpu_tier:
+            record["gpu_status_start"] = {r["status_start"]["gpu_expert_tier_enabled"]: r["status_start"]["gpu"] for r in records}
+            record["off_faster"] = all(
+                p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"] >= 1.05
+                and p["timers"]["prefill_ms"]["baseline_over_candidate"] >= 1.05 for p in record["pairs"])
+            record["on_faster"] = all(
+                p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"] <= 1 / 1.05
+                and p["timers"]["prefill_ms"]["baseline_over_candidate"] <= 1 / 1.05 for p in record["pairs"])
+            record["decision_rule"] = ("tier on/off TTFT and prefill ratio>=1.05 in all 4 => off faster; <=1/1.05 in all 4 "
+                                       "=> on faster; otherwise no consistent difference. GPU dense on both sides")
         if backend:
             record["gpu_status_start"] = {r["status_start"]["gpu_mode_at_load"]: r["status_start"]["gpu"] for r in records}
             record["passes_backend_rule"] = all(

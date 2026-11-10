@@ -128,6 +128,8 @@ pub struct LayerExpertStatus {
 #[derive(Serialize, Clone, Debug)]
 pub struct ExpertStatusReport {
     pub expert_batch_prefill_enabled: bool,
+    /// MOE_GPU_EXPERT_TIER: VRAM expert storage tier requested at load (dense GPU unaffected).
+    pub gpu_expert_tier_enabled: bool,
     pub gate_up_mode: &'static str,
     pub expert_quantization: &'static str,
     pub kv_buffer_reuse_enabled: bool,
@@ -568,6 +570,7 @@ pub struct OlmoeModel {
     session_cache_bytes: usize,
     victim_expert_cache: bool,
     expert_batch_prefill_enabled: bool,
+    gpu_expert_tier_enabled: bool,
     gate_up_mode: GateUpMode,
     expert_quantization: &'static str,
     lookahead_enabled: bool,
@@ -651,6 +654,11 @@ impl OlmoeModel {
 
         let lookahead_enabled =
             parse_lookahead_mode(std::env::var("MOE_LOOKAHEAD_PREFETCH").ok().as_deref())?;
+        let gpu_expert_tier_enabled = match std::env::var("MOE_GPU_EXPERT_TIER") {
+            Ok(value) => parse_gpu_expert_tier_mode(Some(&value))?,
+            Err(std::env::VarError::NotPresent) => true,
+            Err(_) => return Err(invalid("MOE_GPU_EXPERT_TIER must be on or off")),
+        };
         let memory_trace_enabled = match std::env::var("MOE_MEMORY_TRACE") {
             Ok(value) => parse_memory_trace_mode(Some(&value))?,
             Err(std::env::VarError::NotPresent) => false,
@@ -884,10 +892,12 @@ impl OlmoeModel {
                             allocated_mb = total_bytes / 1048576,
                             "Đã nạp toàn bộ Dense weights lên NVIDIA GPU VRAM (cuBLAS SGEMV kích hoạt)"
                         );
-                        let expert_cache_budget = gpu_tier
-                            .budget()
-                            .map(|b| (b.usable_vram_bytes as usize).saturating_sub(total_bytes))
-                            .unwrap_or(0);
+                        // Tier off keeps dense on GPU but reserves no VRAM pool for experts.
+                        let expert_cache_budget = gpu_expert_cache_budget(
+                            gpu_expert_tier_enabled,
+                            gpu_tier.budget().map(|b| b.usable_vram_bytes as usize),
+                            total_bytes,
+                        );
                         let weight_slot_bytes = if is_int4 {
                             (3 * config.hidden_size * config.intermediate_size) / 2
                         } else {
@@ -907,8 +917,11 @@ impl OlmoeModel {
                         } else {
                             None
                         };
-                        let pinned_upload_buf =
-                            crate::gpu::PinnedBuffer::alloc(&engine, single_expert_bytes);
+                        let pinned_upload_buf = if gpu_expert_tier_enabled {
+                            crate::gpu::PinnedBuffer::alloc(&engine, single_expert_bytes)
+                        } else {
+                            None
+                        };
                         info!(
                             expert_cache_mb = expert_cache_budget / 1048576,
                             pool_slots = max_pool_slots,
@@ -983,6 +996,7 @@ impl OlmoeModel {
             config,
             ram_guard,
             expert_batch_prefill_enabled,
+            gpu_expert_tier_enabled,
             gate_up_mode,
             expert_quantization,
             dense_bytes: dense_budget - budget,
@@ -1166,6 +1180,7 @@ impl OlmoeModel {
         }
         ExpertStatusReport {
             expert_batch_prefill_enabled: self.expert_batch_prefill_enabled,
+            gpu_expert_tier_enabled: self.gpu_expert_tier_enabled,
             gate_up_mode: self.gate_up_mode.as_str(),
             expert_quantization: self.expert_quantization,
             kv_buffer_reuse_enabled: self.kv_buffer_reuse_enabled,
@@ -4115,6 +4130,23 @@ fn parse_kv_buffer_reuse_mode(value: Option<&str>) -> io::Result<bool> {
     }
 }
 
+/// VRAM left for the expert tier after dense weights; zero when the tier is switched off.
+fn gpu_expert_cache_budget(tier_enabled: bool, usable_vram: Option<usize>, dense: usize) -> usize {
+    if tier_enabled {
+        usable_vram.map_or(0, |usable| usable.saturating_sub(dense))
+    } else {
+        0
+    }
+}
+
+fn parse_gpu_expert_tier_mode(value: Option<&str>) -> io::Result<bool> {
+    match value {
+        None | Some("on") => Ok(true),
+        Some("off") => Ok(false),
+        _ => Err(invalid("MOE_GPU_EXPERT_TIER must be on or off")),
+    }
+}
+
 fn parse_lookahead_mode(value: Option<&str>) -> io::Result<bool> {
     match value {
         None | Some("on") => Ok(true),
@@ -4489,6 +4521,14 @@ mod memory_trace_tests {
         assert!(!parse_kv_buffer_reuse_mode(Some("off")).unwrap());
         assert!(parse_kv_buffer_reuse_mode(Some("on")).unwrap());
         assert!(parse_kv_buffer_reuse_mode(Some("true")).is_err());
+        assert!(parse_gpu_expert_tier_mode(None).unwrap());
+        assert!(parse_gpu_expert_tier_mode(Some("on")).unwrap());
+        assert!(!parse_gpu_expert_tier_mode(Some("off")).unwrap());
+        assert!(parse_gpu_expert_tier_mode(Some("0")).is_err());
+        assert_eq!(gpu_expert_cache_budget(true, Some(3000), 1000), 2000);
+        assert_eq!(gpu_expert_cache_budget(true, Some(500), 1000), 0);
+        assert_eq!(gpu_expert_cache_budget(true, None, 1000), 0);
+        assert_eq!(gpu_expert_cache_budget(false, Some(3000), 1000), 0);
         for fixture in ["unnormalized-mha", "normalized-gqa"] {
             let mut reused = model(fixture);
             reused.kv_buffer_reuse_enabled = true;
@@ -5125,6 +5165,57 @@ mod cancellation_tests {
             "undersized staging must stay untouched"
         );
         eprintln!("EXECUTED undersized pinned staging fallback/logits on CUDA");
+    }
+
+    #[test]
+    fn gpu_expert_tier_off_keeps_dense_on_gpu_without_vram_uploads() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 512, 64, 10_000_000).unwrap();
+        let Some(storage) = model.gpu_dense.as_mut() else {
+            eprintln!("SKIPPED GPU expert tier off: GPU unavailable");
+            return;
+        };
+        // Same state the load path builds for MOE_GPU_EXPERT_TIER=off: budget 0, no pool/pinned.
+        storage.clear_expert_cache();
+        storage.expert_cache.max_bytes = gpu_expert_cache_budget(false, Some(usize::MAX), 0);
+        storage.expert_pool = None;
+        storage.pinned_upload_buf = None;
+        model.gpu_expert_tier_enabled = false;
+        model.victim_expert_cache = true;
+        model.set_gpu_enabled(false);
+        let tokens = [1, 3, 4, 5, 6, 7, 8];
+        let expected = model.logits(&tokens).unwrap();
+        model.reset_cache();
+        model.set_gpu_enabled(true);
+        let actual = model.logits(&tokens).unwrap();
+        for (actual, expected) in actual.iter().zip(&expected) {
+            let error = actual
+                .iter()
+                .zip(expected)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f32, f32::max);
+            assert!(error < 2e-5, "tier-off CUDA logit error={error}");
+        }
+        // Tiny RAM cache forces evictions; with the tier off none may reach VRAM.
+        model.reset_cache();
+        let result = model.generate("[BOS]token3 token4 ", 4).unwrap();
+        let metrics = result.metrics.unwrap();
+        assert!(
+            metrics.expert_cache_evictions > 0,
+            "trigger needs RAM evictions"
+        );
+        assert_eq!(metrics.expert_vram_upload_bytes, 0);
+        assert_eq!(metrics.expert_vram_loads, 0);
+        let status = model.expert_status();
+        assert!(status.gpu.enabled && status.gpu.dense_offloaded);
+        assert!(!status.gpu_expert_tier_enabled);
+        assert_eq!(status.gpu.vram_experts_resident, 0);
+        let storage = model.gpu_dense.as_ref().unwrap();
+        assert!(storage.engine.is_healthy() && storage.expert_cache.is_empty());
+        eprintln!(
+            "EXECUTED GPU expert tier off on CUDA: dense GPU, no VRAM uploads, logits parity"
+        );
     }
 
     #[test]
