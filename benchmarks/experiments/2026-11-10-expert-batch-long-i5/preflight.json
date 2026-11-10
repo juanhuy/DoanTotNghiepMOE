@@ -1,0 +1,37 @@
+{
+  "samples": [
+    {
+      "utc": "2026-11-10T04:53:47.285162+00:00",
+      "available_kib": 10236392,
+      "swap_used_kib": 2050160,
+      "pswpout": 480777,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=2735335",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=2698437"
+      ]
+    },
+    {
+      "utc": "2026-11-10T04:53:52.286042+00:00",
+      "available_kib": 10251388,
+      "swap_used_kib": 2050160,
+      "pswpout": 480777,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=2735335",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=2698437"
+      ]
+    },
+    {
+      "utc": "2026-11-10T04:53:57.287084+00:00",
+      "available_kib": 10248480,
+      "swap_used_kib": 2050036,
+      "pswpout": 480777,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=2735349",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=2698451"
+      ]
+    }
+  ],
+  "active_engine_build_processes": [],
+  "min_available_required_mib": 5120,
+  "eligible": true
+}

@@ -1,0 +1,4 @@
+[2m2026-11-10T04:55:02.456480Z[0m [32m INFO[0m [2mmoe_tier_engine::ram[0m[2m:[0m Cooperative RAM guard; limit includes dense/cache/request/allocator RSS, not a kernel cap [3mrss_limit_bytes[0m[2m=[0m5368709120 [3msystem_headroom_bytes[0m[2m=[0m1073741824
+[2m2026-11-10T04:55:03.219291Z[0m [32m INFO[0m [2mmoe_tier_engine::olmoe[0m[2m:[0m CPU selected at load; skipping CUDA probe and GPU allocation
+[2m2026-11-10T04:55:03.219526Z[0m [32m INFO[0m [2mmoe_tier_engine[0m[2m:[0m Chạy chế độ CPU/RAM/SSD
+[2m2026-11-10T04:55:03.219535Z[0m [32m INFO[0m [2mmoe_tier_engine[0m[2m:[0m MoE server ready [3maddress[0m[2m=[0m"127.0.0.1:43749" [3mdirectory[0m[2m=[0m"/home/son/son/DATN/Models/olmoe_merged" [3mmodel_name[0m[2m=[0m"olmoe"

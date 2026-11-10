@@ -479,3 +479,5 @@ python3 tools/run_benchmark.py --testbed i5 --gpu cpu --expert-batch-model-ab \
 ```
 
 Bỏ --dry-run sau preflight; tree sạch thì không dùng --allow-dirty.
+
+**Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-expert-batch-long-i5/README.md) run20261110T045405.090137Z-expert-batch-model-6536…, HEAD9cf3b0b sạch, 16/16completed, output/counter khớp. Primary ĐẠT: TTFT ratio bakery1,0820/1,0646, library1,0941/1,0892, prefill tương ứng ≥1,0645. Expert_compute ratio1,416–1,506. Warmup (loại theo protocol) bakery cặp1 1,0335. Không rerun.
