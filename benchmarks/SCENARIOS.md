@@ -520,3 +520,5 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
   --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
   --max-tokens 1 --lookahead off --dry-run
 ```
+
+**Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-gpu-expert-tier-i5/README.md) run20261110T070546.777634Z-gpu-tier-model-bc40…, HEAD4f319b7 sạch, 16/16completed, text khớp. Rule "tắt nhanh hơn" ĐẠT: TTFT on/off bakery1,446/1,211, library1,319/1,429; attention ~1; expert_compute on/off1,085–1,193. Warmup library cặp1 0,951. Mặc định on chưa đổi. Không rerun.

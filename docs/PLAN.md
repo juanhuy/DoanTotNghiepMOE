@@ -2,7 +2,7 @@
 
 Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục công việc; lịch sử nằm trong [PROGRESS](PROGRESS.md), kết luận có nguồn trong [EVIDENCE_MATRIX](thesis/EVIDENCE_MATRIX.md). Không tạo thêm status/report bàn giao song song.
 
-**Việc tiếp theo: S3 trên i5.** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 10/11: probe CUDA thực chạy; đối chứng backend cpu/auto ([P1](../benchmarks/experiments/2026-11-10-backend-cpu-gpu-i5/README.md)) đạt rule, TTFT giảm19–38% chủ yếu nhờ dense/attention cuBLAS; tầng VRAM expert upload ~5,3GiB/request, lợi ròng chưa chứng minh. Còn mở trong S3: công tắc/đối chứng riêng tầng VRAM expert và inclusive/victim trên GPU nếu cần cho luận điểm. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
+**Việc tiếp theo: S4 trên i5 (S3 đã có bằng chứng GPU, xem dòng S3 bên dưới).** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 10/11: probe CUDA thực chạy; đối chứng backend cpu/auto ([P1](../benchmarks/experiments/2026-11-10-backend-cpu-gpu-i5/README.md)) đạt rule, TTFT giảm19–38% chủ yếu nhờ dense/attention cuBLAS; tầng VRAM expert upload ~5,3GiB/request, lợi ròng chưa chứng minh. Công tắc MOE_GPU_EXPERT_TIER và đối chứng tier on/off ([P1](../benchmarks/experiments/2026-11-10-gpu-expert-tier-i5/README.md)): với dense GPU hai phía, tắt tầng VRAM expert giảm TTFT17–31% ở4/4; mặc định chưa đổi. S3 coi như xong cho luận điểm tiering; còn thiếu decode/nhiều lượt (S5) và inclusive trên GPU. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
 
 ## Bắt đầu ở chat mới — đọc phần này trước
 
@@ -55,8 +55,8 @@ S0/S1/S2 có kết quả ngày10/11 (xem PROGRESS); S3–S6 chưa có kết qu�
 | **S0 — xong10/11** | Rà nguồn local, chọn snapshot/cấu hình và chuẩn bị phép kiểm | Nguồn/binary/checks truy được, giữ dirty changes, protocol và ngưỡng ghi rõ |
 | **S1 — gate đạt10/11** | Một cửa sổ vận hành i5 có giám sát | Đạt gate an toàn hữu hạn; nếu không đạt thì ghi failure/xử lý trigger trước phép đo model nặng |
 | **S2 — đạt10/11** | Đánh giá batch2/4 trên prompt dài được chốt trước | Có parity, counters, TTFT/compute/RAM và quyết định phạm vi sử dụng; không cần ép kết quả dương |
-| **S3 — đang mở** | Hoàn thiện bằng chứng cache và VRAM thực | Có đối chứng áp dụng được hoặc công bố phần chưa kiểm; CPU-only không xác nhận lợi ích VRAM |
-| **S4 — prefetch** | Kiểm coverage router-prefetch/lookahead | Cơ chế/counter đúng; giới hạn cơ hội kích hoạt được định lượng, không bắt predictor phải tăng tốc |
+| **S3 — có bằng chứng10/11** | Hoàn thiện bằng chứng cache và VRAM thực | Có đối chứng áp dụng được hoặc công bố phần chưa kiểm; CPU-only không xác nhận lợi ích VRAM |
+| **S4 — đang mở** | Kiểm coverage router-prefetch/lookahead | Cơ chế/counter đúng; giới hạn cơ hội kích hoạt được định lượng, không bắt predictor phải tăng tốc |
 | **S5 — bộ kết quả cuối** | Bổ sung đúng các metric/kịch bản còn thiếu | Đủ số liệu cho sáu mục tiêu, không chạy lại toàn bộ lịch sử/cross-product |
 | **S6 — báo cáo/bàn giao** | Tổng hợp luận điểm, giới hạn, tái lập và demo | Mọi kết luận có nguồn; công việc i7/publish có nhiệm vụ riêng, không suy diễn đã xong |
 
@@ -159,6 +159,6 @@ Không kéo thêm mẫu tới khi đẹp, không tiếp tục tối ưu một nh
 >
 > S0/S1/S2 đã xong ngày10/11 (hồ sơ P1 2026-11-10-ram-window-i5 và 2026-11-10-expert-batch-long-i5). Kiểm git status trên main local; giữ mọi thay đổi mới, không reset/clean hoặc đổi nhánh để làm sạch. Chưa mặc định origin/main/i7 đã được cập nhật.
 >
-> S3 đã có probe CUDA và đối chứng backend cpu/auto (P1 2026-11-10-backend-cpu-gpu-i5). Việc còn lại của S3: quyết định có cần công tắc riêng tầng VRAM expert (sửa engine, tests, rebuild) để tách lợi/hại của upload đồng bộ hay ghi giới hạn rồi sang S4. Không lặp S1/S2/S3, không chạy S4–S6 đồng thời.
+> S3 đã có probe CUDA, đối chứng backend cpu/auto và tier VRAM on/off (P1 2026-11-10-backend-cpu-gpu-i5, 2026-11-10-gpu-expert-tier-i5). Tiếp S4: kiểm coverage prefetch theo PLAN. Đổi mặc định MOE_GPU_EXPERT_TIER chỉ sau phép decode/nhiều lượt ở S5. Không lặp S1–S3, không chạy S4–S6 đồng thời.
 >
 > Giữ INT8/FP32KV và ngân sách tường minh; batch off mặc định, chưa bật predictor/INT4/FP8/model16B. Không lặp các lượt09/11 để tìm phần trăm đẹp. Chỉ sửa engine khi có trigger cụ thể và kiểm chứng phù hợp. Cập nhật PROGRESS trước khi báo xong; báo kết luận và giới hạn, không đổ toàn bộ raw vào ngữ cảnh.
