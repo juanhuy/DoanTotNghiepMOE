@@ -90,7 +90,7 @@ python3 tools/check_ram_stability.py --testbed i7 --gpu cpu --lookahead off \
 
 **Vì sao giao:** trên i5 (GTX1650 Max-Q 4GB), khi dense chạy GPU, tắt tầng VRAM expert nhanh hơn ở prefill ([P1](../benchmarks/experiments/2026-11-10-gpu-expert-tier-i5/README.md), TTFT on/off1,21–1,45) và chat/decode ([P1](../benchmarks/experiments/2026-11-10-gpu-tier-chat-i5/README.md), total1,39–1,87×, decode trung vị3,13→5,53tok/s). Nguyên nhân quan sát: pool VRAM i5 chỉ chứa298/1024 expert (~29%) nên xoay vòng, upload5–41GiB/request. i7 (RTX5060 Laptop ~7,5GB theo hồ sơ kỳ1) có thể chứa phần lớn expert, nên kết quả có thể **ngược lại** — đây là câu hỏi cần đo, không suy từ i5. Mặc định `MOE_GPU_EXPERT_TIER` (hiện on) chỉ được quyết định sau khi có kết quả i7. Đọc [ARCHITECTURE: công tắc tầng VRAM](ARCHITECTURE.md#công-tắc-tầng-vram-expert-moe_gpu_expert_tier-1011) trước khi chạy.
 
-**1. Nhận đúng source.** Cần commit chứa protocol này (main i5 từ ede12d0 trở đi, owner i5 thông báo commit đã publish). Trên checkout sạch làm theo mục "Nhận gốc phát triển chung" ở trên, rồi tạo branch riêng, ví dụ `git switch -c work/i7-gpu-tier`. Ghi `git rev-parse HEAD`, `git status --short` (phải rỗng), `rustc -V`, OS/kernel/WSL.
+**1. Nhận đúng source.** Cần main từ commit 1d06fca trở đi (chứa protocol, preflight và bản sửa CRLF để clone sạch không bị coi là dirty); owner i5 thông báo commit đã publish. Sau `git pull`, `git status --short` phải rỗng trước khi đo. Trên checkout sạch làm theo mục "Nhận gốc phát triển chung" ở trên, rồi tạo branch riêng, ví dụ `git switch -c work/i7-gpu-tier`. Ghi `git rev-parse HEAD`, `git status --short` (phải rỗng), `rustc -V`, OS/kernel/WSL.
 
 **2. Kiểm môi trường và GPU thật (trước mọi phép đo, không chạy song song):**
 
