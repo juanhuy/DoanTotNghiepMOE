@@ -457,3 +457,5 @@ python3 tools/check_ram_stability.py --testbed i5 --gpu cpu --threads 4 \
 ```
 
 Đạt gate chỉ cho phép viết "vận hành được trong cấu hình/cửa sổ đã thử" và mở S2 có giám sát; không hard cap/hết leak/plateau dài hạn, không tự đóng giai đoạn1.
+
+**Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-ram-window-i5/README.md) run20261110T043843.817290Z-ram-9d3521ed…, HEAD2f64752 sạch. Gate an toàn ĐẠT: 24/24completed, không violation/OOM, RSS/HWM max3188,621MiB, VmSwap engine0, availablemin6596,8MiB. Spread request17–24 13,980MiB ≤64 → phẳng trong cửa sổ; request1→24 tăng300,887MiB, tracked cố định2909,011MiB. pswpout hệ thống tăng238965page trong run (process khác, tác nhân chưa xác định). Không lặp lượt này.

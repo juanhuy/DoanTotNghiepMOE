@@ -1,0 +1,40 @@
+{
+  "kind": "ram_stability",
+  "config": {
+    "testbed": "i5",
+    "gpu": "cpu",
+    "lookahead": "off",
+    "memory_trace": "on",
+    "kv_buffer_reuse": "off",
+    "workload": "mixed",
+    "expert_batch_prefill": "off",
+    "gate_up_mode": "paired",
+    "cache": 64,
+    "model_dir": "models/olmoe-1b-7b-int8",
+    "threads": 4,
+    "context": 512,
+    "cycles": 24,
+    "max_tokens": 64,
+    "keep_cache": true,
+    "ram_limit_mib": 5120,
+    "headroom_mib": 1024,
+    "stop_rss_mib": 5632,
+    "min_available_mib": 1536,
+    "stop_swap_mib": 128,
+    "output_root": "benchmarks/runs",
+    "allow_dirty": false,
+    "dry_run": true
+  },
+  "workload_spec": {
+    "id": "mixed",
+    "version": 1,
+    "prompts": [
+      "Where is Mars",
+      "What planet did I just ask about?",
+      "Explain a Python dictionary.",
+      "What is love ?"
+    ],
+    "session_mode": "follow-up at phase 1"
+  },
+  "notes": "No build/load. Stop other inference before execution."
+}

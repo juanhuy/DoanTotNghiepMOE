@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới10/11: [P1 — cửa sổ RAM S1](experiments/2026-11-10-ram-window-i5/README.md) hoàn tất24/24request mixed trên tree sạch, RSS/HWM max3188,6MiB, VmSwap engine0, spread request17–24 14MiB; swap-out hệ thống tăng do process khác. Chỉ là cửa sổ hữu hạn, không hard-cap.
+
 Kết quả mới09/11: [P2 — kernel expert nhiều token](experiments/2026-11-09-expert-batch-int8-i5/README.md) đạt1,410×/1,381× trên weights thật resident. Model có expert_compute thấp hơn17,5–29,2% trong4so sánh, nhưng TTFT chỉ tốt hơn3/4 nên chưa đạt tiêu chí toànrequest. Tính năng CPU/INT8 opt-in, mặc địnhoff; scratch bổ sung144KiB được tính vào budget.
 
 Câu hỏi nghiên cứu hiện hành: **Trong ngân sách bộ nhớ cho trước, cách quản lý và di chuyển expert ảnh hưởng thế nào đến thời gian phản hồi, tốc độ sinh và lượng dữ liệu phải truyền?** GPU là tài nguyên tùy chọn; ngân sách RAM và VRAM phải ghi riêng.
@@ -17,7 +19,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 21 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 22 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -34,6 +36,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 | [Kiểm chức năng model thật](experiments/2026-10-22-stage1-validation/README.md) | Smoke chức năng và giới hạn kiểm chất lượng; chưa nghiệm thu baseline |
 | [RAM i5 08/11](experiments/2026-11-08-ram-budget-i5/README.md) | RSS thực khác cache budget; chưa bảo đảm plateau/hard-cap |
 | [Allocator i5 08/11](experiments/2026-11-08-allocator-i5/README.md) | Bằng chứng giữ vùng đã free, thu hẹp giả thuyết leak lớn |
+| [Cửa sổ RAM S1 10/11](experiments/2026-11-10-ram-window-i5/README.md) | Gate an toàn S1 đạt 24/24 request trên tree sạch; spread 8 request cuối 14MiB; chưa hard-cap/plateau dài hạn |
 
 ### P2 — BỔ TRỢ: giới hạn và quyết định giữ/bỏ hướng
 

@@ -2,7 +2,7 @@
 
 Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục công việc; lịch sử nằm trong [PROGRESS](PROGRESS.md), kết luận có nguồn trong [EVIDENCE_MATRIX](thesis/EVIDENCE_MATRIX.md). Không tạo thêm status/report bàn giao song song.
 
-**Việc tiếp theo: S0 → S1 trên i5. Chưa chạy các việc mới trong kế hoạch này.** Kiểm RAM trước các phép đo model mới; sau đó S2 đánh giá kernel nhiều token trên prompt dài. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
+**Việc tiếp theo: S2 trên i5.** S0 và S1 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([hồ sơ P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn. S2 đánh giá kernel nhiều token trên prompt dài, cần chốt prompt/protocol và mở rộng harness trước khi đo. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
 
 ## Bắt đầu ở chat mới — đọc phần này trước
 
@@ -16,7 +16,7 @@ Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục c�
 
 - Prototype OLMoE INT8/API/UI/session/cache/tiering đã có. Expert SwiGLU tính CPU; CUDA/cuBLAS hỗ trợ phần dense và tầng lưu expert VRAM, tùy phần cứng.
 - Kernel nhiều token đã có trong code, CPU/INT8 opt-in MOE_EXPERT_BATCH_PREFILL=on, mặc định off. Compute có lợi trong phạm vi thử; TTFT chưa ổn định. Không tự bật mặc định.
-- Nghiệm thu tổng RAM/giai đoạn1 vẫn mở. Allocator giữ vùng đã free là bằng chứng chính của tăng RSS đã điều tra; chưa chứng minh hard cap, plateau dài hạn hoặc hết leak nhỏ.
+- Nghiệm thu tổng RAM/giai đoạn1 vẫn mở. Allocator giữ vùng đã free là bằng chứng chính của tăng RSS đã điều tra; chưa chứng minh hard cap, plateau dài hạn hoặc hết leak nhỏ. S1 10/11: 24/24request, RSS max3188,6MiB, spread8request cuối14MiB, VmSwap engine0; swap-out hệ thống do process khác vẫn xảy ra.
 - Kỳ1 i5/i7 dùng checkpoint khác nhau. Dữ liệu cũ không tự là số đo của revision hiện tại hoặc đối chứng CPU hai máy.
 - Kiểm cuối source hiện có ngày09/11:133Rust tests/profile,8ignored/profile,87Python,7Node; HTTP fixture bật batch30vòng=20completed/10cancelled.434payload checksum. Đây là kết quả cũ có nguồn, không phải kiểm mới ngày10/11.
 
@@ -48,13 +48,13 @@ Một chiến lược không có lợi vẫn trả lời mục tiêu thực nghi
 
 ## 3. Thứ tự việc cần làm
 
-Các bước S0–S6 dưới đây là kế hoạch mới, chưa có kết quả. Mã S1 không đồng nghĩa giai đoạn1 của đồ án đã được đóng.
+S0/S1 có kết quả ngày10/11 (xem PROGRESS); S2–S6 chưa có kết quả. Mã S1 không đồng nghĩa giai đoạn1 của đồ án đã được đóng.
 
 | Bước | Việc | Điều kiện chuyển bước |
 | --- | --- | --- |
-| **S0 — đang mở** | Rà nguồn local, chọn snapshot/cấu hình và chuẩn bị phép kiểm | Nguồn/binary/checks truy được, giữ dirty changes, protocol và ngưỡng ghi rõ |
-| **S1 — ưu tiên RAM** | Một cửa sổ vận hành i5 có giám sát | Đạt gate an toàn hữu hạn; nếu không đạt thì ghi failure/xử lý trigger trước phép đo model nặng |
-| **S2 — compute/prefill** | Đánh giá batch2/4 trên prompt dài được chốt trước | Có parity, counters, TTFT/compute/RAM và quyết định phạm vi sử dụng; không cần ép kết quả dương |
+| **S0 — xong10/11** | Rà nguồn local, chọn snapshot/cấu hình và chuẩn bị phép kiểm | Nguồn/binary/checks truy được, giữ dirty changes, protocol và ngưỡng ghi rõ |
+| **S1 — gate đạt10/11** | Một cửa sổ vận hành i5 có giám sát | Đạt gate an toàn hữu hạn; nếu không đạt thì ghi failure/xử lý trigger trước phép đo model nặng |
+| **S2 — đang mở** | Đánh giá batch2/4 trên prompt dài được chốt trước | Có parity, counters, TTFT/compute/RAM và quyết định phạm vi sử dụng; không cần ép kết quả dương |
 | **S3 — cache/tiering** | Hoàn thiện bằng chứng cache và VRAM thực | Có đối chứng áp dụng được hoặc công bố phần chưa kiểm; CPU-only không xác nhận lợi ích VRAM |
 | **S4 — prefetch** | Kiểm coverage router-prefetch/lookahead | Cơ chế/counter đúng; giới hạn cơ hội kích hoạt được định lượng, không bắt predictor phải tăng tốc |
 | **S5 — bộ kết quả cuối** | Bổ sung đúng các metric/kịch bản còn thiếu | Đủ số liệu cho sáu mục tiêu, không chạy lại toàn bộ lịch sử/cross-product |
@@ -157,8 +157,8 @@ Không kéo thêm mẫu tới khi đẹp, không tiếp tục tối ưu một nh
 
 > Tiếp tục đồ án trong workspace hiện tại. Đọc AGENTS.md, docs/PLAN.md (bản10/11/2026), quy tắc và mục mới nhất của docs/PROGRESS.md; sau đó chỉ mở hồ sơ P1/P2 liên quan.
 >
-> Thực hiện S0 trước, kiểm nguồn/config/checks và git status trên main local đã nhận các commit10/11. Giữ mọi thay đổi mới nếu có, không reset/clean hoặc đổi nhánh để làm sạch. Chưa mặc định origin/main/i7 đã được cập nhật. Raw dirty09/11 vẫn giữ nguyên provenance cũ.
+> S0/S1 đã xong ngày10/11 (gate an toàn RAM đạt, hồ sơ P1 2026-11-10-ram-window-i5). Kiểm git status trên main local; giữ mọi thay đổi mới, không reset/clean hoặc đổi nhánh để làm sạch. Chưa mặc định origin/main/i7 đã được cập nhật.
 >
-> Sau S0, chuẩn bị protocol S1 RAM hữu hạn theo PLAN và preflight. Chỉ chạy đúng lượt đã chốt khi nguồn/môi trường đủ điều kiện; dirty run ghi exploratory. Nếu thiếu điều kiện thì ghi rõ và làm phần chuẩn bị độc lập, không nới ngưỡng. Không chạy S2–S6 đồng thời hoặc mở thêm hướng mới.
+> Tiếp S2: chọn hai prompt ~64/128 token sau template, lưu text/token count/hash, mở rộng harness có tests, chốt protocol vào SCENARIOS trước đo. Không lặp S1, không chạy S3–S6 đồng thời hoặc mở thêm hướng mới.
 >
 > Giữ INT8/FP32KV và ngân sách tường minh; batch off mặc định, chưa bật predictor/INT4/FP8/model16B. Không lặp các lượt09/11 để tìm phần trăm đẹp. Chỉ sửa engine khi có trigger cụ thể và kiểm chứng phù hợp. Cập nhật PROGRESS trước khi báo xong; báo kết luận và giới hạn, không đổ toàn bộ raw vào ngữ cảnh.
