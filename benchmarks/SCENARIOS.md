@@ -539,3 +539,5 @@ python3 tools/run_benchmark.py --testbed i5 --gpu cpu --prefill-prefetch-model-a
   --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
   --max-tokens 1 --lookahead off --dry-run
 ```
+
+**Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-prefill-prefetch-i5/README.md) run20261110T074027.992428Z-prefetch-model-ffcb…, HEADed0f3b4 sạch, 16/16completed, text và5 work counter khớp. Rule: không nhất quán — TTFT on/off cặp0 1,240/1,172, cặp1 0,959/0,928. Preload128/request (13–15% lần nạp), RSS đỉnh +~100MiB. Không rerun.

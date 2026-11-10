@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới10/11 (S4): [P1 — prefetch theo router](experiments/2026-11-10-prefill-prefetch-i5/README.md) prefill prefetch on/off cho TTFT on/off1,240/1,172 (cặp0) và0,959/0,928 (cặp1): không nhất quán; lookahead decode gate mở0,066%. Chưa chứng minh lợi ích prefetch.
+
 Kết quả mới10/11 (S3, tầng VRAM): [P1 — tier bật/tắt](experiments/2026-11-10-gpu-expert-tier-i5/README.md) với dense GPU hai phía, tắt tầng VRAM expert nhanh hơn ở4/4 (TTFT on/off1,211–1,446). Lợi GPU đến từ dense; tầng VRAM theo thiết kế hiện tại là chi phí ròng trên workload này.
 
 Kết quả mới10/11 (S3): [P1 — backend CPU/GPU](experiments/2026-11-10-backend-cpu-gpu-i5/README.md) GPU auto đạt rule4/4, TTFT ratio cpu/auto1,235–1,618, chủ yếu attention/dense cuBLAS; tầng VRAM expert lợi ròng chưa chứng minh (upload đồng bộ ~5,3GiB/request). RSS auto +~380MiB.
@@ -25,7 +27,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 25 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 26 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -42,6 +44,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 | [Kiểm chức năng model thật](experiments/2026-10-22-stage1-validation/README.md) | Smoke chức năng và giới hạn kiểm chất lượng; chưa nghiệm thu baseline |
 | [RAM i5 08/11](experiments/2026-11-08-ram-budget-i5/README.md) | RSS thực khác cache budget; chưa bảo đảm plateau/hard-cap |
 | [Allocator i5 08/11](experiments/2026-11-08-allocator-i5/README.md) | Bằng chứng giữ vùng đã free, thu hẹp giả thuyết leak lớn |
+| [Prefetch theo router S4 10/11](experiments/2026-11-10-prefill-prefetch-i5/README.md) | Prefill prefetch on/off không nhất quán (phủ13–15% lần nạp); lookahead decode gate đủ điều kiện0,066% ở cache64; cơ chế đúng chức năng, lợi ích chưa chứng minh |
 | [Tầng VRAM expert bật/tắt 10/11](experiments/2026-11-10-gpu-expert-tier-i5/README.md) | GPU dense bật hai phía: tắt tầng VRAM expert giảm TTFT17–31% ở4/4; upload ~5,3GiB/request là chi phí chính; mặc định chưa đổi |
 | [Backend CPU/GPU S3 10/11](experiments/2026-11-10-backend-cpu-gpu-i5/README.md) | GPU auto giảm TTFT19–38% nhờ dense/attention cuBLAS; tầng VRAM expert phục vụ ~8% miss nhưng upload ~5,3GiB/request; expert vẫn CPU |
 | [Batch prefill prompt dài S2 10/11](experiments/2026-11-10-expert-batch-long-i5/README.md) | Primary đạt 4/4: TTFT giảm 6,1–8,6%, compute 29,4–33,6% ở prompt 64/128 token, max1/CPU4; opt-in, không suy decode/i7 |

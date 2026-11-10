@@ -2,7 +2,7 @@
 
 Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục công việc; lịch sử nằm trong [PROGRESS](PROGRESS.md), kết luận có nguồn trong [EVIDENCE_MATRIX](thesis/EVIDENCE_MATRIX.md). Không tạo thêm status/report bàn giao song song.
 
-**Việc tiếp theo: S4 trên i5 (S3 đã có bằng chứng GPU, xem dòng S3 bên dưới).** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 10/11: probe CUDA thực chạy; đối chứng backend cpu/auto ([P1](../benchmarks/experiments/2026-11-10-backend-cpu-gpu-i5/README.md)) đạt rule, TTFT giảm19–38% chủ yếu nhờ dense/attention cuBLAS; tầng VRAM expert upload ~5,3GiB/request, lợi ròng chưa chứng minh. Công tắc MOE_GPU_EXPERT_TIER và đối chứng tier on/off ([P1](../benchmarks/experiments/2026-11-10-gpu-expert-tier-i5/README.md)): với dense GPU hai phía, tắt tầng VRAM expert giảm TTFT17–31% ở4/4; mặc định chưa đổi. S3 coi như xong cho luận điểm tiering; còn thiếu decode/nhiều lượt (S5) và inclusive trên GPU. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
+**Việc tiếp theo: S5 trên i5 (S3/S4 đã có bằng chứng 10/11).** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 10/11: probe CUDA thực chạy; đối chứng backend cpu/auto ([P1](../benchmarks/experiments/2026-11-10-backend-cpu-gpu-i5/README.md)) đạt rule, TTFT giảm19–38% chủ yếu nhờ dense/attention cuBLAS; tầng VRAM expert upload ~5,3GiB/request, lợi ròng chưa chứng minh. Công tắc MOE_GPU_EXPERT_TIER và đối chứng tier on/off ([P1](../benchmarks/experiments/2026-11-10-gpu-expert-tier-i5/README.md)): với dense GPU hai phía, tắt tầng VRAM expert giảm TTFT17–31% ở4/4; mặc định chưa đổi. S3 coi như xong cho luận điểm tiering; còn thiếu decode/nhiều lượt (S5) và inclusive trên GPU. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
 
 ## Bắt đầu ở chat mới — đọc phần này trước
 
@@ -56,8 +56,8 @@ S0/S1/S2 có kết quả ngày10/11 (xem PROGRESS); S3–S6 chưa có kết qu�
 | **S1 — gate đạt10/11** | Một cửa sổ vận hành i5 có giám sát | Đạt gate an toàn hữu hạn; nếu không đạt thì ghi failure/xử lý trigger trước phép đo model nặng |
 | **S2 — đạt10/11** | Đánh giá batch2/4 trên prompt dài được chốt trước | Có parity, counters, TTFT/compute/RAM và quyết định phạm vi sử dụng; không cần ép kết quả dương |
 | **S3 — có bằng chứng10/11** | Hoàn thiện bằng chứng cache và VRAM thực | Có đối chứng áp dụng được hoặc công bố phần chưa kiểm; CPU-only không xác nhận lợi ích VRAM |
-| **S4 — đang mở** | Kiểm coverage router-prefetch/lookahead | Cơ chế/counter đúng; giới hạn cơ hội kích hoạt được định lượng, không bắt predictor phải tăng tốc |
-| **S5 — bộ kết quả cuối** | Bổ sung đúng các metric/kịch bản còn thiếu | Đủ số liệu cho sáu mục tiêu, không chạy lại toàn bộ lịch sử/cross-product |
+| **S4 — có bằng chứng10/11** | Kiểm coverage router-prefetch/lookahead | Cơ chế/counter đúng; giới hạn cơ hội kích hoạt được định lượng, không bắt predictor phải tăng tốc |
+| **S5 — đang mở** | Bổ sung đúng các metric/kịch bản còn thiếu | Đủ số liệu cho sáu mục tiêu, không chạy lại toàn bộ lịch sử/cross-product |
 | **S6 — báo cáo/bàn giao** | Tổng hợp luận điểm, giới hạn, tái lập và demo | Mọi kết luận có nguồn; công việc i7/publish có nhiệm vụ riêng, không suy diễn đã xong |
 
 ### S0. Xác minh nguồn và đóng băng điều kiện
@@ -132,6 +132,8 @@ Chỉ so hiệu năng khi có đủ cơ hội thực gọi cơ chế. Nếu gate
 
 ### S5. Chuẩn hóa metric và bộ kết quả cuối
 
+**Kết quả S4 (10/11):** prefill prefetch on/off không nhất quán trong một ABBA (phủ13–15% lần nạp, RSS+~100MiB); lookahead decode gate đủ điều kiện0,066% ở cache64 ([P1](../benchmarks/experiments/2026-11-10-prefill-prefetch-i5/README.md)). Công tắc MOE_PREFILL_PREFETCH mặc định on.
+
 - Dùng lại S1 cho RAM, S2 cho compute/TTFT, S3 cho cache/tiering, S4 cho coverage prefetch. Chỉ bổ sung phép còn thiếu, không chạy mọi tổ hợp model×cache×threads×precision.
 - Chọn bộ nhỏ có prompt đơn, chat tiếp/prefix và chuyển phiên; giữ prompt/history/số lượt/context/tokenlimit tường minh. Decode max64 là phép riêng với TTFT max1. Giữ token IDs/usage/finish thực tế để kiểm lượng công việc.
 - Mỗi so sánh chỉ thay một yếu tố. Cùng nguồn/checkpoint và backend/threads khi đánh giá code; so hai máy là phép riêng, không xếp hạng CPU từ checkpoint khác.
@@ -159,6 +161,6 @@ Không kéo thêm mẫu tới khi đẹp, không tiếp tục tối ưu một nh
 >
 > S0/S1/S2 đã xong ngày10/11 (hồ sơ P1 2026-11-10-ram-window-i5 và 2026-11-10-expert-batch-long-i5). Kiểm git status trên main local; giữ mọi thay đổi mới, không reset/clean hoặc đổi nhánh để làm sạch. Chưa mặc định origin/main/i7 đã được cập nhật.
 >
-> S3 đã có probe CUDA, đối chứng backend cpu/auto và tier VRAM on/off (P1 2026-11-10-backend-cpu-gpu-i5, 2026-11-10-gpu-expert-tier-i5). Tiếp S4: kiểm coverage prefetch theo PLAN. Đổi mặc định MOE_GPU_EXPERT_TIER chỉ sau phép decode/nhiều lượt ở S5. Không lặp S1–S3, không chạy S4–S6 đồng thời.
+> S0–S4 có bằng chứng ngày10/11 (P1 ram-window, expert-batch-long, backend-cpu-gpu, gpu-expert-tier, prefill-prefetch). Tiếp S5: chỉ bổ sung metric/kịch bản còn thiếu — decode max64 và chat nhiều lượt cho cấu hình chọn (GPU dense, tầng VRAM expert tắt/bật), trước khi đổi mặc định MOE_GPU_EXPERT_TIER. Không lặp S1–S4, không chạy S5–S6 đồng thời.
 >
 > Giữ INT8/FP32KV và ngân sách tường minh; batch off mặc định, chưa bật predictor/INT4/FP8/model16B. Không lặp các lượt09/11 để tìm phần trăm đẹp. Chỉ sửa engine khi có trigger cụ thể và kiểm chứng phù hợp. Cập nhật PROGRESS trước khi báo xong; báo kết luận và giới hạn, không đổ toàn bộ raw vào ngữ cảnh.
