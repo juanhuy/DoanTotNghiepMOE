@@ -1,0 +1,24 @@
+{
+  "samples": [
+    {
+      "utc": "2026-11-09T02:40:00.576423+00:00",
+      "available_kib": 9864996,
+      "pswpout": 0,
+      "swap_used_kib": 0
+    },
+    {
+      "utc": "2026-11-09T02:40:05.577801+00:00",
+      "available_kib": 9885604,
+      "pswpout": 0,
+      "swap_used_kib": 0
+    },
+    {
+      "utc": "2026-11-09T02:40:10.579191+00:00",
+      "available_kib": 9895696,
+      "pswpout": 0,
+      "swap_used_kib": 0
+    }
+  ],
+  "active_engine_build_processes": [],
+  "eligible": true
+}

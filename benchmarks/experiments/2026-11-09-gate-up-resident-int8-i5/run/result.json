@@ -1,0 +1,529 @@
+{
+  "schema_version": 1,
+  "kind": "gate_up_resident_run",
+  "run_id": "20261109T023336.846352Z-gate-up-resident-7a206b80e9bf4b879479c300b97698fa",
+  "status": "completed",
+  "testbed": "i5",
+  "git_commit": "5663c7ab7c8f905edb2a218a3f524fda342b6179",
+  "git_dirty": true,
+  "dataset": "real INT8 weights/scales; synthetic activations",
+  "threads": 4,
+  "gpu": "cpu",
+  "build_argv": [
+    "cargo",
+    "test",
+    "--release",
+    "--lib",
+    "--locked",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "notes": [
+    "Resident preallocated payload/scratch; four-thread expert tasks and row parallel; file reads before timing",
+    "Dirty is exploratory; no full-model latency or speedup claim"
+  ],
+  "checkpoint": {
+    "config_sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b",
+    "files": [
+      {
+        "path": ".coli_analysis.json",
+        "size": 1655,
+        "sha256": "d8f8d6d46befe273cc71b355ae614de050d24fca17d58b95ce8606b3a312bec5"
+      },
+      {
+        "path": "_meta/config.json",
+        "size": 759,
+        "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c"
+      },
+      {
+        "path": "_meta/generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "_meta/special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "_meta/tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "_meta/tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      },
+      {
+        "path": "config.json",
+        "size": 784,
+        "sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "model-00000.safetensors",
+        "size": 1834100784,
+        "sha256": "215a2a74ede3b54c81418cab274c835cde1fdf4dc3eee40471a1864f13aae635"
+      },
+      {
+        "path": "model-00001.safetensors",
+        "size": 1657854168,
+        "sha256": "c83c75dbc51b7868e2199cc904e3f1337cd78362bef50b64a86d50e23d4c43e0"
+      },
+      {
+        "path": "model-00002.safetensors",
+        "size": 1628059584,
+        "sha256": "45f9996dcf938fbd9321e729764bb9c6746ae8258c3d50a45403421c0172a4c8"
+      },
+      {
+        "path": "model-00003.safetensors",
+        "size": 1821755792,
+        "sha256": "83984c933d29af5d18c328a68d8a84577c342f8af3d7503920a9dbc14916ee97"
+      },
+      {
+        "path": "model-00004.safetensors",
+        "size": 471116928,
+        "sha256": "56934a3b93691be6857b6d02a5f597f3db7eab49fc3554f8cc76abb6ea465ba6"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      }
+    ]
+  },
+  "source_sha256": {
+    "Cargo.toml": "bc684537d929add22986e49cae2b6f88e148148577e716900673a48b4c93626c",
+    "Cargo.lock": "7dc5677da4a7c4a20dd2510a8832551c4cea2c78fd882c48af27893f472e3f93",
+    "src/attention.rs": "c2b0a3f8b8104f934c55f78d45d198c82cc9765e7f9b9575e828714800d79317",
+    "src/backend.rs": "906f5798376ebb7bfa9241d8f1eaa10a49b1101faa828bd2c9723d5cf81c85ab",
+    "src/engine.rs": "8719ebea714641859dadc0a560c6a83d28bedf16c6eefac21ad8b291ac907f25",
+    "src/expert.rs": "e1209f08374965f80bcd7ac8e269c4d59304dab0fbcde5b30d5248b3443a093c",
+    "src/generation.rs": "e6c0f097b4c3a525842016f06c5822f74bc1aeff82dc56a25b9fed7b85d344c7",
+    "src/gpu.rs": "b8241880755d3343ca964b1cdf353adc4fa58638aa63f79a4d18e156dd98691e",
+    "src/int8_expert.rs": "ee6bc8e93ad8827e3df5f5014aa0c47654d0500627a82f28ff06bda39f529dbd",
+    "src/lib.rs": "1e8e8f6b0bc9e79d395ef2d459a06eaf3af4bc6c2d38cb510dfece17754de1ca",
+    "src/main.rs": "36c639a5c9f4ec42286dec2153a5e131e158724a8d4dc48c64983e955dca7d6e",
+    "src/memory.rs": "2f4abb5e94fa29c96b856319482e7f33d5322f5593e5af2c4ed5620a4dc4a861",
+    "src/model/config.rs": "761bb01e2ec3b8b3ef6402596d0e012b392b3fe78c930f48c566e205c4cfa88d",
+    "src/model/loader.rs": "ed4f1b619a9cb96456503474000e0e6e78b0541661a3dad6e24997e3becd0df7",
+    "src/model/mod.rs": "9335368baf71b578b4d6630d484942538989e5c3b5f4eb84416b780c85cdd9d5",
+    "src/moe.rs": "05967f0440a9617f8801db6d0b8d901d99569d25156b2a69bd7efb5589f4bb6e",
+    "src/olmoe.rs": "0eae346996d72a8cffc3c8b87a344c2166dd523a7e8af766287f790dc26361d7",
+    "src/quantization.rs": "7d51f36e6dab4726341ab42bde46294f966d84b99b51170ecdd8f78debbacf5f",
+    "src/ram.rs": "7a274f5bbee50ba2be34608b72373fae239a43956541627eb2725e23350abd5b",
+    "src/router.rs": "dad15d395349c7462bd9b3329b594a2fa3968c7dadc3aaba9134a05d756926b8",
+    "src/safetensors.rs": "c2db580a5e0c037dc18f58f705f70cd364472ea93bd9b39210a3830f5ea709af",
+    "src/sample.rs": "4c5bb650158fe3853853bdfa27c37f4f53dff73569d2efa8729a4e96bd46c528",
+    "src/tokenizer.rs": "b9e978819c110583fbaeda9a89f0cabe07bf0731d601205b022bc3e66ab5661e",
+    "tools/analyze_route_trace.py": "b9d6312c187a59fda2cf940ac4f02f5eac3120495db615cf971b63021f025ae9",
+    "tools/beautify_tables.py": "a34741fc3101221a93ba45d01de223a8bd8a1d738e1dcb045a0bda9107e749ab",
+    "tools/benchmark_gate_up.py": "37aa2a965f70dd9580abec31b25b31a301059f716ecaf1c777b1f3b62926164d",
+    "tools/benchmark_gate_up_model.py": "d940f0d8cf648a3435fd75837b59b5c71d4ae682e00f90602cbf1876e7f2ec7e",
+    "tools/benchmark_gate_up_resident.py": "024dab19fd7abba58fd69b9f18347da64e2d605d341d5eb4145536268323f863",
+    "tools/benchmark_http_session.py": "ae6d570c6267089f2237d0a29e87cc5192831dac3279befb43b0f47721c77f7d",
+    "tools/benchmark_lookahead.py": "4031155e0509119a3351b5656380b9421afddbbe9d00f1ad72854510319f387f",
+    "tools/build_all_chapters.py": "b1b105af670401398a7283e9566c0891e34c7998d8bb301afe27a1467cae8609",
+    "tools/check.py": "a4b7d132f0df8e93be4d58f5cc46ab7f188f221ae2589f66ec4d5d62bfdf7895",
+    "tools/check_ram_stability.py": "39303daccd8f977dae0099a5dc21a3261590460881f13f05bce39ee98c6f4c0c",
+    "tools/convert_report_to_latex.py": "be7e59d70e58516680d31f24e2e6ea4b4431d3714c014a135dadd7eaa41da383",
+    "tools/export_benchmark_evidence.py": "8adec4b8861db9af0273a4b83377af84381570b9d3a4d71a2ca88737505338a5",
+    "tools/make_olmoe_reference.py": "35aab198f1b49c98568776345b58aa08f51f73d56d1be69c11ab3385170a38cf",
+    "tools/memory_telemetry.py": "e75931deccef70afb2eaf5ed25f76c06b15a118e32bbba9d38ec9e821ae37c78",
+    "tools/prepare_olmoe.py": "35b40242ac14acdb917606d44da637a75e8fd7221611bef365e0f727bb6b2206",
+    "tools/prepare_olmoe_int4.py": "7f0c3cb6498a6055cfd5b24dad6df7ec9e0a59d3bb182f921333dbc109290339",
+    "tools/run_benchmark.py": "03d9a5ba9733eed64b0a99c8bd117d8b5deee0e43746a7adffcebfc394c2dcbd",
+    "tools/run_scenarios.py": "a8882568ca6041d1f348a37ba3c317d547c05e2c4437ddfc54726294d0ee5db0",
+    "tools/stress_http.py": "c1cb887a5d31b22869cc6b28c881ec5bdf74190a721b6939f89654c2935c9ec9",
+    "tools/test_analyze_route_trace.py": "e6c9e2a02edb9fca99b791169b9b8c2e17f28bf365ff69259e2d347ef6026088",
+    "tools/test_benchmark_evidence.py": "f35afe566b84f37de72bb312a0465200132d07a864ff2c96731acd2d241011a7",
+    "tools/test_benchmark_gate_up.py": "7fe16b8ce7347a4fa7742f86f95738baeba0a25d57e284d1926dacd5827b525b",
+    "tools/test_benchmark_gate_up_model.py": "d2fa1008badcd28e30f7f2e9680d94fcc84f8148a465819ff39cfa3f3265172d",
+    "tools/test_benchmark_gate_up_resident.py": "e799b2a561aaa7ff4efdff28f210b98f22eea959a2aa1bfe7972341c83d155c1",
+    "tools/test_memory_telemetry.py": "e95c47148be00c08159c189d4531a0fb7cc8e7477b2e617a0c9c1437332ce879",
+    "tools/test_prepare_olmoe.py": "4c705c7e2dc033bcb471c00cf0d396ea7c8d9fc280d561d038b31a3939165414",
+    "tools/test_prepare_olmoe_int4.py": "aaca0caba646525f8883ac826df9a0c3d17929dc01fa13b3a1afd38964a68fb3",
+    "tools/test_run_benchmark.py": "a4e86ca31cdbf68d04ba5850994f0639c6e4cc27834f10d0da8ba4f8da7305f7",
+    "tools/test_streaming_smoke.py": "f85324e19f52e999b8c91ffe03ff6842205459c01c9d828971ab7a90de3ef599"
+  },
+  "hardware_observed": {
+    "logical_cpus": 12,
+    "cpu_model": "Intel(R) Core(TM) i5-10500H CPU @ 2.50GHz",
+    "physical_memory_bytes": 16571342848,
+    "gpu_inventory": {
+      "status": "unavailable",
+      "devices": [],
+      "reason": ""
+    }
+  },
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "build_rustflags": {
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null
+  },
+  "binary_sha256": "d3eac5baf782f890e249e3c02611b06bd1b0bd68c5f487eb83c8572cc7c4182a",
+  "argv": [
+    "/home/son/son/DATN/DoanTotNghiepMOE/target/release/deps/moe_tier_engine-1745916ffb9c337c",
+    "int8_expert::kernel_tests::benchmark_gate_up_resident",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "process_wall_s": 12.937392442000146,
+  "exit_code": 0,
+  "summary": {
+    "expert_tasks8": {
+      "cases": [
+        {
+          "layer": 0,
+          "seed": 17,
+          "wins": 4,
+          "median_ratio": 0.9926319769284496,
+          "ratios": [
+            0.9396265728786801,
+            1.0942250204736625,
+            1.0798830280918457,
+            1.0097143516790046,
+            0.9926319769284496,
+            0.9259749996625061,
+            1.255424678255354,
+            0.9148223515248796,
+            0.9407420846398646
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 73,
+          "wins": 3,
+          "median_ratio": 0.9615592850394583,
+          "ratios": [
+            1.0145299388456683,
+            0.9130761257794082,
+            0.955567935931772,
+            0.9743826407883733,
+            0.9092551327436725,
+            1.0154821667682692,
+            0.9615592850394583,
+            1.0413369110838462,
+            0.7975643585297385
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 991,
+          "wins": 4,
+          "median_ratio": 0.9968667998751115,
+          "ratios": [
+            0.9489930243212364,
+            0.9298546571987439,
+            1.0660405918425324,
+            1.0273646735551116,
+            1.0339555768838058,
+            0.9762130208991255,
+            0.8943898134518669,
+            0.9968667998751115,
+            1.0086758729705962
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 17,
+          "wins": 0,
+          "median_ratio": 0.9583496741204778,
+          "ratios": [
+            0.9494566909605441,
+            0.9583496741204778,
+            0.9502186653387129,
+            0.921768506494617,
+            0.9954760346479359,
+            0.9978569067487227,
+            0.9989061178144037,
+            0.8484527380811361,
+            0.9737646795171611
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 73,
+          "wins": 1,
+          "median_ratio": 0.9225096948715545,
+          "ratios": [
+            0.9015592387339424,
+            0.8997311164794299,
+            0.9298649715873832,
+            0.8164628673201196,
+            0.9440535369930378,
+            0.9225096948715545,
+            0.8589528651407639,
+            1.0599185616752627,
+            0.942212754972572
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 991,
+          "wins": 5,
+          "median_ratio": 1.0096334814655992,
+          "ratios": [
+            1.0967180860606234,
+            0.9700975106034297,
+            0.8748606038306291,
+            1.0397773880540662,
+            0.9566431457444246,
+            0.974420903036367,
+            1.1243883120055456,
+            1.0279014489292273,
+            1.0096334814655992
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 17,
+          "wins": 2,
+          "median_ratio": 0.9595918523584139,
+          "ratios": [
+            0.8698622266356819,
+            0.9362778077072981,
+            0.9497250304669888,
+            1.5786302430730523,
+            1.1604368572216623,
+            0.9595918523584139,
+            0.9518600962673475,
+            0.9596573244066947,
+            0.9780936530369547
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 73,
+          "wins": 3,
+          "median_ratio": 0.9740576230966899,
+          "ratios": [
+            0.86596636446411,
+            0.9258344405171807,
+            0.9844778392640877,
+            1.001426581608093,
+            1.0720439336753427,
+            0.9740576230966899,
+            1.0081785404117063,
+            0.9438582472402094,
+            0.8666560787431995
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 991,
+          "wins": 0,
+          "median_ratio": 0.9560062504132182,
+          "ratios": [
+            0.9153971841006573,
+            0.9834712236449424,
+            0.9467175906101534,
+            0.9956653564135091,
+            0.9986160268901518,
+            0.8963107709527488,
+            0.9997389041784458,
+            0.9560062504132182,
+            0.9126683386954753
+          ]
+        }
+      ],
+      "median_paired_ratio": 0.9596573244066947,
+      "wins": 22,
+      "pairs": 81
+    },
+    "row_parallel": {
+      "cases": [
+        {
+          "layer": 0,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.133427464708253,
+          "ratios": [
+            1.0777248944736473,
+            1.133427464708253,
+            1.1149028923873059,
+            1.1221731553989127,
+            1.1210680839578329,
+            1.1795987944068382,
+            1.2243593648650761,
+            1.1422492057374802,
+            1.164512173251322
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.14611481213314,
+          "ratios": [
+            1.0983744927577832,
+            1.357765070809974,
+            1.384763568894885,
+            1.1079952796482162,
+            1.1241844188656949,
+            1.183402061981261,
+            1.1744124986519675,
+            1.068922655615081,
+            1.14611481213314
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.130390204595351,
+          "ratios": [
+            1.201872889516892,
+            1.3022276729421167,
+            1.0684503425289231,
+            1.144827439857157,
+            1.0836799223262128,
+            1.0724882296698732,
+            1.130390204595351,
+            1.1293971153310687,
+            1.1442300449148313
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.1745484241708004,
+          "ratios": [
+            1.1935729415787488,
+            1.234299345414868,
+            1.2611156181258454,
+            1.169724528486928,
+            1.1415240001429643,
+            1.1745484241708004,
+            1.134226101972628,
+            1.1367008994328123,
+            1.2333465977102973
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.1206876062069016,
+          "ratios": [
+            1.1350106994230449,
+            1.1769912245501657,
+            1.095305107603639,
+            1.1206876062069016,
+            1.1306125084134044,
+            1.1177262507101382,
+            1.1877655611717486,
+            1.1087544788375265,
+            1.0559636935848662
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.1709359391844787,
+          "ratios": [
+            1.1046845892905173,
+            1.1733709126636533,
+            1.1827217567306085,
+            1.14411542345851,
+            1.1883551245931234,
+            1.1990623335304775,
+            1.1675388741915862,
+            1.1709359391844787,
+            1.1459112374535756
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.1257797536782381,
+          "ratios": [
+            1.0687758798739013,
+            1.1258029468819406,
+            1.208466087998469,
+            1.3111386640379938,
+            1.1257797536782381,
+            1.0728940625478682,
+            1.1165806267694285,
+            1.1358488080279592,
+            1.0692911886085972
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 73,
+          "wins": 8,
+          "median_ratio": 1.1057795906992185,
+          "ratios": [
+            1.180114040920854,
+            1.1057795906992185,
+            1.060552282020674,
+            0.9870262236629954,
+            1.072425791136668,
+            1.0520813867581587,
+            1.1581145377530586,
+            1.1111337976094562,
+            1.1462011150075606
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 991,
+          "wins": 8,
+          "median_ratio": 1.1432144978801952,
+          "ratios": [
+            1.0732369167724471,
+            1.1788787390742699,
+            1.077293441075387,
+            1.1605236434814818,
+            0.9693547502297931,
+            1.0736747578895052,
+            1.1677973670359283,
+            1.1833524349583362,
+            1.1432144978801952
+          ]
+        }
+      ],
+      "median_paired_ratio": 1.1367008994328123,
+      "wins": 79,
+      "pairs": 81
+    },
+    "passes_compute_rule": false,
+    "decision_rule": "expert_tasks8 pooled median ratio>=1.05 and >=7/9 wins for every layer/seed; row_parallel secondary; no inference speedup",
+    "next": "close Gate-Up exploration; retain existing default and move to expert I/O; no further HTTP rerun for speedup"
+  }
+}

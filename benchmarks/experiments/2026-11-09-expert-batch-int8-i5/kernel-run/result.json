@@ -1,0 +1,530 @@
+{
+  "schema_version": 1,
+  "kind": "expert_batch_resident_run",
+  "run_id": "20261109T031604.028889Z-expert-batch-34c0f3c2e88a4fc795363fb774d2025a",
+  "status": "completed",
+  "testbed": "i5",
+  "git_commit": "5663c7ab7c8f905edb2a218a3f524fda342b6179",
+  "git_dirty": true,
+  "dataset": "real INT8 weights/scales; synthetic activations",
+  "threads": 4,
+  "gpu": "cpu",
+  "build_argv": [
+    "cargo",
+    "test",
+    "--release",
+    "--lib",
+    "--locked",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "notes": [
+    "Resident preallocated buffers; CPU4; file reads before timing; no full model forward",
+    "Dirty is exploratory; no full-model latency or speedup claim"
+  ],
+  "checkpoint": {
+    "config_sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b",
+    "files": [
+      {
+        "path": ".coli_analysis.json",
+        "size": 1655,
+        "sha256": "d8f8d6d46befe273cc71b355ae614de050d24fca17d58b95ce8606b3a312bec5"
+      },
+      {
+        "path": "_meta/config.json",
+        "size": 759,
+        "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c"
+      },
+      {
+        "path": "_meta/generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "_meta/special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "_meta/tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "_meta/tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      },
+      {
+        "path": "config.json",
+        "size": 784,
+        "sha256": "9f1312f8c9d1f447839e4962ee3d3124c724231cd44003ed81522939922b3d7b"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 120,
+        "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45"
+      },
+      {
+        "path": "model-00000.safetensors",
+        "size": 1834100784,
+        "sha256": "215a2a74ede3b54c81418cab274c835cde1fdf4dc3eee40471a1864f13aae635"
+      },
+      {
+        "path": "model-00001.safetensors",
+        "size": 1657854168,
+        "sha256": "c83c75dbc51b7868e2199cc904e3f1337cd78362bef50b64a86d50e23d4c43e0"
+      },
+      {
+        "path": "model-00002.safetensors",
+        "size": 1628059584,
+        "sha256": "45f9996dcf938fbd9321e729764bb9c6746ae8258c3d50a45403421c0172a4c8"
+      },
+      {
+        "path": "model-00003.safetensors",
+        "size": 1821755792,
+        "sha256": "83984c933d29af5d18c328a68d8a84577c342f8af3d7503920a9dbc14916ee97"
+      },
+      {
+        "path": "model-00004.safetensors",
+        "size": 471116928,
+        "sha256": "56934a3b93691be6857b6d02a5f597f3db7eab49fc3554f8cc76abb6ea465ba6"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 433,
+        "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 2115598,
+        "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 5986,
+        "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864"
+      }
+    ]
+  },
+  "source_sha256": {
+    "Cargo.toml": "bc684537d929add22986e49cae2b6f88e148148577e716900673a48b4c93626c",
+    "Cargo.lock": "7dc5677da4a7c4a20dd2510a8832551c4cea2c78fd882c48af27893f472e3f93",
+    "src/attention.rs": "c2b0a3f8b8104f934c55f78d45d198c82cc9765e7f9b9575e828714800d79317",
+    "src/backend.rs": "906f5798376ebb7bfa9241d8f1eaa10a49b1101faa828bd2c9723d5cf81c85ab",
+    "src/engine.rs": "8719ebea714641859dadc0a560c6a83d28bedf16c6eefac21ad8b291ac907f25",
+    "src/expert.rs": "e1209f08374965f80bcd7ac8e269c4d59304dab0fbcde5b30d5248b3443a093c",
+    "src/generation.rs": "e6c0f097b4c3a525842016f06c5822f74bc1aeff82dc56a25b9fed7b85d344c7",
+    "src/gpu.rs": "b8241880755d3343ca964b1cdf353adc4fa58638aa63f79a4d18e156dd98691e",
+    "src/int8_expert/batch_prototype.rs": "159640326e35f6ba6f6e9ad6d0d8cbd22cf0dcef18b693e235857d959bea3c87",
+    "src/int8_expert.rs": "675fdbae95ecfa0f4cdb36c37de6461464668b172fb9ecef9ee96eb479249d4b",
+    "src/lib.rs": "1e8e8f6b0bc9e79d395ef2d459a06eaf3af4bc6c2d38cb510dfece17754de1ca",
+    "src/main.rs": "36c639a5c9f4ec42286dec2153a5e131e158724a8d4dc48c64983e955dca7d6e",
+    "src/memory.rs": "2f4abb5e94fa29c96b856319482e7f33d5322f5593e5af2c4ed5620a4dc4a861",
+    "src/model/config.rs": "761bb01e2ec3b8b3ef6402596d0e012b392b3fe78c930f48c566e205c4cfa88d",
+    "src/model/loader.rs": "ed4f1b619a9cb96456503474000e0e6e78b0541661a3dad6e24997e3becd0df7",
+    "src/model/mod.rs": "9335368baf71b578b4d6630d484942538989e5c3b5f4eb84416b780c85cdd9d5",
+    "src/moe.rs": "05967f0440a9617f8801db6d0b8d901d99569d25156b2a69bd7efb5589f4bb6e",
+    "src/olmoe.rs": "0eae346996d72a8cffc3c8b87a344c2166dd523a7e8af766287f790dc26361d7",
+    "src/quantization.rs": "7d51f36e6dab4726341ab42bde46294f966d84b99b51170ecdd8f78debbacf5f",
+    "src/ram.rs": "7a274f5bbee50ba2be34608b72373fae239a43956541627eb2725e23350abd5b",
+    "src/router.rs": "dad15d395349c7462bd9b3329b594a2fa3968c7dadc3aaba9134a05d756926b8",
+    "src/safetensors.rs": "c2db580a5e0c037dc18f58f705f70cd364472ea93bd9b39210a3830f5ea709af",
+    "src/sample.rs": "4c5bb650158fe3853853bdfa27c37f4f53dff73569d2efa8729a4e96bd46c528",
+    "src/tokenizer.rs": "b9e978819c110583fbaeda9a89f0cabe07bf0731d601205b022bc3e66ab5661e",
+    "tools/analyze_route_trace.py": "b9d6312c187a59fda2cf940ac4f02f5eac3120495db615cf971b63021f025ae9",
+    "tools/beautify_tables.py": "a34741fc3101221a93ba45d01de223a8bd8a1d738e1dcb045a0bda9107e749ab",
+    "tools/benchmark_gate_up.py": "37aa2a965f70dd9580abec31b25b31a301059f716ecaf1c777b1f3b62926164d",
+    "tools/benchmark_gate_up_model.py": "d940f0d8cf648a3435fd75837b59b5c71d4ae682e00f90602cbf1876e7f2ec7e",
+    "tools/benchmark_gate_up_resident.py": "ec74c8629fd3a77da7fe07841033d202bfbb8635bd7bbc747bb3daa03ee11be2",
+    "tools/benchmark_http_session.py": "ae6d570c6267089f2237d0a29e87cc5192831dac3279befb43b0f47721c77f7d",
+    "tools/benchmark_lookahead.py": "4031155e0509119a3351b5656380b9421afddbbe9d00f1ad72854510319f387f",
+    "tools/build_all_chapters.py": "b1b105af670401398a7283e9566c0891e34c7998d8bb301afe27a1467cae8609",
+    "tools/check.py": "a4b7d132f0df8e93be4d58f5cc46ab7f188f221ae2589f66ec4d5d62bfdf7895",
+    "tools/check_ram_stability.py": "39303daccd8f977dae0099a5dc21a3261590460881f13f05bce39ee98c6f4c0c",
+    "tools/convert_report_to_latex.py": "be7e59d70e58516680d31f24e2e6ea4b4431d3714c014a135dadd7eaa41da383",
+    "tools/export_benchmark_evidence.py": "8adec4b8861db9af0273a4b83377af84381570b9d3a4d71a2ca88737505338a5",
+    "tools/make_olmoe_reference.py": "35aab198f1b49c98568776345b58aa08f51f73d56d1be69c11ab3385170a38cf",
+    "tools/memory_telemetry.py": "e75931deccef70afb2eaf5ed25f76c06b15a118e32bbba9d38ec9e821ae37c78",
+    "tools/prepare_olmoe.py": "35b40242ac14acdb917606d44da637a75e8fd7221611bef365e0f727bb6b2206",
+    "tools/prepare_olmoe_int4.py": "7f0c3cb6498a6055cfd5b24dad6df7ec9e0a59d3bb182f921333dbc109290339",
+    "tools/run_benchmark.py": "25039efa1e5b786c9151ecd5067da3e1e8027aa7e4a4d18fdcc68b4ff45efc83",
+    "tools/run_scenarios.py": "a8882568ca6041d1f348a37ba3c317d547c05e2c4437ddfc54726294d0ee5db0",
+    "tools/stress_http.py": "c1cb887a5d31b22869cc6b28c881ec5bdf74190a721b6939f89654c2935c9ec9",
+    "tools/test_analyze_route_trace.py": "e6c9e2a02edb9fca99b791169b9b8c2e17f28bf365ff69259e2d347ef6026088",
+    "tools/test_benchmark_evidence.py": "f35afe566b84f37de72bb312a0465200132d07a864ff2c96731acd2d241011a7",
+    "tools/test_benchmark_gate_up.py": "7fe16b8ce7347a4fa7742f86f95738baeba0a25d57e284d1926dacd5827b525b",
+    "tools/test_benchmark_gate_up_model.py": "d2fa1008badcd28e30f7f2e9680d94fcc84f8148a465819ff39cfa3f3265172d",
+    "tools/test_benchmark_gate_up_resident.py": "4a69c42927aaa7dac92dc4574f131f32de05bcff3523aa0074232a6ae03de58a",
+    "tools/test_memory_telemetry.py": "e95c47148be00c08159c189d4531a0fb7cc8e7477b2e617a0c9c1437332ce879",
+    "tools/test_prepare_olmoe.py": "4c705c7e2dc033bcb471c00cf0d396ea7c8d9fc280d561d038b31a3939165414",
+    "tools/test_prepare_olmoe_int4.py": "aaca0caba646525f8883ac826df9a0c3d17929dc01fa13b3a1afd38964a68fb3",
+    "tools/test_run_benchmark.py": "a4e86ca31cdbf68d04ba5850994f0639c6e4cc27834f10d0da8ba4f8da7305f7",
+    "tools/test_streaming_smoke.py": "f85324e19f52e999b8c91ffe03ff6842205459c01c9d828971ab7a90de3ef599"
+  },
+  "hardware_observed": {
+    "logical_cpus": 12,
+    "cpu_model": "Intel(R) Core(TM) i5-10500H CPU @ 2.50GHz",
+    "physical_memory_bytes": 16571342848,
+    "gpu_inventory": {
+      "status": "unavailable",
+      "devices": [],
+      "reason": ""
+    }
+  },
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "build_rustflags": {
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null
+  },
+  "binary_sha256": "e3fa5a62a5358f36bde441b06428285281c4058996cc597453f88a40b8bb1934",
+  "argv": [
+    "/home/son/son/DATN/DoanTotNghiepMOE/target/release/deps/moe_tier_engine-1745916ffb9c337c",
+    "int8_expert::batch_prototype::benchmark_expert_batch",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "process_wall_s": 3.6196343580004395,
+  "exit_code": 0,
+  "summary": {
+    "batch2": {
+      "cases": [
+        {
+          "layer": 0,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.4053786225581666,
+          "ratios": [
+            1.515366580801492,
+            1.3936990611135873,
+            1.3474371681824273,
+            1.3856083028782626,
+            1.4262978486129827,
+            1.8565336956852767,
+            2.3294134123511716,
+            1.3567618846622793,
+            1.4053786225581666
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.4303599652935797,
+          "ratios": [
+            1.4142920494337772,
+            1.4329683679966305,
+            1.4056056200291078,
+            1.4208880222895675,
+            1.4303599652935797,
+            1.431556333388703,
+            1.4076632220152425,
+            1.4315219729366169,
+            1.4435808172003222
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.3948202845179163,
+          "ratios": [
+            1.3802259908223755,
+            1.4358008836841727,
+            1.4407119935058448,
+            1.3948202845179163,
+            1.2099403149039438,
+            1.4156441800361272,
+            1.4087542629407148,
+            1.3510156247841594,
+            1.3184505008190721
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.3959135563984015,
+          "ratios": [
+            1.364507284882745,
+            1.2617686575570608,
+            1.3187317239305323,
+            1.366876548229527,
+            1.3959135563984015,
+            1.4415301954424546,
+            1.3973153402935747,
+            1.432001204959203,
+            1.4195440980207557
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.425727765939207,
+          "ratios": [
+            1.5621455494783691,
+            1.4100728201942487,
+            1.425727765939207,
+            1.3620922579407702,
+            1.4228356497159835,
+            1.456970440079828,
+            1.4264729774462863,
+            1.554912968527821,
+            1.2920764883690368
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.3979404711762748,
+          "ratios": [
+            1.2743333499540375,
+            1.426380849300242,
+            1.4736399334661452,
+            1.3979404711762748,
+            1.3477433960895484,
+            1.453333728534889,
+            1.4327873385540195,
+            1.245316493393163,
+            1.2767454698619773
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.409987721056989,
+          "ratios": [
+            1.3710946689908166,
+            1.4258750351479623,
+            1.409987721056989,
+            1.4005432016887,
+            1.4265412175062482,
+            1.4056764985570132,
+            1.3934101426103886,
+            1.4940901519400505,
+            1.5368599108103953
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.4036241783347585,
+          "ratios": [
+            1.3937547506729926,
+            1.4099774470248096,
+            1.3839056041787658,
+            1.4036241783347585,
+            1.4060934452359963,
+            1.399365187930322,
+            1.383051391407111,
+            1.4116127388281978,
+            1.4366443710754753
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.4105352154707378,
+          "ratios": [
+            1.40486192136829,
+            1.4008318912543318,
+            1.4398601171337864,
+            1.474336604801293,
+            1.4875416697360582,
+            1.4527672704558285,
+            1.3909754355064097,
+            1.3523524638500992,
+            1.4105352154707378
+          ]
+        }
+      ],
+      "median_speed_ratio": 1.4099774470248096,
+      "wins": 81,
+      "pairs": 81
+    },
+    "batch4": {
+      "cases": [
+        {
+          "layer": 0,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.4116641841152995,
+          "ratios": [
+            1.379425776785737,
+            1.4077853361942745,
+            1.4116641841152995,
+            1.4157004759871172,
+            1.4175468819871817,
+            1.3199333348673432,
+            1.4301730581718493,
+            1.3988198182581129,
+            1.4193826086729404
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.3959711733916027,
+          "ratios": [
+            1.4071870772606172,
+            1.43447488313405,
+            1.4085384609094194,
+            1.2849576563844054,
+            1.4072682605079943,
+            1.351201658155937,
+            1.3019850583252501,
+            1.3959711733916027,
+            1.3648755189089927
+          ]
+        },
+        {
+          "layer": 0,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.3594948616038975,
+          "ratios": [
+            1.3749103939564913,
+            1.2887017013781068,
+            1.3878112203600788,
+            1.3567702531427484,
+            1.3187071752326474,
+            1.3977077135258975,
+            1.3594948616038975,
+            1.2234302952316378,
+            1.433990118997705
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.3701622960878206,
+          "ratios": [
+            1.384270494882266,
+            1.395522658038914,
+            1.3716193737473001,
+            1.3357015285820049,
+            1.3577845612427182,
+            1.2733337765586359,
+            1.343887184872935,
+            1.3811183286319646,
+            1.3701622960878206
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.3898378752917964,
+          "ratios": [
+            1.3898378752917964,
+            1.4547652731405856,
+            1.3564558804149314,
+            1.428515560266291,
+            1.4490987502119643,
+            1.355453558616697,
+            1.3337897991561782,
+            1.42378950629143,
+            1.3632475821639733
+          ]
+        },
+        {
+          "layer": 7,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.3990031891206298,
+          "ratios": [
+            1.4410293572164352,
+            1.402796017634696,
+            1.3424157241478851,
+            1.3990031891206298,
+            1.3843211827815527,
+            1.3914850634035305,
+            1.4027443938276973,
+            1.3610660085456294,
+            1.4447933270634938
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 17,
+          "wins": 9,
+          "median_ratio": 1.3834155458500885,
+          "ratios": [
+            1.3555471875220775,
+            1.3834155458500885,
+            1.271335942327365,
+            1.2982690219250408,
+            1.4320010168322166,
+            1.3935059763546078,
+            1.3784032400229769,
+            1.383791422186786,
+            1.4095991247520339
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 73,
+          "wins": 9,
+          "median_ratio": 1.3863515541883227,
+          "ratios": [
+            1.4662396001070386,
+            1.423612778698117,
+            1.3884655537649122,
+            1.3570254186757427,
+            1.4258410362086704,
+            1.3863515541883227,
+            1.3754636550897157,
+            1.3455141184005406,
+            1.3229303598005628
+          ]
+        },
+        {
+          "layer": 15,
+          "seed": 991,
+          "wins": 9,
+          "median_ratio": 1.3661087335287905,
+          "ratios": [
+            1.307783463428945,
+            1.270140255081007,
+            1.3661087335287905,
+            1.378675329311245,
+            1.3508830370602036,
+            1.2202609763262315,
+            1.3785688291835891,
+            1.4893894944051873,
+            1.3794153848590605
+          ]
+        }
+      ],
+      "median_speed_ratio": 1.3811183286319646,
+      "wins": 81,
+      "pairs": 81
+    },
+    "passes_compute_rule": true,
+    "decision_rule": "both batch2/batch4 median ratio>=1.10 and >=7/9 wins in every layer/seed; not model speedup",
+    "next": "integrate into prefill only if rule passes; otherwise archive prototype and stop"
+  }
+}

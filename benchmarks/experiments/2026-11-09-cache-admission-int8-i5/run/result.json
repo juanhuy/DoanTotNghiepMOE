@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "kind": "cache_admission_ab",
+  "protocol": "cache-admission-v1",
+  "testbed": "i5",
+  "git_commit": "5663c7ab7c8f905edb2a218a3f524fda342b6179",
+  "git_dirty": true,
+  "modes": [
+    "always",
+    "frequency",
+    "frequency",
+    "always"
+  ],
+  "checkpoint_dir": "/home/son/son/DATN/Models/olmoe_merged",
+  "threads": 4,
+  "cache_mib_per_layer": 64,
+  "context": 512,
+  "max_tokens": 32,
+  "environment_pins": {
+    "MOE_TEMPERATURE": "0",
+    "MOE_TOP_P": "1",
+    "MOE_TOP_K": "0",
+    "MOE_REPETITION_PENALTY": "1",
+    "MOE_KV_FP8": "0",
+    "MOE_HOT_PIN_COUNT": "0",
+    "MOE_PILOT_SMOOTH": "0.35"
+  },
+  "requests_per_block": 2,
+  "guards_mib": {
+    "rss": 5120,
+    "headroom": 1024,
+    "watchdog_rss": 5632,
+    "available": 1536,
+    "swap": 128
+  },
+  "notes": [
+    "fixed ABBA, 8 requests; cache counters intentionally differ",
+    "no speculative prefetch; outputs required equal; timers descriptive",
+    "frequency mode CPU-only opt-in; default always unchanged"
+  ],
+  "run_id": "20261109T024023.065706Z-admission-f85afca29d7c411b9ca99b6ecdd02dc2",
+  "status": "completed",
+  "blocks": [
+    {
+      "mode": "always",
+      "path": "block-0-always/i5/20261109T024023.072925Z-ram-0d912c190cff4c1dae184e081f1537f6/result.json",
+      "run_id": "20261109T024023.072925Z-ram-0d912c190cff4c1dae184e081f1537f6",
+      "status": "completed"
+    },
+    {
+      "mode": "frequency",
+      "path": "block-1-frequency/i5/20261109T024109.523784Z-ram-d0eb4cdaa8694f79be375f9de9789ce6/result.json",
+      "run_id": "20261109T024109.523784Z-ram-d0eb4cdaa8694f79be375f9de9789ce6",
+      "status": "completed"
+    },
+    {
+      "mode": "frequency",
+      "path": "block-2-frequency/i5/20261109T024150.785069Z-ram-c16f0bf184834f8693f8ff66993ec589/result.json",
+      "run_id": "20261109T024150.785069Z-ram-c16f0bf184834f8693f8ff66993ec589",
+      "status": "completed"
+    },
+    {
+      "mode": "always",
+      "path": "block-3-always/i5/20261109T024224.238253Z-ram-3e1d8abdc58b4c3eb971e1f96ac0102d/result.json",
+      "run_id": "20261109T024224.238253Z-ram-3e1d8abdc58b4c3eb971e1f96ac0102d",
+      "status": "completed"
+    }
+  ],
+  "summary": {
+    "pairs": [
+      {
+        "pair": 0,
+        "prompt_position": 0,
+        "file_loads": {
+          "always": 3453,
+          "frequency": 3506,
+          "reduction": -0.015348971908485387
+        },
+        "file_payload_bytes": {
+          "always": 21780971520,
+          "frequency": 22115287040,
+          "reduction": -0.015348971908485387
+        },
+        "bypasses": 2873,
+        "total_ms": {
+          "always": 13671.658586,
+          "frequency": 12264.651487
+        },
+        "expert_compute_ms": {
+          "always": 3296.639119,
+          "frequency": 3087.8952590000004
+        }
+      },
+      {
+        "pair": 0,
+        "prompt_position": 1,
+        "file_loads": {
+          "always": 3287,
+          "frequency": 3371,
+          "reduction": -0.02555521752357781
+        },
+        "file_payload_bytes": {
+          "always": 20733870080,
+          "frequency": 21263728640,
+          "reduction": -0.02555521752357781
+        },
+        "bypasses": 3172,
+        "total_ms": {
+          "always": 12386.153253,
+          "frequency": 9646.670481
+        },
+        "expert_compute_ms": {
+          "always": 3492.698808,
+          "frequency": 3044.0725070000003
+        }
+      },
+      {
+        "pair": 1,
+        "prompt_position": 0,
+        "file_loads": {
+          "always": 3453,
+          "frequency": 3506,
+          "reduction": -0.015348971908485387
+        },
+        "file_payload_bytes": {
+          "always": 21780971520,
+          "frequency": 22115287040,
+          "reduction": -0.015348971908485387
+        },
+        "bypasses": 2873,
+        "total_ms": {
+          "always": 8139.796088000001,
+          "frequency": 7474.4333750000005
+        },
+        "expert_compute_ms": {
+          "always": 2768.423468,
+          "frequency": 2417.515817
+        }
+      },
+      {
+        "pair": 1,
+        "prompt_position": 1,
+        "file_loads": {
+          "always": 3287,
+          "frequency": 3371,
+          "reduction": -0.02555521752357781
+        },
+        "file_payload_bytes": {
+          "always": 20733870080,
+          "frequency": 21263728640,
+          "reduction": -0.02555521752357781
+        },
+        "bypasses": 3172,
+        "total_ms": {
+          "always": 7567.94919,
+          "frequency": 7473.612008
+        },
+        "expert_compute_ms": {
+          "always": 2727.165504,
+          "frequency": 2597.443339
+        }
+      }
+    ],
+    "passes_payload_rule": false,
+    "rule": "at least 5% fewer file loads/payload in each prompt/pair; parity required; no physical SSD or timing claim"
+  }
+}

@@ -310,3 +310,125 @@ python3 tools/check_ram_stability.py --testbed i5 --gpu cpu --lookahead off \
 ```
 
 Dirty chỉ exploratory; record/checkpoint/sourceZIP/binary/counterversion phải giữ. Query_ns chỉ đo lời gọi, không toànoverhead; TIDboundary khôngnhậndiệnmọiRayonworker. Khôngsuyexactliveheap/hếtleak/plateau hoặcđónggiaiđoạn1.
+
+## Gate–Up INT8 SIMD A/B trên i5 (gate-up-int8-v1, 08/11)
+
+Câu hỏi: kernel ghép Gate/Up đã có từ Huy có nhanh hơn hai dotSIMD riêng trên cùng dữ liệu INT8 không, và lợi ích còn bao nhiêu khi tính thêm downprojection? Chỉ benchmark kernel, chưa đo model thật hoặc thay mặc định production.
+
+Protocol chốt trước chạy:
+- Shape hidden2048/intermediate1024 tương ứng expertOLMoE đang dùng, nhưng **weights/input tổng hợp**, không checkpoint/model7B. Recipe xorshift64v1/seeds17,73,991 nằm trong source snapshot.
+- Baseline separate_simd gọi hai dotINT8 SIMD, cùng scales/SiLU/downprojection; candidate paired_simd gọi fused_gate_up_swiglu_seq, full expert dùng production forward_single_threaded. Không dùng scalar làm baseline yếu.
+- Hai scope gate_up_silu và full_expert. Mỗi seed/scope warmup10lần/variant,9cặp AB/BA đổi thứ tự,100iterations mỗi sample. Tổng108sample,27cặp mỗi scope.
+- Một compute thread; RAYON_NUM_THREADS=1/test-threads1. Yêu cầu AVX2+FMA thực; nếu thiếu thì fail chứ không lặng lẽ đo scalarfallback. Không pin CPU/tần số, phải ghi giới hạn desktop/nhiệt/OS.
+- Buffer cấp sẵn và resident, không I/O/allocate trong vùng timing; parityfinite/maxabs<2e-5 kiểm trước timing. Unit test có kích thướcđuôi ngoài shape chính. Không đổi tolerancefixture hiện có.
+- Chỉ đúng một lần thực thi protocol. Không model/build/tests khác đồng thời; build release hoàn tất trước subprocess timing. Dirty cho phép khảo sát với sourceZIP/hash/binary, không coi nghiệm thu revision sạch.
+- Điều kiện ứng viên đủ đáng thử trên model: median tỷ số separate/paired của full_expert≥1,05 và candidate thắng≥7/9cặp ở từng seed. Nếu không đạt, không tự mở A/B7B hoặc lặp tới khi có lợi. Đây là ngưỡng quyết định thực nghiệm, không bằng chứng tăngtốc toàn inference.
+
+Preview:
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu cpu --gate-up-kernel \
+  --threads 1 --allow-dirty --dry-run
+```
+
+Bỏ --dry-run để thực thi sau checks/preflight. Runner tạo sourceZIP/result/kernel/build/benchmarklogs riêng dưới runs/i5; schema synthetic có checkpointnull. Giữ rawtừngmẫu, thời gian build tách khỏi kernel, validate đủpairs/order/parity, summary côngbố từng seed. Unit test ignored chỉ chạy qua protocol này; không cộng thời gian test harness vào timing từngsample.
+
+## Gate–Up model INT8 A/B (gate-up-model-v1, 08/11)
+
+Câu hỏi sau microbenchmark: trên cùng modelINT8 và cấu hìnhCPU, selector separate/paired có giữ HTTPoutput/workload và giảm expert_compute hoặc thời gian toànrequest không?
+
+Chốt trước tải:
+- Một chuỗi4process mới theo separate→paired→paired→separate (ABBA), mỗiprocess2request độc lập: Where is Mars rồi Explain a Python dictionary. Tổng8request,2cặp cho mỗi prompt. Khôngwarmup tách; chỉreset đầu vàkeepcache trongblock. Enginecold không đồng nghĩa OScachecold vì hashcheckpoint trước load.
+- CPU trước load/4threads/victim/cache64MiB-lớp/context512/max64, cùngcheckpoint/binary/source. KVFP32/reuseoff/lookaheadoff/memorytraceon, greedy/temp0/top-p1/top-k0/repetition1, hotpin0, khôngroutefile/persistence. Từ chối checkpoint có.moe_usage để tránhstateẩn.
+- MOE_GATE_UP_MODE đọc một lần lúcload, mặc địnhpaired; chỉ đổi mode giữa cácprocess. Status/metrics phải đúngmode, expert_quantization=int8, khôngFP8/VRAM/sessiondisk. Fixturelogits/token/prefixparity vàfullchecks trước.
+- Guard5120/headroom1024/watchdogRSS5632/available1536/processswap128MiB giữ nguyên. Preflight3mẫu5s, hoãn nếupswpout tăng/availablethấp, khôngnới ngưỡng hoặc chạybuild/test/inference khác đồng thời.
+- Dừng toànchuỗi nếu block lỗi/watchdog, source/binary/checkpoint/config drift, text/usage/finish khác hoặc expertcache/fileworkcounters khác cùngprompt. Giữ cảfailure, không lặp tìmkếtquảđẹp.
+- Ghi từngpair/timer vàmemory từngblock; chỉ2cặp/prompt nên tín hiệu hữu hạn, không khái quát phầntrăm mọiworkload. Không cộng timers chồnglấn hoặc dùngpayload làmSSDphysicalbytes. HTTP không cho logit/tokenIDparity7B.
+- Đây là protocol mới, không ghép trực tiếp thời gian với microbenchmark hoặc lượtRAM trướcmerge. Nếu không thấy lợiíchend-to-end thì ghi giới hạnI/O/scheduling, khôngtựclaimchat nhanh16%.
+
+Preview, rồi bỏ --dry-run khi checks/preflight đạt:
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu cpu --gate-up-model-ab \
+  --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off \
+  --allow-dirty --dry-run
+```
+
+Runner dùng serverrelease đãbuild trước, khôngbuild giữa4block; dữ liệu riêng dưới runs/i5/run-ID/block-*/i5/child-run-ID, topresult giữmapping/pins vàpairedsummary. Không gọi kếtquảdirty làbaseline nghiệmthu sạch.
+
+Kết quả lượt08/11 được lưu tại [hồ sơ model INT8 i5](experiments/2026-11-08-gate-up-model-int8-i5/README.md):8/8request completed và output/workload khớp; hai cặp trái chiều, I/O/swap khác nhau nên chưa xác nhận speedup toàn request. Giữ nguyên protocol và toàn bộ mẫu, không chạy lại để chọn phần trăm có lợi.
+
+## Gate–Up weights thật resident, lượt cuối (gate-up-resident-v1, 09/11)
+
+Mục đích: khép đánh giá Gate–Up sau HTTP A/B chưa kết luận; kiểm compute với trọng số/scales INT8 thật, không đổi model/precision. Không triển khai kernel mới trong bước này.
+
+Chốt trước đo:
+- Một run duy nhất, CPU/Rayon4, AVX2+FMA thực; layers0/7/15, expertIDs0..7 cố định trước. Load24payload trước timing, tổng khoảng144,375MiB, budgetpayload256MiB; không load dense/model forward/GPU. Inputs là synthetic xorshift64 theo seeds17/73/991, không phải hidden states lấy từ hội thoại.
+- Hai scope full expert (Gate/Up/SiLU/Down): expert_tasks8 gọi forward_single_threaded trên8expert qua Rayon, giống cách chia task decode; row_parallel gọi forward_reuse trênexpert0, tương ứng đường row-parallel trong engine. Không bao gồm routing/reduction/attention/file-I/O hoặc cả vòng decode.
+- Cùng weights/scales/input/scratch/threads; chọn mode ngoài timing. So separate (hai SIMDdot) và paired; không scalar baseline. Tolerance maxabs<2e-5/finite trước timing, không đổi expected.
+- Mỗi layer/seed/scope:10warmup/variant,9cặp AB/BA luân phiên,40iteration/sample. Tổng18caseparity/324sample,81cặp/scope. Buffers cấp trước; không claim Rayon không có allocation nội bộ.
+- /proc/self/status và io đo trước/sau toàn vùng compute: VmSwap phải0, HWM≤1024MiB và read_bytes không tăng; nếu không đạt thì không dùng kết quả làm bằng chứng compute sạch. Preflight không inference/build khác/available≥1536MiB, pswpout không tăng qua3mẫu5s; không đổi OS/guard/tần số/affinity để lấy kết quả đẹp.
+- Quy tắc primary: expert_tasks8 median tỷ số separate/paired≥1,05 và paired thắng≥7/9 ở mọi layer/seed. row_parallel là phụ, không dùng để cứu primary thất bại. Chỉ là tiêu chí chọn kỹ thuật, không kiểm định thống kê hoặc speedup toàn request.
+- Nếu fail quy tắc, ghi không chứng minh cải tiến ở workload này và dừng hướng. Nếu pass, chỉ ghi lợi ích compute hẹp của kernel đã có; vẫn chưa có lợi ích end-to-end. Cả hai trường hợp khép Gate–Up và chuyển trọng tâm sang expert I/O; không thêm vòng HTTP để tìm phần trăm có lợi.
+- Giữ toàn bộ mẫu/raw kể cả failure; không lặp run. Hashcheckpoint trước timing, build/tests hoàn tất trước testbinary được đo; dirty exploratory công bố rõ.
+
+Lệnh preview: python3 tools/run_benchmark.py --testbed i5 --gpu cpu --gate-up-resident --threads 4 --allow-dirty --dry-run
+
+Sau preview/checks/preflight, bỏ --dry-run để chạy. Runner giữ source ZIP/hash/binary/checkpoint/hardware và từng mẫu; không so thời gian trực tiếp với revision/scope khác.
+
+## Admission cache theo tần suất (cache-admission-v1, 09/11)
+
+Phần mới sau khi dừng Gate–Up primary: giảm nạp lại expert ở cùng cache RAM. Candidate CPU-only opt-in MOE_CACHE_ADMISSION=frequency; mặc định always. Khi miss đã tính xong và cache cần evict, so heat hiện có của newcomer với victim theo thứ tự cũ. Nếu newcomer lạnh hơn và một victim đủ chỗ cho nó, bỏ admission newcomer, giữ victim; ties/hits/room available theo hành vi cũ. Không dự đoán expert, không đổi routing/precision/sampling hoặc tăng cache. Heat vẫn là lịch sử engine, không tần suất tối ưu biết trước tương lai.
+
+Protocol chốt trước chạy:
+- Một ABBA duy nhất, always→frequency→frequency→always; mỗi process hai phiên độc lập Mars/Python, reset đầu block rồi keepcache, max32 mỗi request; tổng8request. Không warmup riêng.
+- CPU4/victim/cache64MiB-layer/context512; paired Gate–Up cố định ở cả hai phía, FP32KV/reuseoff/lookaheadoff/traceon, greedy/temp0/top-p1/top-k0/repetition1/hotpin0, không usage side state/disk session. Cùng binary/source/checkpoint, hash checkpoint trước mỗi block làm ấm OS cache.
+- Guard5120/headroom1024/watchdogRSS5632/available1536/processswap128MiB giữ nguyên. Preflight3mẫu5s/available≥1536MiB/pswpout không tăng; không build/test/inference khác trong timing.
+- Trước model: hồi quy cache nóng bị thay trước/sau bản vá, MHA/GQA logits tolerance2e-5 + token/prefix parity dưới budget một expert; full Rust debug/release/Python/web và HTTP fixture nhỏ.
+- Dừng nếu lỗi/watchdog/config/source/binary/checkpoint drift hoặc text/usage/finish khác. Counter cache/file được phép thay đổi: đó là mục tiêu của policy; metadata admission và bypass phải đúng mode, baseline bypass0.
+- Primary: số file loads VÀ payload đọc giảm ít nhất5% ở từng prompt trong cảhai cặp. Đó là bằng chứng ít công việc nạp hơn trong workload này; không đồng nghĩa giảm5%SSDphysical hoặc speedup5%.
+- Ghi từng mẫu timing/RSS/pressure kể cả nghịch chiều. Timing là mô tả trong cửa sổ có OS-cache/pressure khác nhau; không cộng timer chồng lấn, không nghiệm thu ổn định RAM dài hạn. Không bỏ mẫu, không rerun hoặc nới guard nếu thất bại. Không bật mặc định candidate chỉ vì một run có lợi.
+
+Lệnh preview: python3 tools/run_benchmark.py --testbed i5 --gpu cpu --cache-admission-ab --threads 4 --cache 64 --context 512 --max-tokens 32 --lookahead off --allow-dirty --dry-run
+
+Bỏ --dry-run sau checks/preflight. Không so thời gian trực tiếp với Gate–Up max64 hoặc revision cũ.
+
+Kết quả09/11: [Gate–Up resident](experiments/2026-11-09-gate-up-resident-int8-i5/README.md) không đạt primary, đã khép; [cache admission](experiments/2026-11-09-cache-admission-int8-i5/README.md) tăng file loads/payload ở cảhai cặp, candidate đã gỡ khỏi code chính. Lệnh --cache-admission-ab phía trên là protocol lịch sử của source ZIP candidate, không còn option của CLI hiện tại. Chỉ tái lập trên checkout riêng từ snapshot; không giải nén đè workspace hoặc tự bật lại candidate. Quy tắc/mẫu gốc không thay đổi.
+
+## Kernel expert nhiều token (expert-batch-int8-v1, 09/11)
+
+Được người dùng đồng ý sau khi khép Gate–Up/admission. Câu hỏi mới: tính2/4token cùng expert trong một kernel có giảm chi phí compute prefill so với các matvec độc lập hiện hành không? Chỉ tích hợp production sau khi đạt quy tắc compute.
+
+Chốt trước đo:
+- Một run CPU/Rayon4/AVX2+FMA thực, real INT8 weights/scales ở layers0/7/15, expert0 cố định; hidden2048/intermediate1024. Ba payload nạp trước timing,18,046875MiB dưới budget256MiB; không load dense/full model/GPU. Activations synthetic xorshift64 seeds17/73/991, không hidden states hội thoại.
+- Hai scope batch2/batch4. Baseline gọi production forward_reuse riêng từng token theo thứ tự, chia hàng qua Rayon4, Gate–Up paired cố định. Đã kiểm cfg(not(test)): dispatch_width=1; nhánh nhiều task token song song cũ chỉ cfg(test), không dùng làm baseline. Candidate chia theo hàng, chuyển INT8 sang FP32 trong register rồi dùng cho nhiều token; cả Gate/Up/SiLU/Down và hai lượt đổi layout đều nằm trong timing. Cách chia task thay đổi có chủ đích; không quy toàn bộ gain chỉ cho tái sử dụng trọng số.
+- Cùng weights/input/scales/số token; buffer cấp trước. Tổng capacity scratch/input của cảhai biến thể trong mỗi case≤256KiB, báo số thực. Không mở rộng toàn ma trận trọng số FP32 hoặc claim không có allocation nội bộ Rayon.
+- Mỗi layer/seed/scope parityfinite/maxabs<2e-5;10warmup/variant,9cặp AB/BA luân phiên,40iteration/sample. Tổng18paritycase/324sample,81cặp/scope. Kiểm unit signed/tails/invalid shape/nonfinite/precision trước.
+- Primary: CẢ batch2 VÀ batch4 có median tỷ số separate_tokens/shared_weights≥1,10 và candidate thắng≥7/9 ở mọi layer/seed. Đây là tiêu chí chọn kỹ thuật, không kiểm định thống kê. Không đạt thì khép prototype, không tích hợp hoặc rerun để tuning số đẹp. Đạt mới tích hợp prefill và kiểm fixture/logits/token/RAM trước một phép TTFT model riêng.
+- /proc trước/sau compute: VmSwap0,HWM≤1024MiB,read_bytes không tăng; nếu vi phạm thì không dùng như bằng chứng compute sạch. Preflight3mẫu5s/available≥1536MiB/pswpout không tăng, không engine/build khác. Không pin tần số/affinity hoặc đổi OS/guard. Full tests/build kết thúc trước timing testbinary.
+- Prototype ban đầu chỉ cfg(test), chưa tác động inference. Một run duy nhất; giữ mọi mẫu/error, không cộng timer hoặc suy giảm decode latency/chat speedup từ kernel resident.
+
+Dùng chung harness resident hiện có; lệnh preview:
+python3 tools/run_benchmark.py --testbed i5 --gpu cpu --expert-batch-kernel --threads 4 --allow-dirty --dry-run
+
+Sau checks/preflight, bỏ --dry-run. Raw chỉ mở để kiểm các trường/claim liên quan; tóm tắt được xếp P2 khi kết thúc bước.
+
+## Prefill nhiều token trên model thật (expert-batch-model-v1, 09/11)
+
+Kernel expert-batch-int8-v1 đã đạt ngưỡng compute cho cảbatch2/batch4 trước bước này. Candidate tích hợp CPU/INT8 opt-in MOE_EXPERT_BATCH_PREFILL=on, mặc địnhoff; không đổi model/precision/cache/predictor. Scalar-token fallback cho nhóm lẻ1, các nhóm còn lại4/2, giữ route order khi ghi contributions và Top-K reduction.
+
+Protocol chốt trước tải:
+- Một ABBA off→on→on→off,4process mới/mỗiprocess2phiên độc lập Mars/Python, reset đầu block/keepcache. Tổng8request,max1 để cô lập prefill/TTFT; không suy tốc độ decode dài. Không warmup riêng.
+- CPU4/victim/cache64MiB-layer/context512, cùng binary/source/checkpoint, Gate–Up per-token paired cố định, FP32KV/reuseoff/lookaheadoff/traceon/greedy/temp0/top-p1/top-k0/repetition1/hotpin0, không usage side state/disk session. Hashcheckpoint làm ấm OS cache, không SSD-cold đồng nhất.
+- Scratch batch2+batch4 là48×(hidden+intermediate)byte=147456B/144KiB ở model thật, local trong prefill. Tính vào reserve request và prefill_capacity_bytes; không tăng cache RAM. Mốc after_prefill không giữ capacity local này.
+- Unit/fixture trước: SIMD signed/tails, invalid shapes/nonfinite/precision, logits tolerance2e-5 ở MHA/GQA và tailroute lengths, session/token/finish/cachedprefix parity, counter và memoryaccounting; full debug/release/Python/web. HTTP fixture release nhỏ kiểm mode/calls/trace trướcmodel.
+- Status/metrics phải đúngflag, candidate phải cóbatchcalls>0, baselinecalls0, max1 quan sát đúng. Text/usage/finish và5cache/fileworkcounters phải khớp mọi block; dừng nếu mismatch/source/binary/checkpoint/config drift/error/watchdog. Calls đếm expert-kernel applications, không là số tokenprompt duy nhất.
+- Primary: mỗi prompt trong CẢhai cặp phải có off/on TTFT VÀprefill ratio≥1,05. Ghi từng mẫu kể cảbấtlợi và secondary expert_compute/clientwall/RSS/pressure. Không đổi tiêu chí/tuning/rerun nếu không đạt. Một lượt exploratory nhỏ không chứng minh mọi workload/máy hoặc toàn bộ chat nhanh tương ứng kernel.
+- Guard5120/headroom1024/watchdogRSS5632/available1536/processswap128MiB; preflight3mẫu5s/availableđủ/pswpoutkhôngtăng, không build/test/inference khác đồngthời. Không nới guard/đổi OS hoặc loại mẫu để đạt.
+
+Lệnh preview:
+python3 tools/run_benchmark.py --testbed i5 --gpu cpu --expert-batch-model-ab --threads 4 --cache 64 --context 512 --max-tokens 1 --lookahead off --allow-dirty --dry-run
+
+Dùng chung wrapper model A/B đã có; bỏ --dry-run sau checks/preflight. Kernel và model là hai source snapshot khác nhau trong cùng hồ sơ, giữ raw riêng và không thay hash hồi tố.
+
+Kết quả hai giai đoạn expert-batch09/11 nằm trong [một hồ sơ P2](experiments/2026-11-09-expert-batch-int8-i5/README.md): kernel đạt tiêu chí, đã tích hợp opt-in/off mặc định; model expert_compute thấp hơn ở4so sánh nhưng TTFT không đạt do một cặp bất lợi. Không sửa rule hoặc bỏ mẫu, không chạy lại để chọn số đẹp.

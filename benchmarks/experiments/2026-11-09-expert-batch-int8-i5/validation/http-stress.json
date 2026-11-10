@@ -1,0 +1,24 @@
+{
+  "model_directory": "tests/fixtures/olmoe/unnormalized-mha",
+  "cycles": 30,
+  "completed": 20,
+  "cancelled": 10,
+  "elapsed_ms": 29.712349999499565,
+  "rss_kib": {
+    "first": 11024,
+    "last": 11204,
+    "steady_min": 11132,
+    "steady_max": 11204,
+    "steady_spread": 72
+  },
+  "checks": [
+    "stream completes with usage and DONE",
+    "disconnect releases the single-request permit",
+    "health remains available after every cycle",
+    "steady VmRSS spread is at most 64 MiB"
+  ],
+  "notes": [
+    "fixture stress test; not model-quality or production-load evaluation",
+    "VmRSS includes allocator/cache behavior and is sampled after each cycle"
+  ]
+}
