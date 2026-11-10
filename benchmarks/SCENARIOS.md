@@ -459,3 +459,23 @@ python3 tools/check_ram_stability.py --testbed i5 --gpu cpu --threads 4 \
 Đạt gate chỉ cho phép viết "vận hành được trong cấu hình/cửa sổ đã thử" và mở S2 có giám sát; không hard cap/hết leak/plateau dài hạn, không tự đóng giai đoạn1.
 
 **Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-ram-window-i5/README.md) run20261110T043843.817290Z-ram-9d3521ed…, HEAD2f64752 sạch. Gate an toàn ĐẠT: 24/24completed, không violation/OOM, RSS/HWM max3188,621MiB, VmSwap engine0, availablemin6596,8MiB. Spread request17–24 13,980MiB ≤64 → phẳng trong cửa sổ; request1→24 tăng300,887MiB, tracked cố định2909,011MiB. pswpout hệ thống tăng238965page trong run (process khác, tác nhân chưa xác định). Không lặp lượt này.
+
+## Batch prefill trên prompt dài S2 (expert-batch-long-v1, 10/11)
+
+Bước S2 của PLAN, sau khi gate an toàn S1 đạt. Câu hỏi: với prompt 64 và 128 token, MOE_EXPERT_BATCH_PREFILL=on có giảm TTFT/prefill so với off không? Engine/binary giữ nguyên d12a3939… (source Rust trùng snapshot 09/11); chỉ harness Python được mở rộng. Protocol expert-batch-model-v1 cũ (Mars/Python) giữ nguyên làm mặc định `--expert-batch-workload kv-switch`.
+
+Chốt trước đo:
+- Workload long-prefill v1 trong tools/check_ram_stability.py: prompt bakery 64 token (text SHA256 4d14aaf710d91fe6c9eb343da98125632ee9c330372b3127cae2100a23629d13, token IDs SHA256 2d1c54c682a6fceac4344692f08b6b254b0434591206a5075666f9abdc732308) và library 128 token (fcdccc1028f294618a4d1a40cbc8768eb25032b7fc3d9992941785e1a0f6b28a / 4f51042d56c5f6ccfc078bb3168c3551d21388f14d2be97fa139d146230ae96d). Số token đếm sau chat template bằng cùng render_chat (minijinja 2.24.0) và tokenizers 0.22.2 encode(text,false) như engine; bộ đếm kiểm lại Mars/Python/Love = 19/22/20 khớp record. Harness kiểm usage.prompt_tokens 64/128 ở mọi request.
+- Một ABBA off→on→on→off, 4 process mới. Mỗi process 4 request, mỗi request một session mới/không history: turn0–1 warmup bakery/library (thu riêng, không tính sample), turn2–3 đo bakery/library. Reset chỉ trước turn0, keepcache. Tổng 16 request: 8 sample chính + 8 warmup; hai cặp mỗi prompt (cặp0 = block0/1, cặp1 = block3/2).
+- Max1 để cô lập prefill/TTFT; không suy decode. CPU4/victim/cache64MiB-layer/context512, Gate–Up per-token paired, FP32KV/KVreuse off/lookahead off/trace on/greedy temp0/top-p1/top-k0/repetition1/hotpin0, không usage side state/disk session. Chỉ khác batch flag; scratch thêm 144KiB tính vào budget/trace.
+- Text/usage/finish và 5 cache/file counter phải khớp ở mọi turn mọi block; on phải có batch calls>0, off 0; mode/precision/backend/trace đúng; dừng nếu mismatch/drift/watchdog. Fixture logits/token/prefix/cancel/trace của cùng engine source đã đạt 09/11, tái sử dụng.
+- Primary: TTFT VÀ prefill off/on ≥1,05 ở từng prompt trong CẢ hai cặp (4 so sánh). Secondary: expert_compute, expert I/O, client wall, RSS, pressure. Ghi mọi sample kể cả bất lợi. Một lượt; không đổi ngưỡng/warmup, không bỏ mẫu hoặc rerun. Đạt cũng chỉ kết luận trong workload đã thử, không tự bật mặc định.
+- Guard 5120/headroom 1024/watchdog RSS 5632/available 1536/process swap 128MiB. Preflight 3 mẫu cách 5s: available ≥5120MiB, pswpout không tăng, không engine/build khác.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu cpu --expert-batch-model-ab \
+  --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \
+  --max-tokens 1 --lookahead off --dry-run
+```
+
+Bỏ --dry-run sau preflight; tree sạch thì không dùng --allow-dirty.

@@ -24,7 +24,29 @@ def pressure_reason(sample, args):
     return http.memory_pressure_reason(sample, args)
 
 
+# S2 long-prefill-v1 (10/11): 64 and 128 prompt tokens after chat template/tokenizer,
+# counted with the engine's render_chat + encode(text, false). Text must not change.
+LONG_PREFILL_PROMPTS = (
+    'A small bakery sells bread, cakes and cookies. Each morning the baker prepares fresh dough, '
+    'bakes several batches and arranges them on shelves before customers arrive. '
+    'Summarize the daily routine of this bakery in two sentences.',
+    'A city library wants to help more students use its services. It currently opens from nine in '
+    'the morning until six in the evening, offers free wireless internet, lends books for two weeks '
+    'and runs a reading club every Saturday. Many students say they study late at night, need quiet '
+    'rooms for group projects and would like to borrow laptops. The library has a limited budget, '
+    'only four staff members and one small meeting room on the second floor. Suggest three practical '
+    'changes the library could make within its current budget, and explain each change briefly in a '
+    'single sentence.',
+)
+LONG_PREFILL_TOKENS = (64, 128)
+INDEPENDENT_WORKLOADS = ('kv-switch', 'long-prefill')
+
+
 def workload_spec(name):
+    if name == 'long-prefill':
+        return {'id': name, 'version': 1, 'prompts': [*LONG_PREFILL_PROMPTS, *LONG_PREFILL_PROMPTS],
+                'expected_prompt_tokens': [*LONG_PREFILL_TOKENS, *LONG_PREFILL_TOKENS],
+                'warmup_turns': [0, 1], 'measured_turns': [2, 3], 'session_mode': 'independent'}
     if name == 'mixed':
         prompts = ['Where is Mars', 'What planet did I just ask about?',
                    'Explain a Python dictionary.', 'What is love ?']
@@ -38,8 +60,9 @@ def workload_spec(name):
 
 def turn_plan(spec, turn, keep_cache):
     phase = turn % len(spec['prompts'])
-    new_session = spec['id'] == 'kv-switch' or phase != 1
-    reset = turn == 0 or (not keep_cache and (spec['id'] == 'kv-switch' or phase in (0, 3)))
+    independent = spec['id'] in INDEPENDENT_WORKLOADS
+    new_session = independent or phase != 1
+    reset = turn == 0 or (not keep_cache and (independent or phase in (0, 3)))
     return spec['prompts'][phase], new_session, reset
 
 
@@ -50,7 +73,7 @@ def parser():
     cli.add_argument('--lookahead', choices=('on', 'off'), default='on')
     cli.add_argument('--memory-trace', choices=('on', 'off'), default='off')
     cli.add_argument('--kv-buffer-reuse', choices=('on', 'off'), default='off')
-    cli.add_argument('--workload', choices=('mixed', 'kv-switch'), default='mixed')
+    cli.add_argument('--workload', choices=('mixed', 'kv-switch', 'long-prefill'), default='mixed')
     cli.add_argument('--expert-batch-prefill', choices=('on', 'off'), default='off')
     cli.add_argument('--gate-up-mode', choices=('separate', 'paired'), default='paired')
     cli.add_argument('--cache', type=common.nonnegative, required=True, help='MiB per layer')

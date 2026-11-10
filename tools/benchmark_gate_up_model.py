@@ -39,13 +39,27 @@ def fixed_environment():
                 os.environ[key] = value
 
 
-def validate_block(record, mode, expert_batch=False):
+def workload_prompts(workload):
+    if workload == "kv-switch":
+        return ("Where is Mars", "Explain a Python dictionary."), None
+    spec = ram.workload_spec(workload)
+    if workload != "long-prefill":
+        raise ValueError("expert batch model workload must be kv-switch or long-prefill")
+    return tuple(spec["prompts"]), tuple(spec["expected_prompt_tokens"])
+
+
+def measured_turns(workload):
+    return (0, 1) if workload == "kv-switch" else tuple(ram.workload_spec(workload)["measured_turns"])
+
+
+def validate_block(record, mode, expert_batch=False, workload="kv-switch"):
     gate_mode = "paired" if expert_batch else mode
+    prompts, expected_tokens = workload_prompts(workload)
     if record.get("status") != "completed" or record.get("watchdog_violations"):
         raise ValueError("block failed or watchdog stopped; stop protocol")
     turns = record.get("turns", [])
-    if len(turns) != 2 or len({t["session_id"] for t in turns}) != 2:
-        raise ValueError("expected two independent sessions")
+    if len(turns) != len(prompts) or len({t["session_id"] for t in turns}) != len(prompts):
+        raise ValueError("expected independent sessions, one per request")
     if not record.get("cpu_start_library_probe", {}).get("available"):
         raise ValueError("CPU library probe unavailable")
     if record["cpu_start_library_probe"]["cuda_libraries"]:
@@ -72,9 +86,11 @@ def validate_block(record, mode, expert_batch=False):
                     or any(type(c) is not int or c<0 for c in calls)
                     or (sum(calls)==0 if enabled else sum(calls)!=0)):
                 raise ValueError("expert batch did not execute expected path")
-    for turn, prompt in zip(turns, ("Where is Mars", "Explain a Python dictionary.")):
+    for index, (turn, prompt) in enumerate(zip(turns, prompts)):
         if turn["messages"] != [{"role": "user", "content": prompt}]:
             raise ValueError("workload drift")
+        if expected_tokens and turn["response"]["usage"].get("prompt_tokens") != expected_tokens[index]:
+            raise ValueError("prompt token count drift")
         metrics = turn["response"]["metrics"]
         if metrics.get("gate_up_mode") != gate_mode or metrics.get("cached_prompt_tokens") != 0:
             raise ValueError("request mode or prefix mismatch")
@@ -104,13 +120,14 @@ def compare_blocks(reference, actual, expert_batch=False):
                 raise ValueError("expert workload changed")
 
 
-def paired_summary(records, expert_batch=False):
+def paired_summary(records, expert_batch=False, turns=(0, 1)):
     summary = []
     baseline_name,candidate_name = ("off","on") if expert_batch else ("separate","paired")
     keys = ("total_ms","prefill_ms","time_to_first_token_ms","expert_compute_ms") if expert_batch else (
         "total_ms","prefill_ms","decode_ms","time_to_first_token_ms","expert_compute_ms")
     for pair, (baseline, candidate) in enumerate(((records[0], records[1]), (records[3], records[2]))):
-        for position, (a, b) in enumerate(zip(baseline["turns"], candidate["turns"])):
+        for position, index in enumerate(turns):
+            a, b = baseline["turns"][index], candidate["turns"][index]
             metrics = {}
             for key in keys:
                 av, bv = a["response"]["metrics"][key], b["response"]["metrics"][key]
@@ -119,11 +136,16 @@ def paired_summary(records, expert_batch=False):
                 metrics[key] = {baseline_name: av, candidate_name: bv, "baseline_over_candidate" if expert_batch else "separate_over_paired": av / bv}
             metrics["client_wall_ms"] = {baseline_name: a["response"]["client_wall_ms"],
                                           candidate_name: b["response"]["client_wall_ms"]}
-            summary.append({"pair": pair, "prompt_position": position, "timers": metrics})
+            summary.append({"pair": pair, "prompt_position": position, "turn": index, "timers": metrics})
     return summary
 
 
 def execute(args, root, expert_batch=False):
+    workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
+    if workload != "kv-switch" and not expert_batch:
+        raise ValueError("--expert-batch-workload applies only to --expert-batch-model-ab")
+    prompts, expected_tokens = workload_prompts(workload)
+    measured = measured_turns(workload)
     expected_max = 1 if expert_batch else 64
     modes = ("off","on","on","off") if expert_batch else MODES
     if (args.gpu != "cpu" or args.threads != 4 or args.cache != 64 or args.context != 512
@@ -141,9 +163,12 @@ def execute(args, root, expert_batch=False):
         raise ValueError("dirty tree; --allow-dirty is exploratory only")
     protocol = {"kind": "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
                 "git_dirty": dirty, "modes": modes, "model_dir": str(model),
-                "requests_per_block": 2, "total_requests": 8, "threads": 4,
+                "requests_per_block": len(prompts), "total_requests": 4 * len(prompts), "threads": 4,
                 "cache_mib_per_layer": 64, "context": 512, "max_tokens": expected_max,
-                "workload": "kv-switch-v1", "environment_pins": PINS,
+                "workload": workload + "-v1", "measured_turns": list(measured),
+                "warmup_turns": [i for i in range(len(prompts)) if i not in measured],
+                "expected_prompt_tokens": list(expected_tokens) if expected_tokens else None,
+                "environment_pins": PINS,
                 "removed_environment_keys": REMOVED_ENV,
                 "guards_mib": {"rss": 5120, "headroom": 1024, "watchdog_rss": 5632,
                                "available": 1536, "process_swap": 128},
@@ -167,8 +192,8 @@ def execute(args, root, expert_batch=False):
                 block_root = directory / f"block-{index}-{mode}"
                 argv = ["--testbed", args.testbed, "--gpu", "cpu", "--lookahead", "off",
                         "--memory-trace", "on", "--kv-buffer-reuse", "off", "--gate-up-mode", "paired" if expert_batch else mode,
-                        "--workload", "kv-switch", "--cache", "64", "--context", "512",
-                        "--cycles", "2", "--max-tokens", str(expected_max), "--keep-cache", "--threads", "4",
+                        "--workload", workload, "--cache", "64", "--context", "512",
+                        "--cycles", str(len(prompts)), "--max-tokens", str(expected_max), "--keep-cache", "--threads", "4",
                         "--model-dir", str(model), "--output-root", str(block_root),
                         "--ram-limit-mib", "5120", "--headroom-mib", "1024",
                         "--stop-rss-mib", "5632", "--min-available-mib", "1536", "--stop-swap-mib", "128"]
@@ -185,13 +210,16 @@ def execute(args, root, expert_batch=False):
                                          "run_id": current["run_id"], "status": current["status"]})
                 if code:
                     raise ValueError("block failed; no further blocks")
-                validate_block(current, mode, expert_batch=expert_batch)
+                validate_block(current, mode, expert_batch=expert_batch, workload=workload)
                 if records:
                     compare_blocks(records[0], current, expert_batch=expert_batch)
                 records.append(current)
                 if kernel.source_files(root) != before:
                     raise ValueError("source changed during protocol")
-        record["pairs"] = paired_summary(records, expert_batch=expert_batch)
+        record["pairs"] = paired_summary(records, expert_batch=expert_batch, turns=measured)
+        if record["warmup_turns"]:
+            record["warmup_pairs_excluded"] = paired_summary(records, expert_batch=expert_batch,
+                                                             turns=tuple(record["warmup_turns"]))
         if expert_batch:
             record["passes_ttft_rule"] = all(
                 p["timers"]["time_to_first_token_ms"]["baseline_over_candidate"] >= 1.05

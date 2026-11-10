@@ -63,6 +63,8 @@ def parser():
                      help="Decode speculative next-layer prefetch; demand/prefill unchanged")
     cli.add_argument("--expert-batch-model-ab", action="store_true",
                      help="fixed CPU batched expert prefill ABBA, max-tokens1")
+    cli.add_argument("--expert-batch-workload", choices=("kv-switch", "long-prefill"), default="kv-switch",
+                     help="--expert-batch-model-ab workload; kv-switch is the 09/11 Mars/Python protocol")
     cli.add_argument("--expert-batch-kernel", action="store_true",
                      help="INT8 multi-token expert prototype, resident real weights, CPU4")
     cli.add_argument("--gate-up-resident", action="store_true",

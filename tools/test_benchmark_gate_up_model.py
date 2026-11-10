@@ -122,6 +122,84 @@ class GateUpModelTests(unittest.TestCase):
             else:r["status_start"]["expert_batch_prefill_enabled"]=value
             with self.assertRaises(ValueError):model.validate_block(r,"on",expert_batch=True)
 
+    def test_long_prefill_workload_frozen_and_independent(self):
+        import check_ram_stability as ram
+        spec = ram.workload_spec("long-prefill")
+        self.assertEqual(spec["expected_prompt_tokens"], [64, 128, 64, 128])
+        self.assertEqual(spec["prompts"][:2], spec["prompts"][2:])
+        self.assertEqual((spec["warmup_turns"], spec["measured_turns"]), ([0, 1], [2, 3]))
+        # Frozen text: any edit changes the experiment identity recorded in SCENARIOS.
+        import hashlib
+        self.assertEqual([hashlib.sha256(s.encode()).hexdigest()[:16] for s in spec["prompts"][:2]],
+                         ["4d14aaf710d91fe6", "fcdccc1028f29461"])
+        plan = [ram.turn_plan(spec, i, True) for i in range(4)]
+        self.assertEqual([p[1] for p in plan], [True] * 4)
+        self.assertEqual([p[2] for p in plan], [True, False, False, False])
+        args = ram.parser().parse_args(["--testbed", "i5", "--gpu", "cpu", "--cache", "64",
+                                        "--workload", "long-prefill"])
+        self.assertEqual(args.workload, "long-prefill")
+
+    def long_record(self, mode):
+        import check_ram_stability as ram
+        spec = ram.workload_spec("long-prefill")
+        r = batch_record(mode)
+        base = r["turns"][0]
+        r["turns"] = []
+        for i, (prompt, tokens) in enumerate(zip(spec["prompts"], spec["expected_prompt_tokens"])):
+            turn = copy.deepcopy(base)
+            turn["session_id"] = str(i)
+            turn["messages"] = [{"role": "user", "content": prompt}]
+            turn["response"]["usage"]["prompt_tokens"] = tokens
+            r["turns"].append(turn)
+        return r
+
+    def test_long_prefill_block_validation_and_drift(self):
+        a, b = self.long_record("off"), self.long_record("on")
+        model.validate_block(a, "off", expert_batch=True, workload="long-prefill")
+        model.validate_block(b, "on", expert_batch=True, workload="long-prefill")
+        model.compare_blocks(a, b, expert_batch=True)
+        for change in ("tokens", "short", "session"):
+            r = self.long_record("on")
+            if change == "tokens":
+                r["turns"][3]["response"]["usage"]["prompt_tokens"] = 127
+            elif change == "short":
+                r["turns"] = r["turns"][:2]
+            else:
+                r["turns"][2]["session_id"] = r["turns"][0]["session_id"]
+            with self.assertRaises(ValueError):
+                model.validate_block(r, "on", expert_batch=True, workload="long-prefill")
+        with self.assertRaises(ValueError):
+            model.validate_block(self.long_record("on"), "on", expert_batch=True)
+
+    def test_long_prefill_summary_uses_measured_turns_only(self):
+        records = [self.long_record(m) for m in ("off", "on", "on", "off")]
+        records[0]["turns"][0]["response"]["metrics"]["prefill_ms"] = 1000.0  # warmup outlier
+        records[0]["turns"][2]["response"]["metrics"]["prefill_ms"] = 30.0
+        pairs = model.paired_summary(records, expert_batch=True, turns=model.measured_turns("long-prefill"))
+        self.assertEqual([p["turn"] for p in pairs], [2, 3, 2, 3])
+        self.assertEqual(pairs[0]["timers"]["prefill_ms"]["baseline_over_candidate"], 3)
+        self.assertEqual(model.measured_turns("kv-switch"), (0, 1))
+
+    def test_long_prefill_dry_run_protocol_and_scope(self):
+        import io, contextlib, json, types
+        import run_benchmark as common
+        args = common.parser().parse_args(["--testbed", "i5", "--gpu", "cpu", "--expert-batch-model-ab",
+                                           "--expert-batch-workload", "long-prefill", "--threads", "4",
+                                           "--cache", "64", "--context", "512", "--max-tokens", "1",
+                                           "--lookahead", "off", "--allow-dirty", "--dry-run"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(model.execute(args, common.WORKSPACE_DIR, expert_batch=True), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual((protocol["requests_per_block"], protocol["total_requests"]), (4, 16))
+        self.assertEqual((protocol["measured_turns"], protocol["warmup_turns"]), ([2, 3], [0, 1]))
+        self.assertEqual(protocol["workload"], "long-prefill-v1")
+        default = common.parser().parse_args(["--testbed", "i5", "--gpu", "cpu", "--expert-batch-model-ab"])
+        self.assertEqual(default.expert_batch_workload, "kv-switch")
+        gate = types.SimpleNamespace(**vars(args))
+        with self.assertRaises(ValueError):
+            model.execute(gate, common.WORKSPACE_DIR, expert_batch=False)
+
 
 if __name__ == "__main__":
     unittest.main()
