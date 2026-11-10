@@ -11,11 +11,11 @@ Một owner tích hợp. Hai người dùng branch/worktree riêng; không sửa
 
 ## Tiếp tục ở chat mới trên cùng workspace i5
 
-Điểm bàn giao duy nhất là [PLAN hiện hành](PLAN.md), gồm sáu mục tiêu, S0–S6, điều kiện kiểm chứng và prompt sao chép. Bắt đầu S0 rồi S1 RAM; không đọc toàn bộ raw/PROGRESS hoặc tự chạy tất cả nhánh. Các protocol mới trong PLAN là đề xuất chưa chạy, phải chốt trước đo.
+Điểm bàn giao duy nhất là [PLAN hiện hành](PLAN.md), gồm sáu mục tiêu, S0–S6, điều kiện kiểm chứng và prompt sao chép. S0–S5 đã có bằng chứng ngày10/11; tiếp tục đúng bước PLAN ghi là đang mở, không lặp các phép đã chốt. Không đọc toàn bộ raw/PROGRESS hoặc tự chạy tất cả nhánh; protocol mới phải chốt trước đo.
 
-Theo yêu cầu mới ngày10/11, code/tools/bằng chứng đã commit vào main local; nhánh work/i5-gate-up-ab giữ lại. Kiểm git status/HEAD khi bắt đầu, giữ mọi thay đổi phát sinh mới. Chưa push origin/main trong tác vụ này, nên máy i7/checkout khác chưa tự có phần mới. Các lệnh switch/pull ở mục i7 bên dưới chỉ áp dụng khi tiếp nhận revision thực đã publish trên checkout sạch, không dùng để bỏ thay đổi local.
+Code/tools/bằng chứng ngày10/11 được commit vào main; nhánh work/i5-gate-up-ab giữ lại. Kiểm git status/HEAD khi bắt đầu, giữ mọi thay đổi phát sinh mới. Trạng thái push xem PROGRESS; máy i7/checkout khác chỉ có phần mới sau khi owner i5 publish. Các lệnh switch/pull ở mục i7 bên dưới chỉ áp dụng khi tiếp nhận revision thực đã publish trên checkout sạch, không dùng để bỏ thay đổi local.
 
-Kernel nhiều token là CPU/INT8 opt-in/off mặc định; compute có lợi, TTFT chưa đạt rule ở lượt ngắn. Gate–Up/heat-admission đã khép; điều tra allocator đã có bằng chứng. Trạng thái và điều kiện tiếp tục ở PLAN, không tạo bản status thứ hai.
+Kernel nhiều token là CPU/INT8 opt-in/off mặc định; TTFT không đạt ở prompt ngắn09/11, đạt ở prompt64/128token10/11. Gate–Up/heat-admission đã khép; điều tra allocator đã có bằng chứng. Trạng thái và điều kiện tiếp tục ở PLAN, không tạo bản status thứ hai.
 
 ## Tiếp nhận trên testbed i7
 
@@ -74,7 +74,7 @@ Kiểm result.status/watchdog_violations/server.log, trace7stage mỗi request t
 
 Weights không nằm trong Git. Dùng checkpoint đúng format trên máy i7, chọn --model-dir và đối chiếu hash với hồ sơ mục tiêu. Không convert lại checkpoint merged đã hợp lệ; không kế thừa symlink/đường dẫn model cá nhân của i5. `machines.json` là nhãn/cấu hình khởi đầu, hardware thực phải được thu riêng.
 
-Chưa chốt cache chung i5/i7 và chưa giao một cuộc tối ưu riêng trên i7. Nếu được giao cửa sổ RAM model thật, xem [RAM_BUDGET](RAM_BUDGET.md), dự toán/preflight và preview sau:
+Chưa chốt cache chung i5/i7. Việc model thật đang giao cho i7 là [nhiệm vụ tầng VRAM expert](#nhiệm-vụ-i7-tầng-vram-expert-bậttắt-giao-10112026); ngoài ra chưa giao cuộc tối ưu riêng. Nếu sau này được giao cửa sổ RAM model thật, xem [RAM_BUDGET](RAM_BUDGET.md), dự toán/preflight và preview sau:
 
 ```bash
 python3 tools/check_ram_stability.py --testbed i7 --gpu cpu --lookahead off \
@@ -148,6 +148,10 @@ Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng
 | `on_faster` ở A và/hoặc B | Giữ mặc định on; ghi cấu hình riêng: i5 off, i7 on. Báo cáo nêu tầng VRAM có lợi phụ thuộc tỉ lệ pool/working set và PCIe |
 | Không nhất quán | Giữ mặc định on; i5 vẫn khuyến nghị off; ghi i7 chưa kết luận |
 
+**Prompt sao chép cho agent trên máy i7:**
+
+> Đây là máy i7 (testbed i7). Đọc AGENTS.md, rồi làm đúng mục "Nhiệm vụ i7: tầng VRAM expert bật/tắt" trong docs/WORKFLOWS.md trên branch riêng work/i7-gpu-tier. Dùng `--testbed i7`, không kế thừa số i5. Kiểm GPU thật trước (EXECUTED, không SKIPPED); chạy tools/preflight_memory.py trước mỗi phép; chạy phép A (long-prefill, max1) rồi phép B (mixed, max64), mỗi phép đúng một lượt, không chạy gì song song, không rerun/đổi threads/cache/ngưỡng. Lưu raw vào benchmarks/experiments/<ngày>-gpu-tier-i7 với CHECKSUMS, README, mục lục và một mục PROGRESS; báo off_faster/on_faster của từng phép, số slot VRAM thực, upload VRAM và giới hạn. Không đổi mặc định MOE_GPU_EXPERT_TIER, không push main.
+
 **Cấu hình khuyến nghị hiện tại cho i5 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, CPU4, victim, batch prefill off. Áp dụng cho demo/vận hành i5 trong phạm vi đã đo; không áp sang i7 trước khi có kết quả trên.
 
 ## Bàn giao điều tra prefill/RAM (08/11/2026)
@@ -176,6 +180,6 @@ Chỉ tái lập phase1-v1 khi được giao rõ mới dùng revision lịch s�
 
 ## Phân công sau khi nhận chung source
 
-i5 tiếp tục câu hỏi expertcache/I/O theoPLAN. i7 trước mắt xác nhậnchecks/fixture và đánh giá độc lập công cụ chất lượng/routing; chưa tự đổi cùng moduleolmoe.rs mà không thống nhất owner. Nhánh nghiên cứuINT4/FP8 dùng baseline/corpus/config riêng, không gộp số liệu khảo sát cũ thành kết luận bản merge đã nhanh hơn.
+Cập nhật10/11: i5 làm S6 theo PLAN; i7 làm [nhiệm vụ tầng VRAM expert](#nhiệm-vụ-i7-tầng-vram-expert-bậttắt-giao-10112026) trước, sau đó mới tới các việc dưới đây. Ghi chú cũ: i5 tiếp tục câu hỏi expertcache/I/O theoPLAN. i7 trước mắt xác nhậnchecks/fixture và đánh giá độc lập công cụ chất lượng/routing; chưa tự đổi cùng moduleolmoe.rs mà không thống nhất owner. Nhánh nghiên cứuINT4/FP8 dùng baseline/corpus/config riêng, không gộp số liệu khảo sát cũ thành kết luận bản merge đã nhanh hơn.
 
 CI converter đã bao gồm cả testconverterINT8 vàINT4; local cần môi trường Python cótorch/numpy/safetensors để chạy --converter. Nếu thiếu, báo skipped, không gọi toànbộconverterPASS. Các trường API chưa thực thi đầy đủ được nêu trongARCHITECTURE.
