@@ -2,7 +2,7 @@
 
 Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục công việc; lịch sử nằm trong [PROGRESS](PROGRESS.md), kết luận có nguồn trong [EVIDENCE_MATRIX](thesis/EVIDENCE_MATRIX.md). Không tạo thêm status/report bàn giao song song.
 
-**Việc tiếp theo: S3 trên i5.** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 bắt đầu bằng đọc P1 inclusive/victim và kiểm fixture tiering, chưa đo. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
+**Việc tiếp theo: S3 trên i5.** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 bước1 (probe) xong10/11: CUDA/cuBLAS thực chạy ở unit/fixture/server, expert vẫn tính CPU; chưa có số đo GPU trên revision hiện tại. Tiếp: chốt đối chứng backend cpu/auto. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
 
 ## Bắt đầu ở chat mới — đọc phần này trước
 
