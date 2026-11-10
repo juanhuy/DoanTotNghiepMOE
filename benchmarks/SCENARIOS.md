@@ -496,6 +496,8 @@ Chốt trước đo:
 - RAM: dense vẫn giữ trên host ở auto; thêm CUDA context/thư viện và pinned staging một expert. Dự toán RSS ≤ khoảng3,6GiB, dưới guard. Guard5120/headroom1024/watchdog RSS5632/available1536/process swap128MiB, báo RSS/VRAM theo block. Preflight 3 mẫu cách5s available≥5120MiB/pswpout không tăng/không engine-build khác; ghi VRAM đã dùng trước chạy (nvidia-smi).
 - VRAM allocated là logical theo engine, không phải toàn bộ cấp phát vật lý của driver/context.
 
+**Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-backend-cpu-gpu-i5/README.md) run20261110T064618.256640Z-backend-model-7726…, HEADc5a7766 sạch, 16/16completed, text/usage khớp. Rule ĐẠT: TTFT cpu/auto bakery1,618/1,235, library1,569/1,574; attention ratio9,4–17,3×; expert_compute0,84–1,09. VRAM tier 70–71 load/request, upload5240–5438MiB. Warmup đầu auto0,887. Không rerun.
+
 ```bash
 python3 tools/run_benchmark.py --testbed i5 --gpu auto --backend-model-ab \
   --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 \

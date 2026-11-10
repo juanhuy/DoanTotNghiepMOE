@@ -2,7 +2,7 @@
 
 Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục công việc; lịch sử nằm trong [PROGRESS](PROGRESS.md), kết luận có nguồn trong [EVIDENCE_MATRIX](thesis/EVIDENCE_MATRIX.md). Không tạo thêm status/report bàn giao song song.
 
-**Việc tiếp theo: S3 trên i5.** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 bước1 (probe) xong10/11: CUDA/cuBLAS thực chạy ở unit/fixture/server, expert vẫn tính CPU; chưa có số đo GPU trên revision hiện tại. Tiếp: chốt đối chứng backend cpu/auto. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
+**Việc tiếp theo: S3 trên i5.** S0/S1/S2 đã xong ngày10/11: gate an toàn RAM S1 đạt trong cửa sổ24request ([P1](../benchmarks/experiments/2026-11-10-ram-window-i5/README.md)), chưa hard-cap/plateau dài hạn; S2 batch prefill đạt primary ở prompt64/128token ([P1](../benchmarks/experiments/2026-11-10-expert-batch-long-i5/README.md)), giữ opt-in. S3 10/11: probe CUDA thực chạy; đối chứng backend cpu/auto ([P1](../benchmarks/experiments/2026-11-10-backend-cpu-gpu-i5/README.md)) đạt rule, TTFT giảm19–38% chủ yếu nhờ dense/attention cuBLAS; tầng VRAM expert upload ~5,3GiB/request, lợi ròng chưa chứng minh. Còn mở trong S3: công tắc/đối chứng riêng tầng VRAM expert và inclusive/victim trên GPU nếu cần cho luận điểm. Chưa chuyển nghiên cứu sang i7, chưa mở model16B hoặc thay precision.
 
 ## Bắt đầu ở chat mới — đọc phần này trước
 
@@ -159,6 +159,6 @@ Không kéo thêm mẫu tới khi đẹp, không tiếp tục tối ưu một nh
 >
 > S0/S1/S2 đã xong ngày10/11 (hồ sơ P1 2026-11-10-ram-window-i5 và 2026-11-10-expert-batch-long-i5). Kiểm git status trên main local; giữ mọi thay đổi mới, không reset/clean hoặc đổi nhánh để làm sạch. Chưa mặc định origin/main/i7 đã được cập nhật.
 >
-> Tiếp S3: đọc P1 inclusive/victim, xác nhận fixture upload/download/eviction/reset và probe CUDA; chỉ thiết kế đối chứng GPU khi đường CUDA thực chạy. Không lặp S1/S2, không chạy S4–S6 đồng thời hoặc mở thêm hướng mới.
+> S3 đã có probe CUDA và đối chứng backend cpu/auto (P1 2026-11-10-backend-cpu-gpu-i5). Việc còn lại của S3: quyết định có cần công tắc riêng tầng VRAM expert (sửa engine, tests, rebuild) để tách lợi/hại của upload đồng bộ hay ghi giới hạn rồi sang S4. Không lặp S1/S2/S3, không chạy S4–S6 đồng thời.
 >
 > Giữ INT8/FP32KV và ngân sách tường minh; batch off mặc định, chưa bật predictor/INT4/FP8/model16B. Không lặp các lượt09/11 để tìm phần trăm đẹp. Chỉ sửa engine khi có trigger cụ thể và kiểm chứng phù hợp. Cập nhật PROGRESS trước khi báo xong; báo kết luận và giới hạn, không đổ toàn bộ raw vào ngữ cảnh.

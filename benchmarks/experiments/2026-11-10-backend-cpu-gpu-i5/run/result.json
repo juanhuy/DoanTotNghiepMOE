@@ -1,0 +1,846 @@
+{
+  "kind": "backend_model_ab",
+  "testbed": "i5",
+  "git_commit": "c5a7766e2ecb70cda29350c9d8af4081e80a1f60",
+  "git_dirty": false,
+  "modes": [
+    "cpu",
+    "auto",
+    "auto",
+    "cpu"
+  ],
+  "model_dir": "/home/son/son/DATN/Models/olmoe_merged",
+  "requests_per_block": 4,
+  "total_requests": 16,
+  "threads": 4,
+  "cache_mib_per_layer": 64,
+  "context": 512,
+  "max_tokens": 1,
+  "workload": "long-prefill-v1",
+  "measured_turns": [
+    2,
+    3
+  ],
+  "warmup_turns": [
+    0,
+    1
+  ],
+  "expected_prompt_tokens": [
+    64,
+    128,
+    64,
+    128
+  ],
+  "environment_pins": {
+    "MOE_TEMPERATURE": "0",
+    "MOE_TOP_P": "1",
+    "MOE_TOP_K": "0",
+    "MOE_REPETITION_PENALTY": "1",
+    "MOE_KV_FP8": "0",
+    "MOE_HOT_PIN_COUNT": "0",
+    "MOE_PILOT_SMOOTH": "0.35"
+  },
+  "removed_environment_keys": [
+    "MOE_SESSION_DIR",
+    "ROUTE_TRACE",
+    "MOE_ROUTE_TRACE",
+    "MOE_USAGE_PATH",
+    "MOE_PILOT_CONF_LIMIT"
+  ],
+  "guards_mib": {
+    "rss": 5120,
+    "headroom": 1024,
+    "watchdog_rss": 5632,
+    "available": 1536,
+    "process_swap": 128
+  },
+  "notes": [
+    "four fresh processes, fixed ABBA, two pairs only; not a population speedup estimate",
+    "checkpoint hashing warms OS cache; compare same binary with one selector changed",
+    "HTTP text/usage/finish parity plus expert workload; no HTTP logits/token-ID parity"
+  ],
+  "run_id": "20261110T064618.256640Z-backend-model-7726284126004623b5a1fe094ec66730",
+  "status": "completed",
+  "blocks": [
+    {
+      "mode": "cpu",
+      "path": "block-0-cpu/i5/20261110T064618.271554Z-ram-b77641d9980b4c7d9437e861b44e29b8/result.json",
+      "run_id": "20261110T064618.271554Z-ram-b77641d9980b4c7d9437e861b44e29b8",
+      "status": "completed"
+    },
+    {
+      "mode": "auto",
+      "path": "block-1-auto/i5/20261110T064705.404883Z-ram-f7297469f5494303b18be37c942bcaa4/result.json",
+      "run_id": "20261110T064705.404883Z-ram-f7297469f5494303b18be37c942bcaa4",
+      "status": "completed"
+    },
+    {
+      "mode": "auto",
+      "path": "block-2-auto/i5/20261110T064746.722126Z-ram-b147f4213ed44bc28a2d807cf36d8d28/result.json",
+      "run_id": "20261110T064746.722126Z-ram-b147f4213ed44bc28a2d807cf36d8d28",
+      "status": "completed"
+    },
+    {
+      "mode": "cpu",
+      "path": "block-3-cpu/i5/20261110T064826.600365Z-ram-4c0ccf0c64c74ecdb44bf33991a1e6e1/result.json",
+      "run_id": "20261110T064826.600365Z-ram-4c0ccf0c64c74ecdb44bf33991a1e6e1",
+      "status": "completed"
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 0,
+      "prompt_position": 0,
+      "turn": 2,
+      "timers": {
+        "total_ms": {
+          "cpu": 6533.718552,
+          "auto": 4038.259279,
+          "baseline_over_candidate": 1.61795419773491
+        },
+        "prefill_ms": {
+          "cpu": 6528.46825,
+          "auto": 4033.007521,
+          "baseline_over_candidate": 1.6187592549743723
+        },
+        "time_to_first_token_ms": {
+          "cpu": 6533.648517,
+          "auto": 4038.189086,
+          "baseline_over_candidate": 1.617964978324445
+        },
+        "expert_compute_ms": {
+          "cpu": 1353.4480420000002,
+          "auto": 1247.357563,
+          "baseline_over_candidate": 1.0850521792202419
+        },
+        "attention_ms": {
+          "cpu": 2390.92447,
+          "auto": 138.13896,
+          "baseline_over_candidate": 17.308111122307565
+        },
+        "lm_head_ms": {
+          "cpu": 16.979793,
+          "auto": 2.812416,
+          "baseline_over_candidate": 6.037440051542873
+        },
+        "client_wall_ms": {
+          "cpu": 6540.024472000368,
+          "auto": 4041.7156309995335
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 7321,
+          "auto": 7392
+        },
+        "expert_cache_misses": {
+          "cpu": 871,
+          "auto": 800
+        },
+        "expert_cache_evictions": {
+          "cpu": 871,
+          "auto": 871
+        },
+        "expert_file_loads": {
+          "cpu": 871,
+          "auto": 800
+        },
+        "expert_file_bytes_read": {
+          "cpu": 5494128640,
+          "auto": 5046272000
+        },
+        "expert_io_ms": {
+          "cpu": 2681.7400390000003,
+          "auto": 1279.654284
+        },
+        "expert_file_read_ms": {
+          "cpu": 2681.7400390000003,
+          "auto": 1185.059993
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 71
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 5494128640
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 447856640
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1282.915927
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 94.594291
+        }
+      }
+    },
+    {
+      "pair": 0,
+      "prompt_position": 1,
+      "turn": 3,
+      "timers": {
+        "total_ms": {
+          "cpu": 10230.446394999999,
+          "auto": 6518.577601999999,
+          "baseline_over_candidate": 1.5694292558335337
+        },
+        "prefill_ms": {
+          "cpu": 10222.463238,
+          "auto": 6511.83521,
+          "baseline_over_candidate": 1.5698283062049416
+        },
+        "time_to_first_token_ms": {
+          "cpu": 10230.34684,
+          "auto": 6518.479891,
+          "baseline_over_candidate": 1.5694375086014973
+        },
+        "expert_compute_ms": {
+          "cpu": 2256.051551,
+          "auto": 2673.860671,
+          "baseline_over_candidate": 0.8437431222458787
+        },
+        "attention_ms": {
+          "cpu": 4334.518242,
+          "auto": 459.27058900000003,
+          "baseline_over_candidate": 9.43783108654493
+        },
+        "lm_head_ms": {
+          "cpu": 14.040423,
+          "auto": 2.80447,
+          "baseline_over_candidate": 5.006444354904849
+        },
+        "client_wall_ms": {
+          "cpu": 10234.156955999424,
+          "auto": 6521.960616999422
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 15480,
+          "auto": 15550
+        },
+        "expert_cache_misses": {
+          "cpu": 904,
+          "auto": 834
+        },
+        "expert_cache_evictions": {
+          "cpu": 904,
+          "auto": 904
+        },
+        "expert_file_loads": {
+          "cpu": 904,
+          "auto": 834
+        },
+        "expert_file_bytes_read": {
+          "cpu": 5702287360,
+          "auto": 5260738560
+        },
+        "expert_io_ms": {
+          "cpu": 3497.7194799999997,
+          "auto": 1805.708077
+        },
+        "expert_file_read_ms": {
+          "cpu": 3497.7194799999997,
+          "auto": 1711.928412
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 70
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 5702287360
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 441548800
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1409.327618
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 93.779665
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "prompt_position": 0,
+      "turn": 2,
+      "timers": {
+        "total_ms": {
+          "cpu": 5124.203519,
+          "auto": 4150.42881,
+          "baseline_over_candidate": 1.2346202654178278
+        },
+        "prefill_ms": {
+          "cpu": 5118.201682,
+          "auto": 4145.1087339999995,
+          "baseline_over_candidate": 1.2347569172355517
+        },
+        "time_to_first_token_ms": {
+          "cpu": 5124.134861,
+          "auto": 4150.362339,
+          "baseline_over_candidate": 1.2346234960860363
+        },
+        "expert_compute_ms": {
+          "cpu": 1318.036786,
+          "auto": 1237.373792,
+          "baseline_over_candidate": 1.065188865742519
+        },
+        "attention_ms": {
+          "cpu": 2093.007224,
+          "auto": 138.50063100000003,
+          "baseline_over_candidate": 15.111896667098936
+        },
+        "lm_head_ms": {
+          "cpu": 15.918504,
+          "auto": 2.8072700000000004,
+          "baseline_over_candidate": 5.670457063267872
+        },
+        "client_wall_ms": {
+          "cpu": 5127.6237849997415,
+          "auto": 4153.779586999008
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 7321,
+          "auto": 7392
+        },
+        "expert_cache_misses": {
+          "cpu": 871,
+          "auto": 800
+        },
+        "expert_cache_evictions": {
+          "cpu": 871,
+          "auto": 871
+        },
+        "expert_file_loads": {
+          "cpu": 871,
+          "auto": 800
+        },
+        "expert_file_bytes_read": {
+          "cpu": 5494128640,
+          "auto": 5046272000
+        },
+        "expert_io_ms": {
+          "cpu": 1608.79789,
+          "auto": 1407.461941
+        },
+        "expert_file_read_ms": {
+          "cpu": 1608.79789,
+          "auto": 1317.493268
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 71
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 5494128640
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 447856640
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1274.092151
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 89.968673
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "prompt_position": 1,
+      "turn": 3,
+      "timers": {
+        "total_ms": {
+          "cpu": 8892.279736999999,
+          "auto": 5650.180771,
+          "baseline_over_candidate": 1.5738044670429534
+        },
+        "prefill_ms": {
+          "cpu": 8886.717464,
+          "auto": 5644.918863,
+          "baseline_over_candidate": 1.5742861287606074
+        },
+        "time_to_first_token_ms": {
+          "cpu": 8892.181119,
+          "auto": 5650.113397,
+          "baseline_over_candidate": 1.5738057794948714
+        },
+        "expert_compute_ms": {
+          "cpu": 2338.4206710000003,
+          "auto": 2353.130406,
+          "baseline_over_candidate": 0.9937488653571884
+        },
+        "attention_ms": {
+          "cpu": 4723.979029,
+          "auto": 455.45942099999996,
+          "baseline_over_candidate": 10.371898815108713
+        },
+        "lm_head_ms": {
+          "cpu": 15.285421000000001,
+          "auto": 2.8093139999999996,
+          "baseline_over_candidate": 5.4409798975835395
+        },
+        "client_wall_ms": {
+          "cpu": 8896.007344999816,
+          "auto": 5653.6680110002635
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 15480,
+          "auto": 15550
+        },
+        "expert_cache_misses": {
+          "cpu": 904,
+          "auto": 834
+        },
+        "expert_cache_evictions": {
+          "cpu": 904,
+          "auto": 904
+        },
+        "expert_file_loads": {
+          "cpu": 904,
+          "auto": 834
+        },
+        "expert_file_bytes_read": {
+          "cpu": 5702287360,
+          "auto": 5260738560
+        },
+        "expert_io_ms": {
+          "cpu": 1682.205941,
+          "auto": 1320.3682139999999
+        },
+        "expert_file_read_ms": {
+          "cpu": 1682.205941,
+          "auto": 1228.98963
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 70
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 5702287360
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 441548800
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1360.4352880000001
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 91.378584
+        }
+      }
+    }
+  ],
+  "warmup_pairs_excluded": [
+    {
+      "pair": 0,
+      "prompt_position": 0,
+      "turn": 0,
+      "timers": {
+        "total_ms": {
+          "cpu": 4518.11624,
+          "auto": 5094.103733,
+          "baseline_over_candidate": 0.8869305528136956
+        },
+        "prefill_ms": {
+          "cpu": 4507.661406,
+          "auto": 5061.093429,
+          "baseline_over_candidate": 0.8906497122086621
+        },
+        "time_to_first_token_ms": {
+          "cpu": 4517.979351,
+          "auto": 5094.020745,
+          "baseline_over_candidate": 0.886918129541304
+        },
+        "expert_compute_ms": {
+          "cpu": 1099.54213,
+          "auto": 1406.979196,
+          "baseline_over_candidate": 0.7814913917177778
+        },
+        "attention_ms": {
+          "cpu": 1969.1547520000001,
+          "auto": 170.62966600000001,
+          "baseline_over_candidate": 11.540518118344087
+        },
+        "lm_head_ms": {
+          "cpu": 13.566514,
+          "auto": 8.44342,
+          "baseline_over_candidate": 1.6067557932686045
+        },
+        "client_wall_ms": {
+          "cpu": 4522.064642998885,
+          "auto": 5099.080892001439
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 7232,
+          "auto": 7232
+        },
+        "expert_cache_misses": {
+          "cpu": 960,
+          "auto": 960
+        },
+        "expert_cache_evictions": {
+          "cpu": 800,
+          "auto": 800
+        },
+        "expert_file_loads": {
+          "cpu": 960,
+          "auto": 960
+        },
+        "expert_file_bytes_read": {
+          "cpu": 6055526400,
+          "auto": 6055526400
+        },
+        "expert_io_ms": {
+          "cpu": 1351.5733519999999,
+          "auto": 2172.127893
+        },
+        "expert_file_read_ms": {
+          "cpu": 1351.5733519999999,
+          "auto": 2172.127893
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 0
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 5046272000
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 0
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1218.810276
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 0.0
+        }
+      }
+    },
+    {
+      "pair": 0,
+      "prompt_position": 1,
+      "turn": 1,
+      "timers": {
+        "total_ms": {
+          "cpu": 7679.3379,
+          "auto": 6717.602327,
+          "baseline_over_candidate": 1.1431664939638515
+        },
+        "prefill_ms": {
+          "cpu": 7672.2859339999995,
+          "auto": 6696.311022,
+          "baseline_over_candidate": 1.1457481453286056
+        },
+        "time_to_first_token_ms": {
+          "cpu": 7677.810820000001,
+          "auto": 6717.491714999999,
+          "baseline_over_candidate": 1.142957988746846
+        },
+        "expert_compute_ms": {
+          "cpu": 2144.436522,
+          "auto": 2287.892721,
+          "baseline_over_candidate": 0.9372976723588256
+        },
+        "attention_ms": {
+          "cpu": 4200.923737,
+          "auto": 459.42540399999996,
+          "baseline_over_candidate": 9.143864706706555
+        },
+        "lm_head_ms": {
+          "cpu": 13.369189,
+          "auto": 2.809625,
+          "baseline_over_candidate": 4.758353516928416
+        },
+        "client_wall_ms": {
+          "cpu": 7683.236658000169,
+          "auto": 6722.6638899992395
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 15420,
+          "auto": 15548
+        },
+        "expert_cache_misses": {
+          "cpu": 964,
+          "auto": 836
+        },
+        "expert_cache_evictions": {
+          "cpu": 964,
+          "auto": 964
+        },
+        "expert_file_loads": {
+          "cpu": 964,
+          "auto": 836
+        },
+        "expert_file_bytes_read": {
+          "cpu": 6080757760,
+          "auto": 5273354240
+        },
+        "expert_io_ms": {
+          "cpu": 1187.1067019999998,
+          "auto": 2405.107247
+        },
+        "expert_file_read_ms": {
+          "cpu": 1187.1067019999998,
+          "auto": 2244.3107410000002
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 128
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 6080757760
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 807403520
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1426.052743
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 160.796506
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "prompt_position": 0,
+      "turn": 0,
+      "timers": {
+        "total_ms": {
+          "cpu": 5455.856367,
+          "auto": 4731.277402,
+          "baseline_over_candidate": 1.1531465825051195
+        },
+        "prefill_ms": {
+          "cpu": 5448.714226,
+          "auto": 4720.829388,
+          "baseline_over_candidate": 1.1541857962183997
+        },
+        "time_to_first_token_ms": {
+          "cpu": 5455.743905,
+          "auto": 4731.1884549999995,
+          "baseline_over_candidate": 1.1531444914721751
+        },
+        "expert_compute_ms": {
+          "cpu": 1262.644137,
+          "auto": 1177.5518140000001,
+          "baseline_over_candidate": 1.0722620626866104
+        },
+        "attention_ms": {
+          "cpu": 2305.527892,
+          "auto": 153.395243,
+          "baseline_over_candidate": 15.029982983240231
+        },
+        "lm_head_ms": {
+          "cpu": 13.729790000000001,
+          "auto": 4.854812,
+          "baseline_over_candidate": 2.8280786156085966
+        },
+        "client_wall_ms": {
+          "cpu": 5459.665800000948,
+          "auto": 4735.0137529992935
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 7232,
+          "auto": 7232
+        },
+        "expert_cache_misses": {
+          "cpu": 960,
+          "auto": 960
+        },
+        "expert_cache_evictions": {
+          "cpu": 800,
+          "auto": 800
+        },
+        "expert_file_loads": {
+          "cpu": 960,
+          "auto": 960
+        },
+        "expert_file_bytes_read": {
+          "cpu": 6055526400,
+          "auto": 6055526400
+        },
+        "expert_io_ms": {
+          "cpu": 1783.732992,
+          "auto": 2128.3376820000003
+        },
+        "expert_file_read_ms": {
+          "cpu": 1783.732992,
+          "auto": 2128.3376820000003
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 0
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 5046272000
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 0
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1177.799646
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 0.0
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "prompt_position": 1,
+      "turn": 1,
+      "timers": {
+        "total_ms": {
+          "cpu": 8747.564408,
+          "auto": 6581.846129,
+          "baseline_over_candidate": 1.3290441977149419
+        },
+        "prefill_ms": {
+          "cpu": 8742.196375000001,
+          "auto": 6574.316102,
+          "baseline_over_candidate": 1.3297499297821262
+        },
+        "time_to_first_token_ms": {
+          "cpu": 8747.466941,
+          "auto": 6581.7377050000005,
+          "baseline_over_candidate": 1.3290512829696546
+        },
+        "expert_compute_ms": {
+          "cpu": 2233.7345210000003,
+          "auto": 2535.7278079999996,
+          "baseline_over_candidate": 0.8809046909343988
+        },
+        "attention_ms": {
+          "cpu": 4201.292875,
+          "auto": 457.68059900000003,
+          "baseline_over_candidate": 9.179530188038404
+        },
+        "lm_head_ms": {
+          "cpu": 13.163986000000001,
+          "auto": 2.8105830000000003,
+          "baseline_over_candidate": 4.683720779638957
+        },
+        "client_wall_ms": {
+          "cpu": 8751.265539000087,
+          "auto": 6585.284638000303
+        }
+      },
+      "work": {
+        "expert_cache_hits": {
+          "cpu": 15420,
+          "auto": 15548
+        },
+        "expert_cache_misses": {
+          "cpu": 964,
+          "auto": 836
+        },
+        "expert_cache_evictions": {
+          "cpu": 964,
+          "auto": 964
+        },
+        "expert_file_loads": {
+          "cpu": 964,
+          "auto": 836
+        },
+        "expert_file_bytes_read": {
+          "cpu": 6080757760,
+          "auto": 5273354240
+        },
+        "expert_io_ms": {
+          "cpu": 2180.530981,
+          "auto": 1970.783768
+        },
+        "expert_file_read_ms": {
+          "cpu": 2180.530981,
+          "auto": 1801.5487540000001
+        },
+        "expert_vram_loads": {
+          "cpu": 0,
+          "auto": 128
+        },
+        "expert_vram_upload_bytes": {
+          "cpu": 0,
+          "auto": 6080757760
+        },
+        "expert_vram_download_bytes": {
+          "cpu": 0,
+          "auto": 807403520
+        },
+        "expert_vram_upload_ms": {
+          "cpu": 0.0,
+          "auto": 1483.4702980000002
+        },
+        "expert_vram_download_ms": {
+          "cpu": 0.0,
+          "auto": 169.23501399999998
+        }
+      }
+    }
+  ],
+  "gpu_status_start": {
+    "cpu": {
+      "enabled": false,
+      "device_name": "GPU (Đã tắt)",
+      "total_vram_bytes": 0,
+      "allocated_vram_bytes": 0,
+      "free_vram_bytes": 0,
+      "dense_offloaded": false,
+      "vram_experts_resident": 0,
+      "message": "GPU tắt từ lúc nạp; khởi động lại với MOE_GPU_MODE=auto để sử dụng GPU"
+    },
+    "auto": {
+      "enabled": true,
+      "device_name": "NVIDIA GeForce GTX 1650 with Max-Q Design",
+      "total_vram_bytes": 3911581696,
+      "allocated_vram_bytes": 1485832192,
+      "free_vram_bytes": 2425749504,
+      "dense_offloaded": true,
+      "vram_experts_resident": 0,
+      "message": "Hoạt động (1.38 GB / 3.64 GB VRAM · 0 L1 Experts · cuBLAS SGEMV Active)"
+    }
+  },
+  "passes_backend_rule": true,
+  "decision_rule": "each pair/prompt TTFT and prefill cpu/auto ratio>=1.05; same text/usage/finish; composite backend (GPU dense + VRAM expert tier), expert SwiGLU stays CPU"
+}
