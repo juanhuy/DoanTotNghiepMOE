@@ -9,6 +9,14 @@
 
 Một owner tích hợp. Hai người dùng branch/worktree riêng; không sửa đồng thời cùng file hoặc chạy benchmark song song trên cùng máy. Agent đọc AGENTS và hai skill trong .agents/skills/: moe-engine cho Rust/cache/FFI, moe-benchmark cho đo và diễn giải bằng chứng. Không cần MCP/plugin/tài khoản API để build engine. Không đưa token hoặc cấu hình cá nhân vào repo.
 
+## Tiếp tục ở chat mới trên cùng workspace i5
+
+Điểm bàn giao duy nhất là [PLAN hiện hành](PLAN.md), gồm sáu mục tiêu, S0–S6, điều kiện kiểm chứng và prompt sao chép. Bắt đầu S0 rồi S1 RAM; không đọc toàn bộ raw/PROGRESS hoặc tự chạy tất cả nhánh. Các protocol mới trong PLAN là đề xuất chưa chạy, phải chốt trước đo.
+
+Theo yêu cầu mới ngày10/11, code/tools/bằng chứng đã commit vào main local; nhánh work/i5-gate-up-ab giữ lại. Kiểm git status/HEAD khi bắt đầu, giữ mọi thay đổi phát sinh mới. Chưa push origin/main trong tác vụ này, nên máy i7/checkout khác chưa tự có phần mới. Các lệnh switch/pull ở mục i7 bên dưới chỉ áp dụng khi tiếp nhận revision thực đã publish trên checkout sạch, không dùng để bỏ thay đổi local.
+
+Kernel nhiều token là CPU/INT8 opt-in/off mặc định; compute có lợi, TTFT chưa đạt rule ở lượt ngắn. Gate–Up/heat-admission đã khép; điều tra allocator đã có bằng chứng. Trạng thái và điều kiện tiếp tục ở PLAN, không tạo bản status thứ hai.
+
 ## Tiếp nhận trên testbed i7
 
 ### Nhận gốc phát triển chung sau hợp nhất

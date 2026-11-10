@@ -1,4 +1,4 @@
-# Báo cáo định kỳ lần 1
+# [BÁO CÁO KỲ 1] Báo cáo định kỳ lần 1
 
 - Nội dung: [Báo cáo Markdown](BAO_CAO_DINH_KY_LAN_1.md).
 - Bản dàn trang: [LaTeX](latex/main.tex), [PDF](latex/main.pdf).

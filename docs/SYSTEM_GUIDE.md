@@ -1,6 +1,8 @@
-# Hướng dẫn hệ thống MoE-TierEngine
+# [ĐỌC TRƯỚC] Hướng dẫn hệ thống MoE-TierEngine
 
-Tài liệu này là điểm bắt đầu để hiểu đồ án và lần theo bằng chứng. Nó mô tả mã nguồn hiện tại ở mức dễ đọc; số đo chỉ được khẳng định khi có hồ sơ benchmark liên kết. Cập nhật lần cuối: 08/11/2026.
+Tài liệu này là điểm bắt đầu để hiểu đồ án và lần theo bằng chứng. Nó mô tả mã nguồn hiện tại ở mức dễ đọc; số đo chỉ được khẳng định khi có hồ sơ benchmark liên kết. Cập nhật lần cuối: 09/11/2026.
+
+**Cách đọc hồ sơ:** dùng [mục lục P1/P2/P3](../benchmarks/README.md) để chọn bằng chứng. Đọc bản tóm tắt trước; JSON/trace/source ZIP chỉ mở khi kiểm chứng hoặc điều tra cụ thể.
 
 ## Đồ án đang giải quyết câu hỏi gì?
 
@@ -60,7 +62,8 @@ Attention tạo Key (K) và Value (V) theo layer/token; ở bước decode tiế
 | Tái sử dụng prefix KV | Khi chat tiếp tục, có thể tránh prefill lại prefix không đổi? | Có trong đường session; phép thử 5 cặp lịch sử kiểm token đầu khớp 5/5, nhưng chỉ `max_tokens=1`. | Không chứng minh tăng tốc decode dài hoặc giảm RSS toàn tiến trình. |
 | Candidate tái sử dụng buffer KV | Khi phải bỏ một session, có thể dùng lại vùng KV của nó cho session mới và tránh overlap cấp phát? | Model thật i5: capacity KV đồng tồn tại 256,001→128,001 MiB; handoff 134.218.496 byte; output HTTP khớp 2/2. RSS peak lấy mẫu thấp hơn 51,910 MiB trong đúng một cặp. [Raw và giới hạn](../benchmarks/experiments/2026-11-05-kv-reuse-narrow-i5/README.md). | Một cặp, tải/swap khác nhau; không khẳng định giảm RSS ổn định, hết OOM, tăng tốc hoặc đúng logits toàn mô hình. Mặc định off. |
 | Lookahead dự đoán expert lớp kế tiếp | Nếu dự đoán/nạp expert trước khi cần, có giảm chờ đọc expert không? | Có thuật toán chuyển tiếp lịch sử và gate; telemetry model thật gần nhất chỉ có cơ hội rất ít, các điều kiện miss chặn hầu hết; đang tạm gác và tắt trong phép đo RAM mới. | Chưa có bằng chứng tốc độ tổng thể khi predictor hoạt động thường xuyên; dự đoán sai có thể tăng I/O/bộ nhớ. |
-| Gom/song song expert prefill | Gom token cùng expert hoặc dispatch song song có giảm thời gian prefill? | Phép thử cặp cũ candidate chậm hơn 7/9; implementation thử nghiệm đã bị bỏ khỏi đường chạy production. | Kết quả chỉ thuộc workload/revision đó. |
+| Gom/song song task token cũ | Gom token cùng expert hoặc dispatch song song có giảm thời gian prefill? | Phép thử cặp cũ candidate chậm hơn 7/9; implementation thử nghiệm đã bị bỏ khỏi đường chạy production. | Kết quả chỉ thuộc workload/revision đó. |
+| Kernel chung cho2/4token cùng expert | Có thể dùng lại trọng số trong phép tính thay vì gọi riêng từng token? | CPU/INT8 opt-in MOE_EXPERT_BATCH_PREFILL=on, mặc địnhoff. [P2: kernel/model](../benchmarks/experiments/2026-11-09-expert-batch-int8-i5/README.md): compute có lợi trong phạm vi đo. | Scratch144KiB được tính vào budget; TTFT chưa ổn định, không tăng tốc decode hoặc giảm RSS đã chứng minh. |
 | Guard RAM hợp tác | Có ngăn request tiếp tục khi RSS/headroom vượt ngưỡng quan sát? | Có reserve check và sampler/watchdog trong đường generation. | Không phải hard cap: cấp phát có thể vượt giữa mẫu; không bảo đảm allocator/driver trả trang hoặc loại hết OOM. |
 | Memory trace theo stage | Ở ranh giới nào capacity KV/scratch/session đổi? | 7 mốc, opt-in; dùng trong phép đo model thật. | Không phải allocator profiler; không bao phủ mọi cấp phát và không bằng RSS. |
 
@@ -81,6 +84,8 @@ Bảng này tóm tắt các nhánh quan trọng đang có trong source/bằng ch
 | Cache hit/miss | Expert có/không có trong tầng cache được tra; miss thường phải lấy từ tầng khác/file. |
 | Evict | Loại một mục cache/session để nhường ngân sách; lịch sử hội thoại ở client có thể còn. |
 | Prefill / decode | Xử lý prompt đầu vào / sinh token kế tiếp từng bước. |
+| TTFT | Thời gian tới token đầu tiên; số đo engine khác toàn bộ thời gian client chờ. |
+| Batch token cùng expert | Tính một nhóm token với cùng trọng số, mỗi token vẫn có input/output riêng; không ghép các phiên hội thoại. |
 | Top-K | Chọn K expert có điểm router cao nhất cho token. |
 | INT8 | Số nguyên 8-bit dùng để lưu/trình bày trọng số expert; scales giúp diễn giải giá trị. |
 | RSS peak | RSS lớn nhất trong các mẫu quan sát; có thể bỏ sót đỉnh ngắn giữa hai lần lấy mẫu. |

@@ -12,10 +12,18 @@
 
 - Trước khi tiếp tục lộ trình, đọc `docs/PROGRESS.md` (quy tắc, trạng thái và mục mới nhất); tra mốc cũ khi cần so sánh.
 - `docs/PLAN.md`: backlog; `docs/ARCHITECTURE.md`: luồng/invariant; `docs/WORKFLOWS.md`: quy trình và handoff.
-- Khi đo/dùng số liệu: đọc `benchmarks/README.md`, `benchmarks/manifest.json` và skill `moe-benchmark`.
+- Khi đo/dùng số liệu: đọc `benchmarks/README.md` và skill `moe-benchmark`; dùng nhãn P1/P2/P3 để chọn hồ sơ. Tra entry liên quan trong `benchmarks/manifest.json` khi dùng số liệu lịch sử, không cần đọc cả corpus.
 - Agent trên máy đồng nghiệp đọc thêm mục **Tiếp nhận trên testbed i7** trong `docs/WORKFLOWS.md`; chọn `--testbed i7` tường minh, không kế thừa nhãn/kết quả i5 thành số đo của máy mình.
 - Khi sửa/review Rust engine/cache/FFI: đọc skill `moe-engine`.
 - `baocao/` là bản thảo, không xác nhận số đo; Git history không ghi đè chỉ dẫn hiện hành.
+
+### Đọc có chọn lọc để tiết kiệm ngữ cảnh
+
+- Hiểu hệ thống: đọc SYSTEM_GUIDE; chọn việc: PLAN; viết luận điểm: bảng “Đóng góp trực tiếp” trong EVIDENCE_MATRIX. Nhãn và liên kết tập trung ở benchmarks/README.md.
+- P1 là bằng chứng chính; P2 là bổ trợ/quyết định giữ-bỏ; P3 là chẩn đoán/lịch sử, không mở mặc định. Chọn đúng hồ sơ theo câu hỏi, không đọc hết P1 mỗi lượt.
+- PROGRESS là nhật ký tra cứu: đọc quy tắc và mục mới nhất bằng tìm tiêu đề/đọc đoạn cần thiết, không đổ toàn bộ lịch sử vào ngữ cảnh.
+- Mặc định đọc README thí nghiệm trước. Chỉ trích run/request/trường JSON cần kiểm; lọc trace theo thời gian/trường. Không đọc cả result và turn tương ứng nếu chúng lặp cùng nội dung.
+- Nhãn ưu tiên không xác nhận chất lượng số đo. Khi trích số mới hoặc kiểm một claim, vẫn đối chiếu raw/config/provenance/tolerance phù hợp. Kiểm checksum bằng công cụ; chỉ mở source ZIP/log khi truy lỗi/nguồn. Giữ nguyên payload, không xóa hoặc đổi nhãn raw lịch sử.
 
 ## Thay đổi và kiểm tra
 

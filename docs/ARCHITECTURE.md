@@ -208,14 +208,28 @@ Cả hai phép nhân ma trận $x \cdot W_{\text{gate}}$ và $x \cdot W_{\text{u
 - **Giải pháp ghép cặp (Paired Gate-Up Kernel)**: Vector $x$ được nạp một lần duy nhất vào 4 thanh ghi 256-bit (`x0..x3`) cho mỗi khối 32 số thực FP32, sau đó nhân song song với cả 32 trọng số của Gate và 32 trọng số của Up.
 
 ### 2. Tận dụng Hai Cổng Thực thi FMA (Dual FMA Execution Ports)
-Trên các vi kiến trúc hiện đại của Intel (Raptor Lake / Golden Cove trên Core i7-14650HX):
-- CPU sở hữu 2 cổng thực thi FMA 256-bit độc lập (Port 0 và Port 1), cho thông lượng lý thuyết đạt tối đa 2 lệnh FMA trên mỗi chu kỳ xung nhịp (thông lượng 16 phép toán FP32/chu kỳ).
-- Bằng cách bố trí các lệnh `_mm256_fmadd_ps` xen kẽ giữa các thanh ghi tích lũy của Gate (`sum_g0..sum_g3`) và Up (`sum_u0..sum_u3`), chuỗi phụ thuộc dữ liệu (data dependency chain) được giãn cách hoàn toàn, loại bỏ hiện tượng nghẽn thanh ghi (register stalling) và cho phép CPU đạt gần 100% công suất tính toán lý thuyết.
+Các lệnh `_mm256_fmadd_ps` dùng những bộ tích lũy riêng cho Gate và Up, tạo cơ hội cho CPU thực thi các phép tính độc lập xen kẽ. Mức lợi ích phụ thuộc vi kiến trúc, bộ nhớ và lịch chạy. Chưa có hardware counter chứng minh hết nghẽn thanh ghi, giảm chính xác lưu lượng L1 hoặc đạt gần 100% công suất lý thuyết; không dùng cấu trúc mã làm số đo hiệu năng.
 
 ### 3. Triển khai Kỹ thuật: `dot_i8_f32_pair_avx2` & `dot_i4_f32_pair_avx2`
 - **INT8 Paired Kernel**: Nạp 32 bytes trọng số từ `gate_row` và 32 bytes từ `up_row`, mở rộng dấu sang FP32, nhân dồn vào 4 bộ tích lũy Gate và 4 bộ tích lũy Up cùng với cùng một bản sao `x0..x3`.
 - **INT4 Paired Kernel**: Nạp 16 bytes (32 nibbles) của Gate và 16 bytes của Up, giải mã branchless `(x ^ 8) - 8` đồng thời, nạp vector $x$ một lần và tính song song hai kết quả vô hướng `(dot_g, dot_u)`.
 - **Độ chính xác và Parity**: Hai kernel ghép cặp được bảo chứng thông qua hai unit test `test_dot_i8_f32_pair_parity` và `test_dot_i4_f32_pair_parity` trên 16 dải kích thước vector khác nhau, đạt sai số toán học tuyệt đối $< 10^{-4} \times (1 + |\text{scalar}|)$.
+
+### 4. Chọn cách tính để đối chứng trên model
+
+`MOE_GATE_UP_MODE=paired|separate` được đọc một lần khi load OLMoE, mặc định `paired` như trước. Giá trị khác bị từ chối. `separate` gọi hai dot SIMD riêng; `paired` dùng dot ghép cặp. Mode đi qua scratch của cả prefill/decode; không đổi trọng số, scales, SiLU, Down hoặc cách chia task. API `Int8Expert::forward` độc lập vẫn mặc định paired.
+
+`/experts` công bố `gate_up_mode` và `expert_quantization` theo dtype các merged weights; metrics OLMoE công bố mode của request. Đây là metadata thực thi, không chứng nhận tăng tốc. Fixture MHA/GQA so logits với tolerance2e-5, token/finish/prefix parity; model thật chỉ kiểm được text/usage/finish qua HTTP. [Đối chứng model INT8 i5](../benchmarks/experiments/2026-11-08-gate-up-model-int8-i5/README.md) hoàn tất8request nhưng hai cặp cho kết quả trái chiều trong điều kiện I/O/swap khác nhau; chưa xác nhận speedup toàn request. [Resident weights thật09/11](../benchmarks/experiments/2026-11-09-gate-up-resident-int8-i5/README.md) xác nhận scope expert_tasks8 không đạt tiêu chí đã đặt, còn row_parallel có lợi trong phép thử hẹp; khép hướng, không thay default theo một phép đo. Candidate admission tần suất đã thử rồi gỡ vì tăng nạp lại, không là tính năng hiện hành.
+
+## Kernel expert INT8 cho nhiều token cùng expert (opt-in)
+
+Module [batch_prototype.rs](../src/int8_expert/batch_prototype.rs) có đường batch2/batch4 được tích hợp sau khi đạt đối chứng resident. Mỗi khối trọng số INT8 được chuyển sang FP32 trong register và áp dụng cho nhiều input; giữ4bank/reduction như dot SIMD cũ, không cấp toàn ma trận FP32. Hàng output thuộc từng token độc lập; attention nhân quả đã xử lý trước đó, không trộn token/phiên hoặc dùng thông tin tương lai.
+
+MOE_EXPERT_BATCH_PREFILL=on chỉ chấp nhận CPU tường minh và expert INT8; mặc địnhoff. Prefill dùng nhóm4/2/1; nhóm1 gọi đường cũ, nhóm nhiều token ghi contributions đúng token/slot rồi reduce theo Top-K cũ. Decode không đổi. Đối chứng cũ nhiều token-task song song vẫn chỉ cfg(test), không là baseline production.
+
+Scratch2+4 cấp local một lần trong prefill, tái dùng qua expert/layer:48×(hidden+intermediate)B=144KiB cho model đã thử. Tính vào requestreserve và prefill_capacity_bytes, drop khi prefill kết thúc; không đồng nghĩa RSS trả ngay OS. Shapes/precision/finite input được kiểm trước SIMD; wrapper kiểm AVX2+FMA/độ dài, loads unaligned trong fullchunk và xử lý tail; input/weights immutable, mỗi task ghi một hàng riêng, không giữ pointer sau call.
+
+Status/metrics công bố expert_batch_prefill_enabled, prefill_expert_batch2_calls/batch4_calls (kernel applications, không unique prompt tokens). Gate–Up mode chọn đường từng token; batch dùng thuật toán chia sẻ trọng số riêng. [Hồ sơ P2](../benchmarks/experiments/2026-11-09-expert-batch-int8-i5/README.md): compute có lợi trong phạm vi đo, TTFT3/4cặp tốt hơn và không đạt tiêu chí đã đặt; giữ opt-in/off mặc định, không tuyên bố tốc độ toàn hệ thống tăng tương ứng kernel.
 
 ## Telemetry Định Tuyến & Ghim Chuyên Gia Nóng Bền Vững (.moe_usage & ROUTE_TRACE)
 
