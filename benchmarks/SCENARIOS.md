@@ -432,3 +432,28 @@ python3 tools/run_benchmark.py --testbed i5 --gpu cpu --expert-batch-model-ab --
 Dùng chung wrapper model A/B đã có; bỏ --dry-run sau checks/preflight. Kernel và model là hai source snapshot khác nhau trong cùng hồ sơ, giữ raw riêng và không thay hash hồi tố.
 
 Kết quả hai giai đoạn expert-batch09/11 nằm trong [một hồ sơ P2](experiments/2026-11-09-expert-batch-int8-i5/README.md): kernel đạt tiêu chí, đã tích hợp opt-in/off mặc định; model expert_compute thấp hơn ở4so sánh nhưng TTFT không đạt do một cặp bất lợi. Không sửa rule hoặc bỏ mẫu, không chạy lại để chọn số đẹp.
+
+## Cửa sổ RAM hữu hạn S1 (ram-window-v1, 10/11)
+
+Bước S1 của [PLAN](../docs/PLAN.md#s1-kiểm-ram-hữu-hạn-trước-phép-đo-model-mới). Câu hỏi: với source/binary hiện hành và cấu hình i5 khởi điểm, một process có hoàn tất24request mixed trong gate an toàn không, RSS cuối chuỗi phẳng tới đâu? Đây là kiểm vận hành hữu hạn, không đo tốc độ, không chọn cache chung, không so i5/i7.
+
+Chốt trước chạy:
+- Nguồn: engine/tools 56 file hash và binary d12a3939a7405d483a665e8642fa8c3404176e31decb0dad6eece7cd7b90c3fc trùng snapshot model09/11; toolchain rustc1.99.1 không đổi. Tái sử dụng kiểm Rust debug/release133tests/profile của đúng source đó; kiểm docs/tooling mới bằng tools/check.py. Không build/tests/inference khác trong khi chạy.
+- Một process mới, workload mixed v1 (Mars, follow-up cùng phiên, Python phiên mới, Love phiên mới) ×6 nhóm =24request, max64, reset chỉ trước request1/keepcache. CPU trước load/4threads/victim/cache64MiB-layer/context512, Gate–Up per-token paired, lookahead off, KVreuse off, batch prefill off, memorytrace on, FP32KV/greedy, không usage side state/disk session.
+- Guard RSS5120/headroom1024MiB; watchdog RSS5632/available1536/processswap128MiB, sampler250ms. Không nới ngưỡng hoặc đổi OS/allocator.
+- Preflight3mẫu cách5s: không engine/build/benchmark khác, pswpout không tăng, MemAvailable tối thiểu≥5120MiB (dự toán RSS đỉnh khoảng3,5GiB từ RAM08/11 cộng sàn watchdog1536MiB). Không đạt thì hoãn, không chạy.
+- Gate an toàn: 24/24request completed; không OutOfMemory, guard từ chối hoặc watchdog violation; sampled RSS và VmHWM≤5120MiB; báo processVmSwap max (khác0 thì không gọi "không swap").
+- Chỉ báo bổ sung: RSS sau từng request và spread max−min của request17–24; ≤64MiB phân loại "phẳng trong cửa sổ", vượt thì "chưa phẳng". Không thay gate an toàn, không tự kéo thêm request.
+- Đọc capacity/trace cùng mốc với RSS; RSS tăng không tự là leak. Một lượt duy nhất; lỗi/watchdog thì giữ raw và dừng, không lặp ngay.
+
+Lệnh (bỏ --dry-run sau preflight; thêm --allow-dirty chỉ khi tree dirty và ghi exploratory):
+
+```bash
+python3 tools/check_ram_stability.py --testbed i5 --gpu cpu --threads 4 \
+  --cache 64 --context 512 --cycles 24 --max-tokens 64 --workload mixed --keep-cache \
+  --lookahead off --memory-trace on --kv-buffer-reuse off --expert-batch-prefill off \
+  --gate-up-mode paired --ram-limit-mib 5120 --headroom-mib 1024 \
+  --stop-rss-mib 5632 --min-available-mib 1536 --stop-swap-mib 128 --dry-run
+```
+
+Đạt gate chỉ cho phép viết "vận hành được trong cấu hình/cửa sổ đã thử" và mở S2 có giám sát; không hard cap/hết leak/plateau dài hạn, không tự đóng giai đoạn1.
