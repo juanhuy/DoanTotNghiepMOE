@@ -3876,3 +3876,9 @@ Kết luận và bước tiếp theo:
 - Kiểm: python3 tools/check.py PASS (test_benchmark_gate_up_model 24 test); validator mới chạy trên raw block0 phép A của i7 → PASS, sửa một prompt_tokens thành 64 → drift. Không đổi engine/binary; không đo mới.
 - Tài liệu: SCENARIOS thêm đính chính harness 11/11 cho long-prefill v1; WORKFLOWS mục i7 thêm ghi chú checkpoint khác nhau có chủ đích, preflight riêng trước từng phép, cách xử lý swap, đoạn "Lượt 11/11 và đo lại" (cho phép đo lại A và B một lần vì lượt trước không có kết quả; lưu thư mục mới). Chưa merge branch i7 (sẽ conflict nhẹ ở PROGRESS); README i7 ghi nguyên nhân B là "swap nền" — thực tế là chính engine bị swap.
 
+## 2026-11-11 — i7 dùng chung checkpoint i5 cho lượt đo lại
+
+- Quyết định với người dùng: lượt đo lại tầng VRAM trên i7 dùng đúng checkpoint INT8 của i5, để kết quả hai máy cùng model/routing và chỉ khác phần cứng (củng cố luận điểm tầng VRAM phụ thuộc tỉ lệ pool/working set). Thay cho ghi chú trước đó "hai checkpoint khác nhau có chủ đích" áp cho lượt này; lượt 11/11 vẫn là hồ sơ trên checkpoint cũ của i7.
+- Thêm benchmarks/checkpoints/olmoe-int8-i5.sha256 (16 file, lấy từ manifest checkpoint của run S5 10/11). `sha256sum -c` trên thư mục checkpoint i5 hiện tại: 16/16 OK. Không có .moe_usage.
+- WORKFLOWS mục i7 bước 3 đổi thành: chép nguyên thư mục checkpoint i5, không tải/convert lại, đặt thư mục mới, kiểm hash 16/16 trước khi đo. Harness không đổi (tokenizer i5 đã đăng ký 64/128).
+

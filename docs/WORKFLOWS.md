@@ -111,7 +111,14 @@ for m in on off; do python3 tools/check_ram_stability.py --testbed i7 --gpu auto
 
 Cả hai `completed`, text giống nhau, status `gpu_expert_tier_enabled` đúng chế độ.
 
-**3. Checkpoint.** Dùng checkpoint INT8 merged trên máy i7 qua `--model-dir <đường-dẫn>`; không có file `.moe_usage` trong thư mục. Runner tự hash và lưu manifest. Hai phép dưới so sánh bật/tắt **trong nội bộ i7**, không cần cùng checkpoint với i5; vẫn ghi hash để đối chiếu. i5 và i7 cố ý dùng hai phiên bản OLMoE khác nhau. Phép A kiểm số token prompt theo hash `tokenizer.json`: tokenizer i7 `d1e645eb…` đã đăng ký 61/125 token (từ lượt 11/11). Nếu i7 đổi checkpoint khác, harness dừng với `unregistered tokenizer`; khi đó báo owner để đăng ký số token trước khi đo, không tự sửa số trong harness.
+**3. Checkpoint — dùng chung checkpoint với i5 (quyết định 11/11).** Lượt đo lại dùng **đúng checkpoint INT8 của i5**, để hai máy cùng model, cùng chuỗi expert router chọn và chỉ khác phần cứng. Owner i5 chép nguyên thư mục checkpoint (khoảng 7GB; trên i5 là `/home/son/son/DATN/Models/olmoe_merged`, gồm cả `_meta/` và `.coli_analysis.json`) sang i7 bằng USB/ổ mạng/scp, **không tải lại hay convert lại**. Đặt ở thư mục mới trên i7, không ghi đè checkpoint cũ (hồ sơ kỳ1 và lượt 11/11 gắn với nó). Trước khi đo, trong thư mục checkpoint mới:
+
+```bash
+sha256sum -c <repo>/benchmarks/checkpoints/olmoe-int8-i5.sha256   # phải OK 16/16
+ls -a | grep moe_usage                                                # phải không có
+```
+
+Có file nào không OK thì chép lại, không đo. Dùng `--model-dir <thư-mục-checkpoint-mới>` cho cả hai phép. Mỗi máy vẫn chỉ so bật/tắt trong nội bộ, không so thời gian tuyệt đối giữa hai máy. Hai máy được đặt cạnh nhau ở **chiều** kết quả và các counter công việc (file loads, VRAM loads, số expert resident). Phép A với checkpoint i5 kiểm 64/128 token. Số 61/125 chỉ thuộc checkpoint cũ của i7 (lượt 11/11).
 
 **4. Hai phép đo, đúng thứ tự, mỗi phép một lượt.** Protocol giữ nguyên như i5 ([SCENARIOS](../benchmarks/SCENARIOS.md): `gpu-tier-long-v1`, `gpu-tier-chat-v1`). Harness cố định CPU4 threads/cache64/context512 để giữ protocol; 4 threads không phải cấu hình tối ưu của i7 và phải ghi rõ. Trước mỗi phép: đóng ứng dụng nặng, không build/test/inference khác, rồi:
 
