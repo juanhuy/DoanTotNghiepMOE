@@ -22,11 +22,11 @@ Từ 11/11, mọi benchmark mới trên **cả i5 và i7** dùng một checkpoin
 
 | Nhóm | Hồ sơ | Dùng cho báo cáo mới |
 | --- | --- | --- |
-| Đã đo trên checkpoint chung | 24/27 hồ sơ i5 (mọi P1 trừ "Vận hành i7 kỳ 1", mọi P2, P3 i5) | Dùng được nguyên trạng; không cần đo lại chỉ vì đổi quy ước model |
+| Đã đo trên checkpoint chung | 24/27 hồ sơ i5 (mọi P1, P2 và P3 i5) | Dùng được nguyên trạng; không cần đo lại chỉ vì đổi quy ước model |
 | Không dùng model (kernel synthetic) | Gate–Up synthetic 08/11 | Chỉ tín hiệu kernel, như trước |
 | **Khác model** | Vận hành i7 kỳ 1 (config `272998dd…`), lượt i7 11/11 (trên branch i7), INT8/INT4 từ Huy (không có manifest) | **Không trích làm số đo của báo cáo mới.** Giữ làm lịch sử; số i7 cho báo cáo lấy từ lượt đo trên checkpoint chung |
 
-Không xóa hồ sơ cũ: Git history vẫn giữ payload nên xóa không giảm dung lượng repo, còn liên kết từ PLAN/EVIDENCE_MATRIX/PROGRESS sẽ gãy. Báo cáo chỉ cần trích P1 (và kết luận ngắn từ P2); P3 là lưu trữ, không mở mặc định.
+Không xóa hồ sơ cũ: Git history vẫn giữ payload nên xóa không giảm dung lượng repo, còn liên kết từ PLAN/EVIDENCE_MATRIX/PROGRESS sẽ gãy. Kỳ 1 chủ yếu là lý thuyết, nên kỳ 2 **không tái lập bộ đo vận hành kỳ 1** (i5 chuyển P2, i7 chuyển P3 ngày 11/11). Báo cáo chỉ cần trích P1 (và kết luận ngắn từ P2); P3 là lưu trữ, không mở mặc định.
 
 ## ĐỌC TRƯỚC — chọn tài liệu theo việc cần làm
 
@@ -51,8 +51,6 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 
 | Hồ sơ | Dùng cho câu hỏi nào? |
 | --- | --- |
-| [Vận hành i5 kỳ 1](experiments/2026-10-22-phase1-i5/README.md) | Vận hành cold/warm/hội thoại trong cấu hình đã đo |
-| [Vận hành i7 kỳ 1](experiments/2026-10-23-phase1-i7/README.md) | Vận hành riêng i7; đọc [đính chính](../baocao/README.md) trước, không xếp hạng hai CPU |
 | [Inclusive/victim](experiments/2026-10-22-web-session-i5-081202/README.md) | Đánh đổi cách bố trí cache; số mẫu nhỏ |
 | [KV prefix và dispatch](experiments/2026-10-22-prefill-i5/README.md) | Lợi ích tái sử dụng tiền tố trong workload hẹp; dispatch nhóm bị loại |
 | [Kiểm chức năng model thật](experiments/2026-10-22-stage1-validation/README.md) | Smoke chức năng và giới hạn kiểm chất lượng; chưa nghiệm thu baseline |
@@ -72,6 +70,7 @@ Khi viết báo cáo, thường chỉ cần kết luận ngắn và liên kết 
 | Hồ sơ | Vì sao giữ? |
 | --- | --- |
 | [Expert INT8 nhiều token](experiments/2026-11-09-expert-batch-int8-i5/README.md) | Compute có lợi ở kernel và các so sánh model; TTFT chưa ổn định, opt-in/off mặc định |
+| [Vận hành i5 kỳ 1](experiments/2026-10-22-phase1-i5/README.md) | Bối cảnh kỳ 1 (cold/warm/hội thoại, checkpoint chung, revision cũ d4adefd). Kỳ 2 không tái lập bộ này; vận hành hiện hành dùng S1 |
 | [RAM guard 22/10](experiments/2026-10-22-ram-guard-i5/README.md) | Kiểm từ chối cấu hình và giới hạn vận hành hữu hạn |
 | [CPU trước load](experiments/2026-11-04-cpu-load-i5/README.md) | Xác nhận chọn CPU bỏ CUDA ngay lúc load; chẩn đoán gate lookahead |
 | [KV buffer reuse hẹp](experiments/2026-11-05-kv-reuse-narrow-i5/README.md) | Giảm KV capacity đồng thời trong một cặp; chưa kết luận RSS tổng quát |
@@ -84,6 +83,7 @@ Không đọc mặc định khi hỏi tiến độ hoặc viết phần kết qu
 
 | Hồ sơ | Vai trò lưu trữ |
 | --- | --- |
+| [Vận hành i7 kỳ 1](experiments/2026-10-23-phase1-i7/README.md) | Lịch sử kỳ 1 trên **model khác** (config `272998dd…`); không trích cho báo cáo mới. Đọc [đính chính](../baocao/README.md) nếu cần |
 | [Lookahead 03/11](experiments/2026-11-03-lookahead-i5/README.md) | Lượt dừng sớm, chưa có đối chứng hiệu năng |
 | [INT8/INT4 và routing từ Huy](experiments/2026-11-03-quantization-tradeoff/README.md) | Dữ liệu tiếp nhận thiếu provenance; chưa là bằng chứng chuẩn hóa |
 | [Chuỗi RAM 04/11](experiments/2026-11-04-ram-sequence-i5/README.md) | Tái hiện pressure trước các bước chẩn đoán sau |
