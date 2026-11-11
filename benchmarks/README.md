@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 11/11 (i7, tầng VRAM trên checkpoint chung): [P1 — tầng VRAM bật/tắt trên i7](experiments/2026-11-11-gpu-tier-i7-r2/README.md) RTX 5060 Laptop (7,53 GiB VRAM, pool 845–858/1024 expert ≈ 83%): Phép B chat/decode max 64 tắt nhanh hơn 8/8 (`off_faster: True`, total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s; upload 33–41 GiB/request); Phép A prefill max 1 không nhất quán (`off_faster: False, on_faster: False`, on thắng 1/4 ở cặp 0 turn 2 `0,857×`, off thắng 3/4 `1,186–1,330×`). Mặc định chưa đổi.
+
 Kết quả mới10/11 (S5): [P1 — chat/decode tầng VRAM](experiments/2026-11-10-gpu-tier-chat-i5/README.md) GPU dense hai phía, tắt tầng VRAM expert nhanh hơn8/8 (total1,39–1,87×; decode trung vị3,13→5,53tok/s). Tiêu chí cân nhắc đổi mặc định đạt; mặc định chưa đổi.
 
 Kết quả mới10/11 (S4): [P1 — prefetch theo router](experiments/2026-11-10-prefill-prefetch-i5/README.md) prefill prefetch on/off cho TTFT on/off1,240/1,172 (cặp0) và0,959/0,928 (cặp1): không nhất quán; lookahead decode gate mở0,066%. Chưa chứng minh lợi ích prefetch.
@@ -41,7 +43,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 27 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 28 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -51,6 +53,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 
 | Hồ sơ | Dùng cho câu hỏi nào? |
 | --- | --- |
+| [Tầng VRAM expert bật/tắt trên i7 11/11](experiments/2026-11-11-gpu-tier-i7-r2/README.md) | Cùng checkpoint chung với i5 trên RTX 5060 Laptop (pool 845–858/1024 expert): chat/decode max64 tắt nhanh hơn 8/8 (`off_faster: True`, total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s); prefill max1 không nhất quán (`on` thắng 1/4, `off` thắng 3/4) |
 | [Inclusive/victim](experiments/2026-10-22-web-session-i5-081202/README.md) | Đánh đổi cách bố trí cache; số mẫu nhỏ |
 | [KV prefix và dispatch](experiments/2026-10-22-prefill-i5/README.md) | Lợi ích tái sử dụng tiền tố trong workload hẹp; dispatch nhóm bị loại |
 | [Kiểm chức năng model thật](experiments/2026-10-22-stage1-validation/README.md) | Smoke chức năng và giới hạn kiểm chất lượng; chưa nghiệm thu baseline |
