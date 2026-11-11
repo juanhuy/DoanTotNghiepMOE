@@ -1,0 +1,73 @@
+{
+  "kind": "gpu_tier_model_ab",
+  "testbed": "i7",
+  "git_commit": "b3dbec3d2b9b5fe76d3580159b4a7f23ff4bfb2f",
+  "git_dirty": false,
+  "modes": [
+    "on",
+    "off",
+    "off",
+    "on"
+  ],
+  "model_dir": "/home/nhat-huy/DOANTN/MoE/models/olmoe-1b-7b-int8",
+  "requests_per_block": 4,
+  "total_requests": 16,
+  "threads": 4,
+  "cache_mib_per_layer": 64,
+  "context": 512,
+  "max_tokens": 1,
+  "workload": "long-prefill-v1",
+  "measured_turns": [
+    2,
+    3
+  ],
+  "warmup_turns": [
+    0,
+    1
+  ],
+  "expected_prompt_tokens": [
+    64,
+    128,
+    64,
+    128
+  ],
+  "environment_pins": {
+    "MOE_TEMPERATURE": "0",
+    "MOE_TOP_P": "1",
+    "MOE_TOP_K": "0",
+    "MOE_REPETITION_PENALTY": "1",
+    "MOE_KV_FP8": "0",
+    "MOE_HOT_PIN_COUNT": "0",
+    "MOE_PILOT_SMOOTH": "0.35"
+  },
+  "removed_environment_keys": [
+    "MOE_SESSION_DIR",
+    "ROUTE_TRACE",
+    "MOE_ROUTE_TRACE",
+    "MOE_USAGE_PATH",
+    "MOE_PILOT_CONF_LIMIT"
+  ],
+  "guards_mib": {
+    "rss": 5120,
+    "headroom": 1024,
+    "watchdog_rss": 5632,
+    "available": 1536,
+    "process_swap": 128
+  },
+  "notes": [
+    "four fresh processes, fixed ABBA, two pairs only; not a population speedup estimate",
+    "checkpoint hashing warms OS cache; compare same binary with one selector changed",
+    "HTTP text/usage/finish parity plus expert workload; no HTTP logits/token-ID parity"
+  ],
+  "run_id": "20261111T131730.462214Z-gpu-tier-model-8677be07b2624e51827916b076373d96",
+  "status": "failed",
+  "blocks": [
+    {
+      "mode": "on",
+      "path": "block-0-on/i7/20261111T131730.486051Z-ram-d2e81aa1c1844b1391d4c1501d54cffd/result.json",
+      "run_id": "20261111T131730.486051Z-ram-d2e81aa1c1844b1391d4c1501d54cffd",
+      "status": "completed"
+    }
+  ],
+  "error": "prompt token count drift"
+}

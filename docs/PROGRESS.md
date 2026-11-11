@@ -3860,3 +3860,17 @@ Kết luận và bước tiếp theo:
 - WORKFLOWS thêm mục "Nhiệm vụ i7: tầng VRAM expert bật/tắt": nhận source, kiểm GPU thật (EXECUTED/SKIPPED), fixture on/off, checkpoint, preflight, hai lệnh đo --testbed i7, cách lưu raw/CHECKSUMS/PROGRESS, bảng quyết định và cấu hình khuyến nghị i5. PLAN cập nhật việc tiếp theo (S6 trên i5, song song i7).
 - Thêm tools/preflight_memory.py (3 mẫu cách5s, không engine/build khác, pswpout ổn định, MemAvailable tối thiểu; exit0 chỉ khi đủ điều kiện) thay script tạm ngoài repo đã dùng cho S1–S5 cùng logic, và tools/test_preflight_memory.py (2 test) đăng ký trong tools/check.py. python3 tools/check.py PASS; smoke preflight thật eligible. Không đổi engine/binary, không đo mới.
 - Máy i7 chỉ nhận được các commit ngày10/11 sau khi owner i5 push/gửi branch; chưa push trong tác vụ này.
+
+## 2026-11-11 — Tiếp nhận nhiệm vụ i7: tầng VRAM expert bật/tắt (branch work/i7-gpu-tier)
+
+- Nhận source commit `b3dbec3` trên main, tạo branch `work/i7-gpu-tier`.
+- Môi trường testbed i7: Linux 6.8.0-52-generic x86_64, rustc 1.91.0, GPU `NVIDIA GeForce RTX 5060 Laptop GPU` (8151 MiB VRAM, driver 595.99.02).
+- Kiểm tra sơ bộ: `python3 tools/check.py --rust --release --web` PASS; binary release `target/release/moe-tier-engine` (SHA-256: `5b091a4df13fbb6f528907157bbe05f138adfaa29a5e5a00101c7587dec29aa9`).
+- Kiểm tra CUDA: `cargo test --locked --lib gpu` PASS 13/13; in các dòng `EXECUTED` (`gpu_expert_tier_off_keeps_dense_on_gpu_without_vram_uploads`, `victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits`, `test_gpu_pinned_buffer`); `Available: true`, `Total VRAM: 7.53 GB`, `Dense Offloaded: true`.
+- Kiểm tra fixture server `check_ram_stability` hai chế độ on/off: Cả hai `completed`, text khớp nhau (`['token18 token12 token24', 'token30 token6 token21']`), status `gpu_expert_tier_enabled` nhận đúng True/False.
+- Chạy 2 phép đo theo đúng quy trình (mỗi lệnh 1 lần duy nhất, không sửa cấu hình/ngưỡng):
+  - **Phép A (long-prefill, max1)**: Preflight đạt (`eligible: true`). Chạy `python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-tier-model-ab --expert-batch-workload long-prefill --threads 4 --cache 64 --context 512 --max-tokens 1 --lookahead off --model-dir models/olmoe-1b-7b-int8`. Dừng ở block 0 do `prompt token count drift` (kỳ vọng `[64, 128, 64, 128]` từ tokenizer i5, thực tế tokenizer của checkpoint i7 sinh `[61, 125, 61, 125]`).
+  - **Phép B (mixed chat, max64)**: Chạy `python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-tier-model-ab --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off --model-dir models/olmoe-1b-7b-int8`. Dừng ở block 0 do `process swap watchdog threshold` (`VmSwap: 188360 KiB` > ngưỡng 128 MiB do hệ điều hành nền có swap).
+- Lưu toàn bộ raw artifacts và telemetry vào `benchmarks/experiments/2026-11-11-gpu-tier-i7/` (`run-a-prefill/`, `run-b-chat/`, `nvidia-smi-pre.csv`, `preflight.json`, `README.md`, `CHECKSUMS.sha256`).
+- Kết luận: Không chạy lại để lấy số đẹp. Giữ nguyên raw lỗi và báo cáo để hai bên thống nhất phương án xử lý (điều chỉnh tokenizer checkpoint i7 hoặc cho phép dung sai số token; và xử lý swap hệ thống trước khi chạy lại).
+
