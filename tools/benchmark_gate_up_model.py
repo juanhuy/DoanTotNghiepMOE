@@ -62,6 +62,15 @@ def workload_prompts(workload):
     return tuple(spec["prompts"]), tuple(spec["expected_prompt_tokens"])
 
 
+def long_prefill_expected_tokens(checkpoint):
+    """Expected long-prefill prompt tokens for this checkpoint's tokenizer (both turns repeated)."""
+    sha = next((f.get("sha256") for f in (checkpoint or {}).get("files", []) if f.get("path") == "tokenizer.json"), None)
+    counts = ram.LONG_PREFILL_TOKENS_BY_TOKENIZER.get(sha)
+    if counts is None:
+        raise ValueError(f"unregistered tokenizer {sha}; record its long-prefill token counts before measuring")
+    return (*counts, *counts)
+
+
 def measured_turns(workload):
     if workload == "mixed":
         group = len(ram.workload_spec("mixed")["prompts"])
@@ -146,6 +155,8 @@ def validate_block(record, mode, expert_batch=False, workload="kv-switch", backe
     gate_mode = "paired" if (expert_batch or backend) else mode
     gpu_mode = mode if backend else "cpu"
     prompts, expected_tokens = workload_prompts(workload)
+    if expected_tokens:
+        expected_tokens = long_prefill_expected_tokens(record.get("checkpoint"))
     if record.get("status") != "completed" or record.get("watchdog_violations"):
         raise ValueError("block failed or watchdog stopped; stop protocol")
     turns = record.get("turns", [])
@@ -288,7 +299,8 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                 "cache_mib_per_layer": 64, "context": 512, "max_tokens": expected_max,
                 "workload": workload + "-v1", "measured_turns": list(measured),
                 "warmup_turns": [i for i in range(len(prompts)) if i not in measured],
-                "expected_prompt_tokens": list(expected_tokens) if expected_tokens else None,
+                "expected_prompt_tokens_by_tokenizer": ({k: list(v) for k, v in ram.LONG_PREFILL_TOKENS_BY_TOKENIZER.items()}
+                                                        if expected_tokens else None),
                 "environment_pins": PINS,
                 "removed_environment_keys": REMOVED_ENV,
                 "guards_mib": {"rss": 5120, "headroom": 1024, "watchdog_rss": 5632,

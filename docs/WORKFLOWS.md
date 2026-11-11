@@ -111,7 +111,7 @@ for m in on off; do python3 tools/check_ram_stability.py --testbed i7 --gpu auto
 
 Cả hai `completed`, text giống nhau, status `gpu_expert_tier_enabled` đúng chế độ.
 
-**3. Checkpoint.** Dùng checkpoint INT8 merged trên máy i7 qua `--model-dir <đường-dẫn>`; không có file `.moe_usage` trong thư mục. Runner tự hash và lưu manifest. Hai phép dưới so sánh bật/tắt **trong nội bộ i7**, không cần cùng checkpoint với i5; vẫn ghi hash để đối chiếu.
+**3. Checkpoint.** Dùng checkpoint INT8 merged trên máy i7 qua `--model-dir <đường-dẫn>`; không có file `.moe_usage` trong thư mục. Runner tự hash và lưu manifest. Hai phép dưới so sánh bật/tắt **trong nội bộ i7**, không cần cùng checkpoint với i5; vẫn ghi hash để đối chiếu. i5 và i7 cố ý dùng hai phiên bản OLMoE khác nhau. Phép A kiểm số token prompt theo hash `tokenizer.json`: tokenizer i7 `d1e645eb…` đã đăng ký 61/125 token (từ lượt 11/11). Nếu i7 đổi checkpoint khác, harness dừng với `unregistered tokenizer`; khi đó báo owner để đăng ký số token trước khi đo, không tự sửa số trong harness.
 
 **4. Hai phép đo, đúng thứ tự, mỗi phép một lượt.** Protocol giữ nguyên như i5 ([SCENARIOS](../benchmarks/SCENARIOS.md): `gpu-tier-long-v1`, `gpu-tier-chat-v1`). Harness cố định CPU4 threads/cache64/context512 để giữ protocol; 4 threads không phải cấu hình tối ưu của i7 và phải ghi rõ. Trước mỗi phép: đóng ứng dụng nặng, không build/test/inference khác, rồi:
 
@@ -120,7 +120,7 @@ nvidia-smi --query-gpu=memory.used,utilization.gpu,temperature.gpu --format=csv 
 python3 tools/preflight_memory.py --output /tmp/i7-preflight.json --min-available-mib 5120
 ```
 
-Chỉ chạy khi preflight in `"eligible": true` (exit 0); không đạt thì chờ hoặc ghi hoãn, không nới ngưỡng. Phép A — prefill (16 request, max1):
+Chỉ chạy khi preflight in `"eligible": true` (exit 0); không đạt thì chờ hoặc ghi hoãn, không nới ngưỡng. Preflight phải chạy lại **ngay trước từng phép** (A và B riêng). Watchdog dừng nếu chính process engine bị swap quá 128MiB (`VmSwap`); lượt 11/11 phép B bị dừng như vậy khi engine mới load khoảng 2,2GB, do RAM bị app khác chiếm. Trước phép B: đóng trình duyệt/IDE/app nặng; nếu swap hệ thống đang dùng nhiều, có thể `sudo swapoff -a && sudo swapon -a` (chỉ khi RAM trống đủ chứa phần swap) rồi mới preflight. Phép A — prefill (16 request, max1):
 
 ```bash
 python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-tier-model-ab \
@@ -138,6 +138,8 @@ python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-tier-model-ab \
 
 Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng nếu text/usage lệch, GPU/dense không bật, tier off mà vẫn có VRAM traffic, hoặc watchdog. Lỗi thì giữ raw và báo, **không chạy lại để lấy số đẹp, không đổi ngưỡng/threads/cache**.
 
+**Lượt 11/11 và đo lại.** Lượt đầu (branch `i7-memory-20261111`, commit b3dbec3) không sinh số đo: A dừng do kiểm token cố định theo tokenizer i5 (lỗi harness, đã sửa), B dừng do engine bị swap. Giữ nguyên raw lượt đó làm hồ sơ dừng hợp lệ. Đo lại cả A và B một lần trên main mới nhất là được phép, không phải rerun lấy số đẹp, vì lượt trước không có kết quả nào. Lưu vào thư mục mới, ví dụ `<ngày>-gpu-tier-i7-r2`, và ghi liên kết tới lượt 11/11.
+
 **5. Đọc và lưu kết quả.** Trong `result.json` của mỗi phép: `off_faster`/`on_faster`, `pairs[].timers` (ratio on/off), `pairs[].work` (expert_vram_loads, expert_vram_upload_bytes/ms, expert_file_loads, decode_tokens_per_second ở phép B), `gpu_status_start` và `vram_experts_resident` trong status (số slot pool VRAM thực trên i7). Chuyển nguyên thư mục run từ `benchmarks/runs/i7/` vào `benchmarks/experiments/<ngày>-gpu-tier-i7/` cùng preflight/nvidia-smi, tạo `CHECKSUMS.sha256` (`sha256sum`), viết README ngắn theo mẫu hồ sơ i5, thêm vào mục lục benchmark và ghi một mục PROGRESS trên branch i7 (lệnh, commit, binary hash, checkpoint hash, hardware, pass/fail, giới hạn). Không sửa hồ sơ i5, không so số tuyệt đối với i5 (khác GPU/CPU/checkpoint).
 
 **6. Quyết định sau khi có kết quả (owner hai máy thống nhất):**
@@ -150,7 +152,7 @@ Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng
 
 **Prompt sao chép cho agent trên máy i7:**
 
-> Đây là máy i7 (testbed i7). Đọc AGENTS.md, rồi làm đúng mục "Nhiệm vụ i7: tầng VRAM expert bật/tắt" trong docs/WORKFLOWS.md trên branch riêng work/i7-gpu-tier. Dùng `--testbed i7`, không kế thừa số i5. Kiểm GPU thật trước (EXECUTED, không SKIPPED); chạy tools/preflight_memory.py trước mỗi phép; chạy phép A (long-prefill, max1) rồi phép B (mixed, max64), mỗi phép đúng một lượt, không chạy gì song song, không rerun/đổi threads/cache/ngưỡng. Lưu raw vào benchmarks/experiments/<ngày>-gpu-tier-i7 với CHECKSUMS, README, mục lục và một mục PROGRESS; báo off_faster/on_faster của từng phép, số slot VRAM thực, upload VRAM và giới hạn. Không đổi mặc định MOE_GPU_EXPERT_TIER, không push main.
+> Đây là máy i7 (testbed i7). Pull main mới nhất (lượt 11/11 đã dừng, đo lại theo đoạn "Lượt 11/11 và đo lại"). Đọc AGENTS.md, rồi làm đúng mục "Nhiệm vụ i7: tầng VRAM expert bật/tắt" trong docs/WORKFLOWS.md trên branch riêng work/i7-gpu-tier. Dùng `--testbed i7`, không kế thừa số i5. Kiểm GPU thật trước (EXECUTED, không SKIPPED); chạy tools/preflight_memory.py trước mỗi phép; chạy phép A (long-prefill, max1) rồi phép B (mixed, max64), mỗi phép đúng một lượt, không chạy gì song song, không rerun/đổi threads/cache/ngưỡng. Lưu raw vào benchmarks/experiments/<ngày>-gpu-tier-i7 với CHECKSUMS, README, mục lục và một mục PROGRESS; báo off_faster/on_faster của từng phép, số slot VRAM thực, upload VRAM và giới hạn. Không đổi mặc định MOE_GPU_EXPERT_TIER, không push main.
 
 **Cấu hình khuyến nghị hiện tại cho i5 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, CPU4, victim, batch prefill off. Áp dụng cho demo/vận hành i5 trong phạm vi đã đo; không áp sang i7 trước khi có kết quả trên.
 

@@ -139,19 +139,38 @@ class GateUpModelTests(unittest.TestCase):
                                         "--workload", "long-prefill"])
         self.assertEqual(args.workload, "long-prefill")
 
-    def long_record(self, mode):
+    I5_TOKENIZER = "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167"
+    I7_TOKENIZER = "d1e645ebd850d79567e531a3c103ac575d8e9cf45fa941420afc584b293438ea"
+
+    def long_record(self, mode, tokenizer=I5_TOKENIZER, counts=None):
         import check_ram_stability as ram
         spec = ram.workload_spec("long-prefill")
         r = batch_record(mode)
+        r["checkpoint"] = {"files": [{"path": "tokenizer.json", "sha256": tokenizer}]}
         base = r["turns"][0]
         r["turns"] = []
-        for i, (prompt, tokens) in enumerate(zip(spec["prompts"], spec["expected_prompt_tokens"])):
+        counts = spec["expected_prompt_tokens"] if counts is None else [*counts, *counts]
+        for i, (prompt, tokens) in enumerate(zip(spec["prompts"], counts)):
             turn = copy.deepcopy(base)
             turn["session_id"] = str(i)
             turn["messages"] = [{"role": "user", "content": prompt}]
             turn["response"]["usage"]["prompt_tokens"] = tokens
             r["turns"].append(turn)
         return r
+
+    def test_long_prefill_token_counts_follow_checkpoint_tokenizer(self):
+        # i5 and i7 run different OLMoE checkpoints on purpose; counts are per tokenizer.
+        model.validate_block(self.long_record("on", self.I7_TOKENIZER, (61, 125)), "on",
+                             expert_batch=True, workload="long-prefill")
+        for tokenizer, counts in ((self.I7_TOKENIZER, (64, 128)), (self.I5_TOKENIZER, (61, 125)),
+                                  ("0" * 64, (64, 128))):
+            with self.assertRaises(ValueError):
+                model.validate_block(self.long_record("on", tokenizer, counts), "on",
+                                     expert_batch=True, workload="long-prefill")
+        r = self.long_record("on")
+        r["checkpoint"] = {"files": []}
+        with self.assertRaises(ValueError):
+            model.validate_block(r, "on", expert_batch=True, workload="long-prefill")
 
     def test_long_prefill_block_validation_and_drift(self):
         a, b = self.long_record("off"), self.long_record("on")

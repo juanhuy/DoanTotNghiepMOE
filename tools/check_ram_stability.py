@@ -39,6 +39,13 @@ LONG_PREFILL_PROMPTS = (
     'single sentence.',
 )
 LONG_PREFILL_TOKENS = (64, 128)
+# Prompt token counts depend on the checkpoint tokenizer; i5 and i7 run different OLMoE
+# checkpoints on purpose (per-machine A/B, not a cross-machine comparison). Keyed by
+# tokenizer.json SHA-256; i7 counts taken from its 11/11 run with the same prompt text.
+LONG_PREFILL_TOKENS_BY_TOKENIZER = {
+    'b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167': LONG_PREFILL_TOKENS,  # i5
+    'd1e645ebd850d79567e531a3c103ac575d8e9cf45fa941420afc584b293438ea': (61, 125),  # i7
+}
 INDEPENDENT_WORKLOADS = ('kv-switch', 'long-prefill')
 
 

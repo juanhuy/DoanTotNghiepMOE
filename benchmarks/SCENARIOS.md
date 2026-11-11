@@ -523,6 +523,8 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
 
 **Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-gpu-expert-tier-i5/README.md) run20261110T070546.777634Z-gpu-tier-model-bc40…, HEAD4f319b7 sạch, 16/16completed, text khớp. Rule "tắt nhanh hơn" ĐẠT: TTFT on/off bakery1,446/1,211, library1,319/1,429; attention ~1; expert_compute on/off1,085–1,193. Warmup library cặp1 0,951. Mặc định on chưa đổi. Không rerun.
 
+**Đính chính harness 11/11 (áp cho mọi protocol dùng long-prefill v1, trước lượt đo lại của i7):** i5 và i7 cố ý chạy hai checkpoint OLMoE khác nhau; mỗi máy chỉ so bật/tắt trong nội bộ, không so chéo. Số token prompt phụ thuộc tokenizer của checkpoint, nên kiểm usage.prompt_tokens nay tra theo SHA-256 `tokenizer.json` trong manifest checkpoint của từng block (`LONG_PREFILL_TOKENS_BY_TOKENIZER`): i5 `b1fb1517…` → 64/128 (không đổi), i7 `d1e645eb…` → 61/125 (đếm từ raw i7 11/11 trên cùng prompt text). Tokenizer chưa đăng ký thì dừng trước khi tính kết quả. Text prompt, warmup/measured turns, rule và ngưỡng không đổi; kết quả i5 đã ghi không bị ảnh hưởng. Lượt i7 11/11 ([hồ sơ](experiments/2026-11-11-gpu-tier-i7/README.md) trên branch i7) dừng ở block0 vì kiểm cũ cố định 64/128, chưa có số đo.
+
 ## Prefetch prefill bật/tắt S4 (prefill-prefetch-long-v1, 10/11)
 
 Bước S4 của PLAN, cơ chế 1 (prefill nạp trước expert router đã chọn). Cơ chế 2 (decode lookahead) được kiểm bằng fixture và coverage hồi cứu từ raw S1, không đo hiệu năng vì gate gần như không mở (PROGRESS 10/11). Câu hỏi: preload song song có giảm TTFT/prefill so với demand-only không?
