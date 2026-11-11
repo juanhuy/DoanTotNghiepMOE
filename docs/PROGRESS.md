@@ -3882,3 +3882,8 @@ Kết luận và bước tiếp theo:
 - Thêm benchmarks/checkpoints/olmoe-int8-i5.sha256 (16 file, lấy từ manifest checkpoint của run S5 10/11). `sha256sum -c` trên thư mục checkpoint i5 hiện tại: 16/16 OK. Không có .moe_usage.
 - WORKFLOWS mục i7 bước 3 đổi thành: chép nguyên thư mục checkpoint i5, không tải/convert lại, đặt thư mục mới, kiểm hash 16/16 trước khi đo. Harness không đổi (tokenizer i5 đã đăng ký 64/128).
 
+## 2026-11-11 — Rà phạm vi benchmark cũ cho quy ước một model chung
+
+- Quét manifest checkpoint trong raw của 27 hồ sơ: 24 hồ sơ i5 đều trên checkpoint i5 (config `9f1312f8…`, tokenizer `b1fb1517…`; hash fixture `b1719a2d…`/`7f3a6f9d…` xuất hiện trong ba hồ sơ là record kiểm fixture, không phải model đo). Khác model: Vận hành i7 kỳ 1 (`272998dd…`/`d1e645eb…`); không có manifest: INT8/INT4 từ Huy; không dùng model: Gate–Up synthetic.
+- Quyết định: không xóa hồ sơ (vi phạm quy tắc giữ payload, không giảm dung lượng vì Git history, làm gãy liên kết). benchmarks/README.md thêm mục "Phạm vi báo cáo và mô hình chung": từ 11/11 mọi benchmark mới trên i5 và i7 dùng checkpoint i5; hồ sơ khác model không trích cho báo cáo mới. Không đổi nhãn P1/P2/P3, không sửa raw.
+

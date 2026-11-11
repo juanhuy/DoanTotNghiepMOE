@@ -16,6 +16,18 @@ Kết quả mới09/11: [P2 — kernel expert nhiều token](experiments/2026-11
 
 Câu hỏi nghiên cứu hiện hành: **Trong ngân sách bộ nhớ cho trước, cách quản lý và di chuyển expert ảnh hưởng thế nào đến thời gian phản hồi, tốc độ sinh và lượng dữ liệu phải truyền?** GPU là tài nguyên tùy chọn; ngân sách RAM và VRAM phải ghi riêng.
 
+## Phạm vi báo cáo và mô hình chung (từ 11/11/2026)
+
+Từ 11/11, mọi benchmark mới trên **cả i5 và i7** dùng một checkpoint chung: checkpoint INT8 của i5 (config.json `9f1312f8…`, tokenizer.json `b1fb1517…`, danh sách hash 16 file ở [checkpoints/olmoe-int8-i5.sha256](checkpoints/olmoe-int8-i5.sha256)). Rà manifest checkpoint trong raw ngày 11/11:
+
+| Nhóm | Hồ sơ | Dùng cho báo cáo mới |
+| --- | --- | --- |
+| Đã đo trên checkpoint chung | 24/27 hồ sơ i5 (mọi P1 trừ "Vận hành i7 kỳ 1", mọi P2, P3 i5) | Dùng được nguyên trạng; không cần đo lại chỉ vì đổi quy ước model |
+| Không dùng model (kernel synthetic) | Gate–Up synthetic 08/11 | Chỉ tín hiệu kernel, như trước |
+| **Khác model** | Vận hành i7 kỳ 1 (config `272998dd…`), lượt i7 11/11 (trên branch i7), INT8/INT4 từ Huy (không có manifest) | **Không trích làm số đo của báo cáo mới.** Giữ làm lịch sử; số i7 cho báo cáo lấy từ lượt đo trên checkpoint chung |
+
+Không xóa hồ sơ cũ: Git history vẫn giữ payload nên xóa không giảm dung lượng repo, còn liên kết từ PLAN/EVIDENCE_MATRIX/PROGRESS sẽ gãy. Báo cáo chỉ cần trích P1 (và kết luận ngắn từ P2); P3 là lưu trữ, không mở mặc định.
+
 ## ĐỌC TRƯỚC — chọn tài liệu theo việc cần làm
 
 Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câu hỏi, đọc tài liệu tóm tắt và README của hồ sơ liên quan; chỉ mở raw khi cần kiểm số liệu hoặc điều tra lỗi. Không cần đọc tất cả P1 mỗi lượt.
