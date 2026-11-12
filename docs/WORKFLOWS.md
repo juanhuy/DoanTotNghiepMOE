@@ -165,6 +165,22 @@ Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng
 
 **Cấu hình khuyến nghị cho cả i5 và i7 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, victim, batch prefill off. Áp dụng cho demo/vận hành trong phạm vi đã đo (CPU4 threads là cấu hình protocol, không phải tối ưu của i7).
 
+## Nhiệm vụ i7: số thread CPU A3 (giao 12/11/2026)
+
+Protocol `threads-chat-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#số-thread-cpu-theo-máy-a3-threads-chat-v1-1211). i7 chạy độc lập với i5, trên checkpoint chung (`models/olmoe-i5`, hash 16/16). Tập thread i7 là `4,8,16,24` (palindrome, 8 process, 64 request, khoảng 15–25 phút).
+
+1. `git switch main && git pull`, `git status --short` rỗng; build release và `python3 tools/check.py` PASS.
+2. Đóng ứng dụng nặng, rồi `python3 tools/preflight_memory.py --output /tmp/i7-preflight-threads.json` phải `eligible: true`; ghi `nvidia-smi`.
+3. Chạy đúng một lượt:
+
+```bash
+python3 tools/run_benchmark.py --testbed i7 --thread-sweep-model --gpu auto \
+  --expert-batch-workload mixed --cache 64 --context 512 --max-tokens 64 --lookahead off \
+  --model-dir models/olmoe-i5
+```
+
+4. Lưu vào `benchmarks/experiments/<ngày>-threads-i7/` (run, preflight, nvidia-smi, `CHECKSUMS.sha256` không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng (ví dụ `work/i7-threads`). Báo `recommended_threads`, `comparisons.<N>.faster_than_4/slower_than_4`, `per_threads` (tok/s trung vị). Không đổi tập thread/ngưỡng, không rerun.
+
 ## Bàn giao điều tra prefill/RAM (08/11/2026)
 
 Mục này giữ anchor cho các hồ sơ trước. Điều tra hiện đã có kết quả allocator nêu trên; hướng i5 tiếp theo ở PLAN. Nếu cần mở lại, câu hỏi phải cụ thể: indicator cuối request có tăng không, hay chủ yếu là allocator giữ vùng đã free? Không tự bật trim/đổi allocator/tăng cache hoặc cài profiler và lặp7B chỉ vì RSS chưa phẳng.

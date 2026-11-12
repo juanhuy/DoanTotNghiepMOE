@@ -3910,3 +3910,10 @@ Kết luận và bước tiếp theo:
 - Merge fast-forward vào main. Sửa CHECKSUMS.sha256 của hồ sơ r2: bỏ dòng README.md (README sửa sau khi khóa nên FAILED; theo quy ước hồ sơ i5 gần đây README không nằm trong checksum); 94/94 OK. Không sửa raw.
 - Kết luận: chat/decode tắt tầng VRAM nhanh hơn 8/8 trên cả i5 (pool 29%) và i7 (pool 83%, không còn file load khi bật nhưng upload 33–40GiB/request). Prefill i7 không nhất quán. Theo bảng quyết định WORKFLOWS mục 6 → giữ mặc định on trong code; khuyến nghị vận hành/demo cả hai máy tier off. Cập nhật PLAN (việc tiếp: S6), WORKFLOWS (kết quả và cấu hình khuyến nghị hai máy), EVIDENCE_MATRIX (dòng i7), AGENTS (nhiệm vụ i7 xong).
 
+
+## 2026-11-12 — A3: harness quét số thread và protocol threads-chat-v1 (chốt trước đo)
+
+- Hướng cải tiến (người dùng chọn 12/11): A3 chọn số thread theo máy → A2 bỏ upload khi evict → A1 tính expert trên GPU cho expert đã ở VRAM; sau đó model khoảng 16GB.
+- Thêm tools/benchmark_threads.py (`run_benchmark.py --thread-sweep-model`): palindrome theo tập thread của testbed (i5 4,6,8,12; i7 4,8,16,24), mỗi block process mới, mixed ×2 nhóm max64, GPU auto, tier off; validator chat S5, parity text/usage/finish + 5 work counter giữa mọi thread; rule 8 so sánh mỗi N với 4 thread; `recommended_threads`. tools/test_benchmark_threads.py 4 test, đăng ký tools/check.py.
+- Fixture tier off thread 1/4/12: completed, text và file loads giống nhau. python3 tools/check.py PASS. Engine không đổi.
+- Protocol chốt vào SCENARIOS (mục A3) và WORKFLOWS (nhiệm vụ i7 A3) trước khi đo.

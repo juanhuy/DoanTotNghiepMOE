@@ -563,3 +563,20 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-tier-model-ab \
 ```
 
 **Kết quả10/11:** [hồ sơ P1](experiments/2026-11-10-gpu-tier-chat-i5/README.md) run20261110T081514.310194Z-gpu-tier-model-55a1…, HEAD2cea0cd sạch, 32/32completed, text/usage/lịch sử khớp. Rule "tắt nhanh hơn" ĐẠT 8/8: total on/off1,390–1,874, decode1,404–1,952, TTFT1,011–1,504; decode tok/s trung vị on3,13/off5,53. Upload VRAM33182–40816MiB/request. Không rerun.
+
+## Số thread CPU theo máy A3 (threads-chat-v1, 12/11)
+
+Bước A3 của hướng cải tiến (PLAN): các protocol trước cố định CPU 4 thread để giữ so sánh. Câu hỏi: với cấu hình khuyến nghị (GPU dense, tầng VRAM expert tắt), số thread Rayon nào cho chat/decode nhanh nhất trên từng máy? Chỉ là chọn cấu hình vận hành, không so tốc độ giữa hai máy.
+
+Chốt trước đo:
+- Engine không đổi (binary như S4/S5 trên i5); chỉ thêm harness `tools/benchmark_threads.py` (`--thread-sweep-model`) và test. Fixture 1/4/12 thread cho cùng text và cùng số expert nạp.
+- Tập thread theo máy, thứ tự palindrome, mỗi block một process mới: i5 (6 nhân/12 luồng) `4,6,8,12,12,8,6,4`; i7 (24 luồng) `4,8,16,24,24,16,8,4`. 8 process × 8 request = 64 request mỗi máy.
+- Workload mixed v1 ×2 nhóm như S5 (Mars, follow-up có lịch sử, Python, Love); nhóm 1 (turn0–3) warmup thu riêng, nhóm 2 (turn4–7) đo. `--gpu auto`, `MOE_GPU_EXPERT_TIER=off`, cache 64MiB/layer, context 512, max64, victim, Gate–Up paired, batch prefill off, lookahead off, FP32 KV, KV reuse off, trace on, greedy.
+- Text/usage/finish **và 5 work counter** phải khớp giữa mọi block (thread chỉ đổi song song hóa); lệch thì dừng. Block nào lỗi/watchdog thì dừng cả lượt.
+- Rule đối xứng: mỗi N so với 4 thread ở hai cặp gương (lần xuất hiện đầu và cuối) × 4 prompt = 8 so sánh; total_ms VÀ decode_ms 4/N ≥1,05 ở cả 8 → N nhanh hơn; ≤1/1,05 ở cả 8 → N chậm hơn; còn lại → không nhất quán. Khuyến nghị = N nhanh hơn có decode tok/s trung vị cao nhất; không N nào đạt → giữ 4.
+- Guard 5120/headroom 1024/watchdog RSS 5632/available 1536/process swap 128MiB. Preflight 3 mẫu cách 5s ngay trước khi chạy, ghi nvidia-smi. Một lượt mỗi máy, không rerun/bỏ mẫu.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --thread-sweep-model --gpu auto \
+  --expert-batch-workload mixed --cache 64 --context 512 --max-tokens 64 --lookahead off --dry-run
+```

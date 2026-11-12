@@ -65,6 +65,8 @@ def parser():
                      help="fixed CPU batched expert prefill ABBA, max-tokens1")
     cli.add_argument("--prefill-prefetch-model-ab", action="store_true",
                      help="CPU prefill preload on vs off (demand-only) ABBA on long-prefill, max-tokens1, batch off")
+    cli.add_argument("--thread-sweep-model", action="store_true",
+                     help="A3 threads-chat-v1: GPU auto, tier off, mixed chat max64, palindrome over the testbed thread set")
     cli.add_argument("--gpu-tier-model-ab", action="store_true",
                      help="GPU auto, VRAM expert tier on vs off ABBA on long-prefill, max-tokens1, batch off")
     cli.add_argument("--backend-model-ab", action="store_true",
@@ -274,8 +276,11 @@ def write_exclusive_json(path, data):
 
 
 def execute(args, root=WORKSPACE_DIR):
-    if sum(bool(getattr(args, key, False)) for key in ("prefill_prefetch_model_ab", "gpu_tier_model_ab", "backend_model_ab", "expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
+    if sum(bool(getattr(args, key, False)) for key in ("thread_sweep_model", "prefill_prefetch_model_ab", "gpu_tier_model_ab", "backend_model_ab", "expert_batch_model_ab", "expert_batch_kernel", "gate_up_resident", "gate_up_model_ab", "gate_up_kernel")) > 1:
         raise ValueError("choose one Gate-Up protocol")
+    if getattr(args, "thread_sweep_model", False):
+        import benchmark_threads
+        return benchmark_threads.execute(args, root)
     if getattr(args, "prefill_prefetch_model_ab", False):
         import benchmark_gate_up_model
         return benchmark_gate_up_model.execute(args, root, prefetch=True)
