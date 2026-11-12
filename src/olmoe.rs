@@ -132,6 +132,8 @@ pub struct ExpertStatusReport {
     pub gpu_expert_tier_enabled: bool,
     /// MOE_PREFILL_PREFETCH: router-known prefill preload (decode lookahead is separate).
     pub prefill_prefetch_enabled: bool,
+    /// MOE_GPU_EXPERT_COMPUTE actually active (requested, tier on, pool and NVRTC kernels ready).
+    pub gpu_expert_compute_enabled: bool,
     pub gate_up_mode: &'static str,
     pub expert_quantization: &'static str,
     pub kv_buffer_reuse_enabled: bool,
@@ -396,6 +398,7 @@ struct RequestProfile {
     decode_expert_host_peak_bytes: usize,
     attention: Duration,
     expert_compute: Duration,
+    gpu_expert_compute: Duration,
     lm_head: Duration,
     expert_io: Duration,
     file_io: Duration,
@@ -414,6 +417,7 @@ struct RequestProfile {
     prefill_prefetch_loads: u64,
     prefill_prefetch_bytes: u64,
     prefill_prefetch_load_errors: u64,
+    gpu_expert_computes: u64,
     bytes_read: u64,
 }
 
@@ -577,6 +581,7 @@ pub struct OlmoeModel {
     expert_batch_prefill_enabled: bool,
     gpu_expert_tier_enabled: bool,
     prefill_prefetch_enabled: bool,
+    gpu_expert_compute_enabled: bool,
     gate_up_mode: GateUpMode,
     expert_quantization: &'static str,
     lookahead_enabled: bool,
@@ -669,6 +674,11 @@ impl OlmoeModel {
             Ok(value) => parse_prefill_prefetch_mode(Some(&value))?,
             Err(std::env::VarError::NotPresent) => true,
             Err(_) => return Err(invalid("MOE_PREFILL_PREFETCH must be on or off")),
+        };
+        let gpu_expert_compute_requested = match std::env::var("MOE_GPU_EXPERT_COMPUTE") {
+            Ok(value) => parse_gpu_expert_compute_mode(Some(&value))?,
+            Err(std::env::VarError::NotPresent) => false,
+            Err(_) => return Err(invalid("MOE_GPU_EXPERT_COMPUTE must be on or off")),
         };
         let memory_trace_enabled = match std::env::var("MOE_MEMORY_TRACE") {
             Ok(value) => parse_memory_trace_mode(Some(&value))?,
@@ -939,6 +949,31 @@ impl OlmoeModel {
                             has_pinned = pinned_upload_buf.is_some(),
                             "Khởi tạo L1 VRAM Expert Cache (Pre-allocated VRAM Pool & Pinned Host Memory)"
                         );
+                        // A1: kernels only make sense with an INT8 VRAM pool to compute from.
+                        let expert_kernels = if gpu_expert_compute_requested
+                            && gpu_expert_tier_enabled
+                            && expert_pool.is_some()
+                            && !is_int4
+                        {
+                            match crate::gpu_expert::GpuExpertKernels::init(
+                                &engine,
+                                config.hidden_size,
+                                config.intermediate_size,
+                                config.num_experts_per_tok,
+                            ) {
+                                Ok(kernels) => {
+                                    info!(arch = %kernels.arch, "GPU expert compute (NVRTC INT8 SwiGLU) ready");
+                                    Some(kernels)
+                                }
+                                Err(error) => {
+                                    warn!(%error, "GPU expert compute unavailable; experts stay on CPU");
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        let fill_only = expert_kernels.is_some();
                         Some(crate::gpu::GpuDenseStorage {
                             layers: gpu_layers,
                             lm_head: lm_head_gpu,
@@ -946,6 +981,8 @@ impl OlmoeModel {
                             expert_cache: crate::gpu::GpuExpertCache::new(expert_cache_budget),
                             expert_pool,
                             pinned_upload_buf,
+                            expert_kernels,
+                            fill_only,
                             engine,
                         })
                     } else {
@@ -961,6 +998,12 @@ impl OlmoeModel {
             None
         };
 
+        let gpu_expert_compute_enabled = gpu_dense
+            .as_ref()
+            .is_some_and(|storage| storage.expert_kernels.is_some());
+        if gpu_expert_compute_requested && !gpu_expert_compute_enabled {
+            warn!("MOE_GPU_EXPERT_COMPUTE=on requested but inactive (needs GPU auto, tier on, INT8 pool, NVRTC)");
+        }
         if gpu_dense.is_none() && gpu_tier.is_enabled() {
             gpu_tier.set_dense_allocated_bytes(0);
             gpu_tier.set_enabled(false);
@@ -1009,6 +1052,7 @@ impl OlmoeModel {
             expert_batch_prefill_enabled,
             gpu_expert_tier_enabled,
             prefill_prefetch_enabled,
+            gpu_expert_compute_enabled,
             gate_up_mode,
             expert_quantization,
             dense_bytes: dense_budget - budget,
@@ -1194,6 +1238,7 @@ impl OlmoeModel {
             expert_batch_prefill_enabled: self.expert_batch_prefill_enabled,
             gpu_expert_tier_enabled: self.gpu_expert_tier_enabled,
             prefill_prefetch_enabled: self.prefill_prefetch_enabled,
+            gpu_expert_compute_enabled: self.gpu_expert_compute_enabled,
             gate_up_mode: self.gate_up_mode.as_str(),
             expert_quantization: self.expert_quantization,
             kv_buffer_reuse_enabled: self.kv_buffer_reuse_enabled,
@@ -2116,7 +2161,10 @@ impl OlmoeModel {
         scratch: &mut StepScratch,
         check: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
-        let victim_cache = self.victim_expert_cache;
+        // A1: GPU expert compute keeps VRAM copies in place (inclusive, fill-only), so the victim
+        // exchange between RAM and VRAM is disabled while it is active.
+        let victim_cache = self.victim_expert_cache && !self.gpu_expert_compute_enabled;
+        let gpu_compute = self.gpu_expert_compute_enabled;
         let c = &self.config;
         if token >= c.vocab_size {
             return Err(invalid("token ID exceeds model vocabulary"));
@@ -2317,6 +2365,24 @@ impl OlmoeModel {
                     miss_slots.push(slot);
                     miss_ids.push(eid);
                 }
+            }
+
+            // A1: VRAM-resident experts absent from RAM are computed in place on the GPU instead of
+            // being downloaded. Lookahead payloads already in RAM keep the CPU path.
+            let mut gpu_slots: Vec<usize> = Vec::new();
+            if gpu_compute {
+                hit_slots.retain(|&slot| {
+                    let eid = top_experts[slot];
+                    let on_gpu = !preloaded.contains_key(&eid)
+                        && !layer.cache.iter().any(|entry| entry.id == eid)
+                        && gpu_dense
+                            .as_ref()
+                            .is_some_and(|s| s.expert_cache.contains(id, eid));
+                    if on_gpu {
+                        gpu_slots.push(slot);
+                    }
+                    !on_gpu
+                });
             }
 
             // Hoàn trả các expert còn lại trong lookahead_prefetched (nếu không dùng đến) vào recycled_buffers
@@ -2703,6 +2769,53 @@ impl OlmoeModel {
                 profile.expert_compute += started.elapsed();
             }
 
+            // A1: GPU experts write into the scratch slots after CPU hits and misses.
+            let gpu_base = hit_ready.len() + miss_ready.len();
+            if !gpu_slots.is_empty() {
+                let started = Instant::now();
+                let storage = gpu_dense
+                    .as_mut()
+                    .ok_or_else(|| invalid("GPU expert compute without GPU storage"))?;
+                let crate::gpu::GpuDenseStorage {
+                    expert_cache,
+                    expert_kernels,
+                    ..
+                } = storage;
+                let kernels = expert_kernels
+                    .as_ref()
+                    .ok_or_else(|| invalid("GPU expert compute without kernels"))?;
+                for &slot in &gpu_slots {
+                    let expert_id = top_experts[slot];
+                    layer.clock = layer.clock.wrapping_add(1);
+                    if layer.clock % 65_536 == 0 {
+                        layer.heat.iter_mut().for_each(|heat| *heat /= 2);
+                    }
+                    layer.heat[expert_id] = layer.heat[expert_id].saturating_add(1);
+                    layer.update_hot_pins();
+                    expert_cache.get(id, expert_id); // LRU touch
+                }
+                let weights: Vec<&crate::gpu::GpuExpertWeights> = gpu_slots
+                    .iter()
+                    .map(|&slot| {
+                        expert_cache
+                            .entries
+                            .get(&(id, top_experts[slot]))
+                            .ok_or_else(|| invalid("GPU expert vanished from VRAM cache"))
+                    })
+                    .collect::<io::Result<_>>()?;
+                let mut outputs: Vec<&mut [f32]> = scratch.expert_scratches
+                    [gpu_base..gpu_base + gpu_slots.len()]
+                    .iter_mut()
+                    .map(|expert_scratch| &mut expert_scratch.output[..])
+                    .collect();
+                kernels
+                    .forward(&weights, &scratch.hidden, &mut outputs)
+                    .map_err(invalid)?;
+                profile.cache_hits += gpu_slots.len() as u64;
+                profile.gpu_expert_computes += gpu_slots.len() as u64;
+                profile.gpu_expert_compute += started.elapsed();
+            }
+
             // 7. Deterministic Fused Reduction vào scratch.x theo đúng thứ tự Top-K ban đầu
             let mut slot_to_scratch = [0usize; 64];
             for (i, item) in hit_ready.iter().enumerate() {
@@ -2714,6 +2827,12 @@ impl OlmoeModel {
             for (j, item) in miss_ready.iter().enumerate() {
                 if item.slot < 64 {
                     slot_to_scratch[item.slot] = num_hits + j;
+                }
+            }
+
+            for (j, &slot) in gpu_slots.iter().enumerate() {
+                if slot < 64 {
+                    slot_to_scratch[slot] = gpu_base + j;
                 }
             }
 
@@ -2786,7 +2905,10 @@ impl OlmoeModel {
         scratch: &mut StepScratch,
         check: &dyn Fn() -> io::Result<()>,
     ) -> io::Result<()> {
-        let victim_cache = self.victim_expert_cache;
+        // A1: GPU expert compute keeps VRAM copies in place (inclusive, fill-only), so the victim
+        // exchange between RAM and VRAM is disabled while it is active.
+        let victim_cache = self.victim_expert_cache && !self.gpu_expert_compute_enabled;
+        let gpu_compute = self.gpu_expert_compute_enabled;
         let c = &self.config;
         let d = c.hidden_size;
         let hd = d / c.num_attention_heads;
@@ -3086,6 +3208,59 @@ impl OlmoeModel {
                 }
                 layer.heat[expert_id] = layer.heat[expert_id].saturating_add(uses_u32);
                 layer.update_hot_pins();
+                // A1: a VRAM-resident expert absent from RAM serves its routed tokens on the GPU,
+                // without downloading weights. Chunks follow the kernel scratch capacity.
+                if gpu_compute
+                    && !preloaded.contains_key(&expert_id)
+                    && !layer.cache.iter().any(|entry| entry.id == expert_id)
+                {
+                    if let Some(crate::gpu::GpuDenseStorage {
+                        expert_cache,
+                        expert_kernels: Some(kernels),
+                        ..
+                    }) = gpu_dense.as_mut()
+                    {
+                        if expert_cache.get(layer_id, expert_id).is_some() {
+                            let started = Instant::now();
+                            let weights = expert_cache
+                                .entries
+                                .get(&(layer_id, expert_id))
+                                .ok_or_else(|| invalid("GPU expert vanished from VRAM cache"))?;
+                            for chunk in uses.chunks(kernels.max_experts()) {
+                                check()?;
+                                let experts = vec![weights; chunk.len()];
+                                let inputs: Vec<&[f32]> = chunk
+                                    .iter()
+                                    .map(|&(token, _, _)| &hidden_batch[token * d..(token + 1) * d])
+                                    .collect();
+                                let mut outputs: Vec<&mut [f32]> = scratch.expert_scratches
+                                    [..chunk.len()]
+                                    .iter_mut()
+                                    .map(|buffer| &mut buffer.output[..])
+                                    .collect();
+                                kernels
+                                    .forward_pairs(&experts, &inputs, &mut outputs)
+                                    .map_err(invalid)?;
+                                for (&(token, slot, weight), buffer) in
+                                    chunk.iter().zip(&scratch.expert_scratches)
+                                {
+                                    let contribution = (token * c.num_experts_per_tok + slot) * d;
+                                    for (target, value) in contributions
+                                        [contribution..contribution + d]
+                                        .iter_mut()
+                                        .zip(&buffer.output)
+                                    {
+                                        *target = weight * value;
+                                    }
+                                }
+                            }
+                            profile.cache_hits += uses.len() as u64;
+                            profile.gpu_expert_computes += uses.len() as u64;
+                            profile.gpu_expert_compute += started.elapsed();
+                            continue;
+                        }
+                    }
+                }
                 let (expert, l2_hit, hits_in_cache, is_protected) = Self::acquire_expert_tiered(
                     layer_id,
                     expert_id,
@@ -4083,6 +4258,9 @@ impl OlmoeModel {
                 prefill_prefetch_loads: profile.prefill_prefetch_loads,
                 prefill_prefetch_bytes: profile.prefill_prefetch_bytes,
                 prefill_prefetch_load_errors: profile.prefill_prefetch_load_errors,
+                gpu_expert_compute_enabled: self.gpu_expert_compute_enabled,
+                expert_gpu_computes: profile.gpu_expert_computes,
+                expert_gpu_compute_ms: ms(profile.gpu_expert_compute),
                 gate_up_mode: self.gate_up_mode.as_str(),
                 kv_buffer_reuse: profile.kv_buffer_reuse.clone(),
                 memory_trace: None, // Final boundary is attached by generate_controlled.
@@ -4169,6 +4347,14 @@ fn gpu_expert_cache_budget(tier_enabled: bool, usable_vram: Option<usize>, dense
         usable_vram.map_or(0, |usable| usable.saturating_sub(dense))
     } else {
         0
+    }
+}
+
+fn parse_gpu_expert_compute_mode(value: Option<&str>) -> io::Result<bool> {
+    match value {
+        None | Some("off") => Ok(false),
+        Some("on") => Ok(true),
+        _ => Err(invalid("MOE_GPU_EXPERT_COMPUTE must be on or off")),
     }
 }
 
@@ -5261,6 +5447,85 @@ mod cancellation_tests {
         eprintln!(
             "EXECUTED GPU expert tier off on CUDA: dense GPU, no VRAM uploads, logits parity"
         );
+    }
+
+    #[test]
+    fn gpu_expert_compute_matches_cpu_and_skips_vram_downloads() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
+        let mut model = OlmoeModel::load(&directory, 512, 64, 10_000_000).unwrap();
+        let Some(storage) = model.gpu_dense.as_mut() else {
+            eprintln!("SKIPPED GPU expert compute: GPU unavailable");
+            return;
+        };
+        let kernels = match crate::gpu_expert::GpuExpertKernels::init(&storage.engine, 16, 8, 2) {
+            Ok(kernels) => kernels,
+            Err(error) => {
+                eprintln!("SKIPPED GPU expert compute: {error}");
+                return;
+            }
+        };
+        // 2 layers x 4 experts fit the pool; no RAM cache so reuse can only come from VRAM.
+        storage.expert_cache.max_bytes = 8 * 512;
+        storage.expert_pool =
+            Some(crate::gpu::GpuExpertPool::new(&storage.engine, 8, 384, 128).unwrap());
+        storage.expert_kernels = Some(kernels);
+        storage.fill_only = true;
+        model.victim_expert_cache = true; // must be overridden while GPU compute is active
+        model.cache_bytes_per_layer = 0;
+        model.set_gpu_enabled(false);
+        let tokens = [1, 3, 4, 5, 6, 7, 8];
+        let expected = model.logits(&tokens).unwrap();
+        model.reset_cache();
+        model.set_gpu_enabled(true);
+        model.gpu_expert_compute_enabled = true;
+        for pass in 0..2 {
+            let actual = model.logits(&tokens).unwrap();
+            for (actual, expected) in actual.iter().zip(&expected) {
+                let error = actual
+                    .iter()
+                    .zip(expected)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0f32, f32::max);
+                assert!(error < 1e-4, "pass {pass} GPU expert logit error={error}");
+            }
+        }
+        model.gpu_expert_compute_enabled = false;
+        model.set_gpu_enabled(false);
+        let cpu_text = model.generate("[BOS]token3 token4 ", 4).unwrap().text;
+        model.set_gpu_enabled(true);
+        model.gpu_expert_compute_enabled = true;
+        model.logits(&tokens).unwrap(); // refill VRAM after the CPU run
+        let result = model.generate("[BOS]token3 token4 ", 4).unwrap();
+        assert_eq!(
+            result.text, cpu_text,
+            "prefill+decode GPU expert text parity"
+        );
+        assert!(
+            !parse_gpu_expert_compute_mode(None).unwrap(),
+            "default must stay off"
+        );
+        assert!(parse_gpu_expert_compute_mode(Some("on")).unwrap());
+        assert!(parse_gpu_expert_compute_mode(Some("yes")).is_err());
+        let metrics = result.metrics.unwrap();
+        assert!(metrics.gpu_expert_compute_enabled);
+        assert!(
+            metrics.expert_gpu_computes > 0,
+            "decode should compute from VRAM"
+        );
+        assert_eq!(
+            metrics.expert_vram_loads, 0,
+            "GPU compute must not download experts"
+        );
+        let status = model.expert_status();
+        assert!(status.gpu_expert_compute_enabled && status.gpu.vram_experts_resident > 0);
+        // Fill-only: a full pool never evicts, so uploads stop once every slot is used.
+        let storage = model.gpu_dense.as_mut().unwrap();
+        assert!(storage.engine.is_healthy());
+        let resident = storage.expert_cache.len();
+        assert!(!storage.upload_and_cache(1, 99, &[0u8; 384], &[1.0f32; 32]));
+        assert_eq!(storage.expert_cache.len(), resident);
+        eprintln!("EXECUTED GPU expert compute CUDA: logits parity, VRAM compute, no downloads");
     }
 
     #[test]

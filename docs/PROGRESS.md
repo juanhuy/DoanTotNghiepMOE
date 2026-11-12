@@ -3925,3 +3925,11 @@ Kết luận và bước tiếp theo:
 - Quan sát phụ (không phải đối chứng): 4 thread decode trung vị 8,80 tok/s so với 5,53 ở S5 cùng binary/cấu hình; MemAvailable min lượt này khoảng 9GiB so với 4,4–4,8GiB ở S5 → gợi ý page cache ảnh hưởng mạnh, là lý do cho phép thử RAM hạn chế.
 - Hồ sơ P2 benchmarks/experiments/2026-11-12-threads-i5/README.md (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, CHECKSUMS 121 file không gồm README). Cập nhật benchmarks/README (29 hồ sơ), SCENARIOS, EVIDENCE_MATRIX. Cấu hình khuyến nghị i5 giữ 4 thread. Bước tiếp: A2 (bỏ upload khi evict), i7 chạy A3 riêng.
 
+## 2026-11-12 — A1: tính expert INT8 trên GPU cho expert đã ở VRAM (branch work/a1-gpu-expert-compute)
+
+- Phân tích trước khi code: A2 "bỏ upload khi evict" ≈ policy inclusive đã có; số đo i7 r2 cho thấy riêng tải ngược VRAM→RAM (5,3–6,4s/request) đã chậm hơn đọc file từ page cache (2,9–3,5s) vì expert tính trên CPU. Người dùng đồng ý bỏ A2 riêng, làm thẳng A1.
+- Engine: src/gpu_expert.rs (NVRTC động, kernel `moe_gate_up`/`moe_down`, `forward`/`forward_pairs`), `MOE_GPU_EXPERT_COMPUTE` (mặc định off), `GpuDenseStorage.expert_kernels` + `fill_only`, decode và prefill tính expert ở VRAM trên GPU, victim tắt khi compute bật, counter `expert_gpu_computes`/`expert_gpu_compute_ms`, status `gpu_expert_compute_enabled`. Tài liệu ở ARCHITECTURE.
+- Test: `gpu_int8_swiglu_matches_cpu_expert` EXECUTED (2048×1024, 16×8, 6×10; NVRTC compute_75 trên GTX1650), `gpu_expert_compute_matches_cpu_and_skips_vram_downloads` EXECUTED (logits decode <1e-4 hai lượt, text prefill+decode khớp CPU, 0 VRAM download, fill-only). `python3 tools/check.py --rust --release` PASS.
+- Smoke khám phá trên model thật i5 (`--allow-dirty`, 4 request mixed max64, CPU4, cache64, tier on; không phải bằng chứng): compute on decode 6,20/10,12/9,69/9,43 tok/s, 0 VRAM download, upload 1799MiB chỉ ở request đầu (lấp pool 299 slot), `expert_gpu_computes` 2240–5812/request. Compute off (tier on victim): 3,00–3,47 tok/s, upload 35–41GiB/request. Text 4/4 khớp 64 token.
+- Harness: `run_benchmark.py --gpu-compute-model-ab` (dùng lại đường chat S5), `check_ram_stability --gpu-expert-compute`, validator `validate_gpu_compute_block`, test mới. Protocol `gpu-compute-chat-v1` chốt vào SCENARIOS trước khi đo.
+

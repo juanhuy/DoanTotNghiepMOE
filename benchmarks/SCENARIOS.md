@@ -582,3 +582,20 @@ python3 tools/run_benchmark.py --testbed i5 --thread-sweep-model --gpu auto \
 ```
 
 **Kết quả i5 12/11:** [hồ sơ P2](experiments/2026-11-12-threads-i5/README.md) run 20261112T050426.127103Z-threads-d2fd…, HEAD 455bfea sạch, 64/64 completed, text/usage/5 work counter khớp. Không N nào nhanh hơn hay chậm hơn 4 thread ở cả 8 so sánh (total 4/N: N6 0,954–1,021, N8 0,927–1,009, N12 0,890–1,001) → `recommended_threads: 4`. Lượt đầu 20261112T042107… dừng ở block0 do engine bị swap 146MiB khi app khác chiếm RAM; giữ trong hồ sơ, chạy lại một lần sau khi đóng app.
+
+## Tính expert trên GPU A1 (gpu-compute-chat-v1, 12/11)
+
+Bước A1 (PLAN): engine mới có `MOE_GPU_EXPERT_COMPUTE` (xem [ARCHITECTURE](../docs/ARCHITECTURE.md#tính-expert-trên-gpu-cho-expert-đã-ở-vram-moe_gpu_expert_compute-a1-1211)). Câu hỏi: so với cấu hình khuyến nghị hiện tại (GPU dense, tầng VRAM tắt), bật tầng VRAM kèm tính expert trên GPU có làm chat/decode nhanh hơn không?
+
+Chốt trước đo:
+- Binary mới trên branch `work/a1-gpu-expert-compute` (công tắc mặc định off). Kiểm trước: `python3 tools/check.py --rust --release` PASS; test CUDA kernel và fixture EXECUTED (không SKIPPED). Smoke khám phá trên i5 (`--allow-dirty`, không phải bằng chứng): text 4/4 khớp, decode khoảng 9,4–10,1 tok/s so với 3,0–3,5 tok/s ở tier on victim.
+- `--gpu-compute-model-ab`: ABBA on→off→off→on, 4 process mới. On = `MOE_GPU_EXPERT_TIER=on` + `MOE_GPU_EXPERT_COMPUTE=on`; off = `MOE_GPU_EXPERT_TIER=off`, compute off. Workload mixed v1 ×2 nhóm như S5 (nhóm 1 warmup, nhóm 2 đo), max64, `--gpu auto`, CPU4, cache 64MiB/layer, context 512, victim (bị engine vô hiệu khi compute on), Gate–Up paired, batch off, lookahead off, FP32 KV, greedy. Checkpoint chung.
+- Validator: status compute đúng mode mọi turn; on có `expert_gpu_computes`>0 và `expert_vram_loads`=0 mọi turn; off không có GPU compute và không có VRAM traffic. **Text/usage/finish phải khớp** giữa các block (smoke khớp; lệch thì dừng). Work counter được phép khác theo thiết kế.
+- Rule đối xứng trên 8 so sánh: total_ms VÀ decode_ms on/off ≤1/1,05 ở cả 8 → GPU compute nhanh hơn; ≥1,05 ở cả 8 → chậm hơn; còn lại → không nhất quán. Báo thêm TTFT, decode tok/s, `expert_gpu_computes`, upload, file loads.
+- Guard 5120/headroom 1024/watchdog RSS 5632/available 1536/process swap 128MiB; preflight ngay trước khi chạy; ghi nvidia-smi. Một lượt mỗi máy, không rerun/bỏ mẫu. Không đổi mặc định từ một lượt.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off --dry-run
+```
+

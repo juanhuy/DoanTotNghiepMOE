@@ -526,6 +526,10 @@ impl GpuComputeEngine {
         }
     }
 
+    pub(crate) fn driver_api(&self) -> Arc<CudaDriverApi> {
+        Arc::clone(&self.driver)
+    }
+
     /// Kiểm tra xem GPU engine có đang khỏe mạnh và sẵn sàng tính toán không
     pub fn is_healthy(&self) -> bool {
         !self
@@ -1729,6 +1733,12 @@ pub struct GpuDenseStorage {
     pub expert_pool: Option<GpuExpertPool>,
     /// Pinned host buffer tái sử dụng cho upload expert — Sub-step 16-C
     pub pinned_upload_buf: Option<PinnedBuffer>,
+    /// A1: INT8 SwiGLU kernels for VRAM-resident experts (None when MOE_GPU_EXPERT_COMPUTE=off
+    /// or NVRTC/module load failed). Declared before `engine` so it drops first.
+    pub expert_kernels: Option<crate::gpu_expert::GpuExpertKernels>,
+    /// With GPU expert compute, VRAM keeps the experts it first received: uploads only fill free
+    /// pool slots and never evict, so weights are not cycled across PCIe.
+    pub fill_only: bool,
     pub engine: GpuComputeEngine,
 }
 
@@ -1747,6 +1757,15 @@ impl GpuDenseStorage {
 
         let weight_bytes = weights.len();
         let scale_bytes = std::mem::size_of_val(scales);
+
+        if self.fill_only
+            && self
+                .expert_pool
+                .as_ref()
+                .is_none_or(|pool| pool.available_slots() == 0)
+        {
+            return false;
+        }
 
         // 1. Thử dùng GpuExpertPool trước (16-A)
         if let Some(pool) = self.expert_pool.as_mut() {

@@ -44,6 +44,13 @@ pub struct GenerationMetrics {
     pub prefill_prefetch_bytes: u64,
     /// Preload failures; the demand path then retries and reports its own error.
     pub prefill_prefetch_load_errors: u64,
+    /// MOE_GPU_EXPERT_COMPUTE active: VRAM-resident experts run INT8 SwiGLU on the GPU in decode.
+    pub gpu_expert_compute_enabled: bool,
+    /// Expert applications computed on the GPU (not counted in expert_file_loads/expert_vram_loads).
+    pub expert_gpu_computes: u64,
+    /// Wall time of GPU expert calls (input upload, kernels, output download); separate from
+    /// expert_compute_ms, which stays CPU SwiGLU.
+    pub expert_gpu_compute_ms: f64,
     pub gate_up_mode: &'static str,
     pub kv_buffer_reuse: KvBufferReuseMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -215,11 +215,35 @@ def validate_block(record, mode, expert_batch=False, workload="kv-switch", backe
             raise ValueError("trace/status mismatch")
 
 
-def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tier=False, prefetch=False):
+GPU_COMPUTE_COUNTERS = ("expert_gpu_computes", "expert_gpu_compute_ms")
+
+
+def validate_gpu_compute_block(record, mode):
+    """A1 chat block: 'on' = tier on + GPU expert compute, 'off' = tier off (current recommended)."""
+    validate_chat_tier_block(record, mode)
+    enabled = mode == "on"
+    for status in [record["status_start"], *(t["status"] for t in record["turns"])]:
+        if status.get("gpu_expert_compute_enabled", False) is not enabled:
+            raise ValueError("GPU expert compute actual mode mismatch")
+    for turn in record["turns"]:
+        m = turn["response"]["metrics"]
+        computes = m.get("expert_gpu_computes", 0)
+        if type(computes) is not int or (enabled and m.get("expert_vram_loads")) or (not enabled and computes):
+            raise ValueError("GPU expert compute path not observed as expected")
+    if enabled and not any(t["response"]["metrics"].get("expert_gpu_computes") for t in record["turns"]):
+        raise ValueError("GPU expert compute never ran")
+
+
+def compare_blocks(reference, actual, expert_batch=False, backend=False, gpu_tier=False, prefetch=False,
+                   gpu_compute=False):
     for key in ("source_sha256", "binary_sha256", "checkpoint"):
         if reference[key] != actual[key]:
             raise ValueError("source/binary/checkpoint drift")
-    ignore = (("prefill_prefetch" if prefetch else "gpu_expert_tier" if gpu_tier else "gpu" if backend else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
+    if gpu_compute:
+        ignore = ("gpu_expert_compute", "gpu_expert_tier", "output_root")
+    else:
+        ignore = (("prefill_prefetch" if prefetch else "gpu_expert_tier" if gpu_tier else "gpu" if backend
+                   else "expert_batch_prefill" if expert_batch else "gate_up_mode"), "output_root")
     if ({k: v for k, v in reference["config"].items() if k not in ignore}
             != {k: v for k, v in actual["config"].items() if k not in ignore}):
         raise ValueError("config drift")
@@ -264,10 +288,15 @@ def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu
     return summary
 
 
-def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefetch=False):
+def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefetch=False, gpu_compute=False):
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
-    if sum((expert_batch, backend, gpu_tier, prefetch)) > 1:
+    if sum((expert_batch, backend, gpu_tier, prefetch, gpu_compute)) > 1:
         raise ValueError("choose one model A/B selector")
+    if gpu_compute:
+        # A1 reuses the S5 chat path: 'on' = tier on + GPU expert compute, 'off' = tier off.
+        if workload != "mixed":
+            raise ValueError("--gpu-compute-model-ab uses the mixed chat workload")
+        gpu_tier = True
     chat = gpu_tier and workload == "mixed"
     if workload == "mixed" and not gpu_tier:
         raise ValueError("mixed chat workload is only defined for --gpu-tier-model-ab")
@@ -293,7 +322,7 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
     dirty = bool(common.checked_text(["git", "status", "--porcelain", "--untracked-files=normal"], root, env))
     if dirty and not args.allow_dirty:
         raise ValueError("dirty tree; --allow-dirty is exploratory only")
-    protocol = {"kind": "prefill_prefetch_model_ab" if prefetch else "gpu_tier_model_ab" if gpu_tier else "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
+    protocol = {"kind": "gpu_compute_model_ab" if gpu_compute else "prefill_prefetch_model_ab" if prefetch else "gpu_tier_model_ab" if gpu_tier else "backend_model_ab" if backend else "expert_batch_model_ab" if expert_batch else "gate_up_model_ab", "testbed": args.testbed, "git_commit": commit,
                 "git_dirty": dirty, "modes": modes, "model_dir": str(model),
                 "requests_per_block": len(prompts), "total_requests": 4 * len(prompts), "threads": 4,
                 "cache_mib_per_layer": 64, "context": 512, "max_tokens": expected_max,
@@ -312,7 +341,7 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
         print(json.dumps(protocol, indent=2))
         return 0
     now = datetime.datetime.now(datetime.timezone.utc)
-    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-prefetch-model-" if prefetch else "-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
+    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-gpu-compute-model-" if gpu_compute else "-prefetch-model-" if prefetch else "-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
     directory = common.absolute(args.output_root, root) / args.testbed / run_id
     directory.mkdir(parents=True, exist_ok=False)
     record = {**protocol, "run_id": run_id, "status": "failed", "blocks": []}
@@ -340,6 +369,8 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                     argv.extend(["--prefill-prefetch", mode])
                 if gpu_tier:
                     argv.extend(["--gpu-expert-tier", mode])
+                if gpu_compute:
+                    argv.extend(["--gpu-expert-compute", mode])
                 if args.allow_dirty:
                     argv.append("--allow-dirty")
                 code = ram.execute(ram.parser().parse_args(argv))
@@ -351,11 +382,14 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                                          "run_id": current["run_id"], "status": current["status"]})
                 if code:
                     raise ValueError("block failed; no further blocks")
-                validate_block(current, mode, expert_batch=expert_batch, workload=workload, backend=backend,
-                               gpu_tier=gpu_tier, prefetch=prefetch)
+                if gpu_compute:
+                    validate_gpu_compute_block(current, mode)
+                else:
+                    validate_block(current, mode, expert_batch=expert_batch, workload=workload, backend=backend,
+                                   gpu_tier=gpu_tier, prefetch=prefetch)
                 if records:
                     compare_blocks(records[0], current, expert_batch=expert_batch, backend=backend, gpu_tier=gpu_tier,
-                                   prefetch=prefetch)
+                                   prefetch=prefetch, gpu_compute=gpu_compute)
                 records.append(current)
                 if kernel.source_files(root) != before:
                     raise ValueError("source changed during protocol")
@@ -385,6 +419,17 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
             record["on_faster"] = all(t <= 1 / 1.05 and d <= 1 / 1.05 for t, d in ratios)
             record["decision_rule"] = ("chat max64: tier on/off total_ms and decode_ms ratio>=1.05 in all 8 => off faster; "
                                        "<=1/1.05 in all 8 => on faster; otherwise no consistent difference. GPU dense both sides")
+            if gpu_compute:
+                for pair in record["pairs"]:
+                    a, b = records[0 if pair["pair"] == 0 else 3], records[1 if pair["pair"] == 0 else 2]
+                    for key in GPU_COMPUTE_COUNTERS:
+                        pair["work"][key] = {"on": a["turns"][pair["turn"]]["response"]["metrics"].get(key),
+                                             "off": b["turns"][pair["turn"]]["response"]["metrics"].get(key)}
+                record["compute_faster"] = record["on_faster"]
+                record["compute_slower"] = record["off_faster"]
+                record["decision_rule"] = ("A1 chat max64: on = tier on + GPU expert compute, off = tier off; on/off total_ms "
+                                           "and decode_ms <=1/1.05 in all 8 => compute faster; >=1.05 in all 8 => compute "
+                                           "slower; otherwise no consistent difference. Text/usage/finish must match")
         elif gpu_tier:
             record["gpu_status_start"] = {r["status_start"]["gpu_expert_tier_enabled"]: r["status_start"]["gpu"] for r in records}
             record["off_faster"] = all(
