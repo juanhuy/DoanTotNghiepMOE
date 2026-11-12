@@ -1,0 +1,79 @@
+{
+  "kind": "thread_sweep_model",
+  "protocol": "threads-chat-v1",
+  "testbed": "i5",
+  "git_commit": "455bfea7a70730e3cf890b3f58a17fc010c5bf9f",
+  "git_dirty": false,
+  "thread_order": [
+    4,
+    6,
+    8,
+    12,
+    12,
+    8,
+    6,
+    4
+  ],
+  "baseline_threads": 4,
+  "model_dir": "/home/son/son/DATN/Models/olmoe_merged",
+  "requests_per_block": 8,
+  "total_requests": 64,
+  "gpu": "auto",
+  "gpu_expert_tier": "off",
+  "cache_mib_per_layer": 64,
+  "context": 512,
+  "max_tokens": 64,
+  "workload": "mixed-v1",
+  "measured_turns": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "warmup_turns": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "environment_pins": {
+    "MOE_TEMPERATURE": "0",
+    "MOE_TOP_P": "1",
+    "MOE_TOP_K": "0",
+    "MOE_REPETITION_PENALTY": "1",
+    "MOE_KV_FP8": "0",
+    "MOE_HOT_PIN_COUNT": "0",
+    "MOE_PILOT_SMOOTH": "0.35"
+  },
+  "removed_environment_keys": [
+    "MOE_SESSION_DIR",
+    "ROUTE_TRACE",
+    "MOE_ROUTE_TRACE",
+    "MOE_USAGE_PATH",
+    "MOE_PILOT_CONF_LIMIT"
+  ],
+  "guards_mib": {
+    "rss": 5120,
+    "headroom": 1024,
+    "watchdog_rss": 5632,
+    "available": 1536,
+    "process_swap": 128
+  },
+  "decision_rule": "N vs 4 threads: total_ms and decode_ms ratio 4/N >= 1.05 in all 8 => N faster; <= 1/1.05 in all 8 => N slower; otherwise no consistent difference. Recommended = fastest-median-decode among N faster, else 4",
+  "notes": [
+    "fresh process per block, one palindrome run; not a population estimate",
+    "only RAYON_NUM_THREADS changes; dense on GPU, expert SwiGLU on CPU",
+    "HTTP text/usage/finish parity plus expert work counters across thread counts"
+  ],
+  "run_id": "20261112T042107.651702Z-threads-6c2f2b43e2214786abf44924cafb7831",
+  "status": "failed",
+  "blocks": [
+    {
+      "threads": 4,
+      "path": "block-0-t4/i5/20261112T042107.661173Z-ram-f118c68631fd4bde8c3a2e7318c3d5cf/result.json",
+      "run_id": "20261112T042107.661173Z-ram-f118c68631fd4bde8c3a2e7318c3d5cf",
+      "status": "watchdog_stopped"
+    }
+  ],
+  "error": "block failed; no further blocks"
+}

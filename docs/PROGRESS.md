@@ -3917,3 +3917,11 @@ Kết luận và bước tiếp theo:
 - Thêm tools/benchmark_threads.py (`run_benchmark.py --thread-sweep-model`): palindrome theo tập thread của testbed (i5 4,6,8,12; i7 4,8,16,24), mỗi block process mới, mixed ×2 nhóm max64, GPU auto, tier off; validator chat S5, parity text/usage/finish + 5 work counter giữa mọi thread; rule 8 so sánh mỗi N với 4 thread; `recommended_threads`. tools/test_benchmark_threads.py 4 test, đăng ký tools/check.py.
 - Fixture tier off thread 1/4/12: completed, text và file loads giống nhau. python3 tools/check.py PASS. Engine không đổi.
 - Protocol chốt vào SCENARIOS (mục A3) và WORKFLOWS (nhiệm vụ i7 A3) trước khi đo.
+
+## 2026-11-12 — Kết quả A3 trên i5: giữ 4 thread
+
+- Lượt 1 (20261112T042107…): preflight đạt (available 7231MiB) nhưng app khác chiếm khoảng 5GB anon; block0 4 thread hoàn tất 6/8 request rồi watchdog dừng vì engine bị swap 146MiB (giây 188, RAM trống khoảng 260MiB). Không có số đo. Người dùng đóng Chrome/app; preflight lại available 12204MiB.
+- Lượt 2 (20261112T050426.127103Z-threads-d2fd…), HEAD 455bfea sạch, binary 64048653…, checkpoint chung: COMPLETED 64/64, text/usage/5 work counter khớp mọi thread. Rule: không N nào nhanh hơn/chậm hơn 4 ở cả 8 so sánh; total 4/N N6 0,954–1,021, N8 0,927–1,009, N12 0,890–1,001; decode tok/s trung vị 8,80/8,87/8,64/8,67 (4/6/8/12). expert_compute 4/N ở 8/12 thread 0,81–0,99. Biến động theo vị trí (nửa sau nhanh hơn) lớn hơn hiệu ứng thread. RSS max 3506–3525MiB, VmSwap 0.
+- Quan sát phụ (không phải đối chứng): 4 thread decode trung vị 8,80 tok/s so với 5,53 ở S5 cùng binary/cấu hình; MemAvailable min lượt này khoảng 9GiB so với 4,4–4,8GiB ở S5 → gợi ý page cache ảnh hưởng mạnh, là lý do cho phép thử RAM hạn chế.
+- Hồ sơ P2 benchmarks/experiments/2026-11-12-threads-i5/README.md (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, CHECKSUMS 121 file không gồm README). Cập nhật benchmarks/README (29 hồ sơ), SCENARIOS, EVIDENCE_MATRIX. Cấu hình khuyến nghị i5 giữ 4 thread. Bước tiếp: A2 (bỏ upload khi evict), i7 chạy A3 riêng.
+

@@ -580,3 +580,5 @@ Chốt trước đo:
 python3 tools/run_benchmark.py --testbed i5 --thread-sweep-model --gpu auto \
   --expert-batch-workload mixed --cache 64 --context 512 --max-tokens 64 --lookahead off --dry-run
 ```
+
+**Kết quả i5 12/11:** [hồ sơ P2](experiments/2026-11-12-threads-i5/README.md) run 20261112T050426.127103Z-threads-d2fd…, HEAD 455bfea sạch, 64/64 completed, text/usage/5 work counter khớp. Không N nào nhanh hơn hay chậm hơn 4 thread ở cả 8 so sánh (total 4/N: N6 0,954–1,021, N8 0,927–1,009, N12 0,890–1,001) → `recommended_threads: 4`. Lượt đầu 20261112T042107… dừng ở block0 do engine bị swap 146MiB khi app khác chiếm RAM; giữ trong hồ sơ, chạy lại một lần sau khi đóng app.
