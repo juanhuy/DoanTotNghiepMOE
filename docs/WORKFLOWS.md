@@ -161,7 +161,9 @@ Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng
 
 > Đây là máy i7 (testbed i7). Pull main mới nhất (lượt 11/11 đã dừng, đo lại theo đoạn "Lượt 11/11 và đo lại"). Đọc AGENTS.md, rồi làm đúng mục "Nhiệm vụ i7: tầng VRAM expert bật/tắt" trong docs/WORKFLOWS.md trên branch riêng work/i7-gpu-tier. Dùng `--testbed i7`, không kế thừa số i5. Kiểm GPU thật trước (EXECUTED, không SKIPPED); chạy tools/preflight_memory.py trước mỗi phép; chạy phép A (long-prefill, max1) rồi phép B (mixed, max64), mỗi phép đúng một lượt, không chạy gì song song, không rerun/đổi threads/cache/ngưỡng. Lưu raw vào benchmarks/experiments/<ngày>-gpu-tier-i7 với CHECKSUMS, README, mục lục và một mục PROGRESS; báo off_faster/on_faster của từng phép, số slot VRAM thực, upload VRAM và giới hạn. Không đổi mặc định MOE_GPU_EXPERT_TIER, không push main.
 
-**Cấu hình khuyến nghị hiện tại cho i5 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, CPU4, victim, batch prefill off. Áp dụng cho demo/vận hành i5 trong phạm vi đã đo; không áp sang i7 trước khi có kết quả trên.
+**Kết quả 11/11 ([P1 i7](../benchmarks/experiments/2026-11-11-gpu-tier-i7-r2/README.md), checkpoint chung khớp 16/16 hash ở cả 8 block):** pool i7 845–858/1024 expert (83%); A prefill không nhất quán (bật thắng 1/4), B chat/decode tắt nhanh hơn 8/8 (total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s). Theo bảng trên: dòng "không nhất quán", **giữ mặc định on trong code**. Không phép nào trên hai máy cho thấy bật thắng một cách nhất quán.
+
+**Cấu hình khuyến nghị cho cả i5 và i7 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, victim, batch prefill off. Áp dụng cho demo/vận hành trong phạm vi đã đo (CPU4 threads là cấu hình protocol, không phải tối ưu của i7).
 
 ## Bàn giao điều tra prefill/RAM (08/11/2026)
 

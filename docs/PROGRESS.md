@@ -3904,3 +3904,9 @@ Kết luận và bước tiếp theo:
 - Lưu hồ sơ P1 `benchmarks/experiments/2026-11-11-gpu-tier-i7-r2/` (khóa 95 file `CHECKSUMS.sha256` OK), cập nhật `benchmarks/README.md` (28 hồ sơ).
 - Giới hạn & bước tiếp: một lượt ABBA/workload, CPU cố định 4 threads (không phải tối ưu i7), `cache=64 MiB/layer`, policy `victim`. Giữ nguyên mặc định `MOE_GPU_EXPERT_TIER` (không push `main`) để hai bên chốt quyết định mục 6 từ bằng chứng này.
 
+## 2026-11-12 — Tích hợp kết quả i7 (r2) vào main, kết luận hai máy
+
+- Review branch `work/i7-gpu-tier` (176cf39, nền 8941d29): 8 block completed, commit 8941d29, git_dirty false, không watchdog violation; manifest checkpoint trong raw của cả 8 block khớp 16/16 hash với benchmarks/checkpoints/olmoe-int8-i5.sha256 (cùng model với i5). Số trong README đối chiếu raw khớp (off_faster/on_faster, resident 845/858, file loads, ratio). Binary i7 5b091a4d… khác i5 64048653… do toolchain khác; không ảnh hưởng vì không so tuyệt đối.
+- Merge fast-forward vào main. Sửa CHECKSUMS.sha256 của hồ sơ r2: bỏ dòng README.md (README sửa sau khi khóa nên FAILED; theo quy ước hồ sơ i5 gần đây README không nằm trong checksum); 94/94 OK. Không sửa raw.
+- Kết luận: chat/decode tắt tầng VRAM nhanh hơn 8/8 trên cả i5 (pool 29%) và i7 (pool 83%, không còn file load khi bật nhưng upload 33–40GiB/request). Prefill i7 không nhất quán. Theo bảng quyết định WORKFLOWS mục 6 → giữ mặc định on trong code; khuyến nghị vận hành/demo cả hai máy tier off. Cập nhật PLAN (việc tiếp: S6), WORKFLOWS (kết quả và cấu hình khuyến nghị hai máy), EVIDENCE_MATRIX (dòng i7), AGENTS (nhiệm vụ i7 xong).
+
