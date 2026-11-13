@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 13/11 (A3 i7): [P2 — số thread i7](experiments/2026-11-13-threads-i7/README.md) i7-14650HX (16C/24T), GPU dense, tier off, chat max64: 8/16/24 thread không nhanh hơn 4 thread một cách nhất quán (total 4/N 0,777–1,004; decode tok/s trung vị giảm từ 7,72 xuống 7,21, 7,03, 7,02) → giữ 4 thread trên i7. Thống nhất cấu hình 4 thread cho cả hai máy.
+
 Kết quả mới 12/11 (A3): [P2 — số thread i5](experiments/2026-11-12-threads-i5/README.md) với GPU dense, tier off, chat max64: 6/8/12 thread không nhanh hơn 4 thread một cách nhất quán (total 4/N 0,890–1,021) → giữ 4 thread trên i5. Lượt đầu dừng do RAM bị app khác chiếm, giữ làm hồ sơ.
 
 Kết quả mới 11/11 (i7, tầng VRAM trên checkpoint chung): [P1 — tầng VRAM bật/tắt trên i7](experiments/2026-11-11-gpu-tier-i7-r2/README.md) RTX 5060 Laptop (7,53 GiB VRAM, pool 845–858/1024 expert ≈ 83%): Phép B chat/decode max 64 tắt nhanh hơn 8/8 (`off_faster: True`, total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s; upload 33–41 GiB/request); Phép A prefill max 1 không nhất quán (`off_faster: False, on_faster: False`, on thắng 1/4 ở cặp 0 turn 2 `0,857×`, off thắng 3/4 `1,186–1,330×`). Mặc định chưa đổi.
@@ -45,7 +47,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 29 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 30 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -74,6 +76,7 @@ Khi viết báo cáo, thường chỉ cần kết luận ngắn và liên kết 
 
 | Hồ sơ | Vì sao giữ? |
 | --- | --- |
+| [Số thread CPU A3 i7 13/11](experiments/2026-11-13-threads-i7/README.md) | Chọn cấu hình vận hành i7: 8/16/24 thread không hơn 4 thread nhất quán (tok/s trung vị giảm từ 7,72 xuống 7,21, 7,03, 7,02); thống nhất 4 thread cho cả hai máy |
 | [Số thread CPU A3 i5 12/11](experiments/2026-11-12-threads-i5/README.md) | Chọn cấu hình vận hành: 6/8/12 thread không hơn 4 thread nhất quán; expert_compute không tăng theo số thread |
 | [Expert INT8 nhiều token](experiments/2026-11-09-expert-batch-int8-i5/README.md) | Compute có lợi ở kernel và các so sánh model; TTFT chưa ổn định, opt-in/off mặc định |
 | [Vận hành i5 kỳ 1](experiments/2026-10-22-phase1-i5/README.md) | Bối cảnh kỳ 1 (cold/warm/hội thoại, checkpoint chung, revision cũ d4adefd). Kỳ 2 không tái lập bộ này; vận hành hiện hành dùng S1 |

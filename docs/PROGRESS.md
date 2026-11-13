@@ -3925,3 +3925,18 @@ Kết luận và bước tiếp theo:
 - Quan sát phụ (không phải đối chứng): 4 thread decode trung vị 8,80 tok/s so với 5,53 ở S5 cùng binary/cấu hình; MemAvailable min lượt này khoảng 9GiB so với 4,4–4,8GiB ở S5 → gợi ý page cache ảnh hưởng mạnh, là lý do cho phép thử RAM hạn chế.
 - Hồ sơ P2 benchmarks/experiments/2026-11-12-threads-i5/README.md (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, CHECKSUMS 121 file không gồm README). Cập nhật benchmarks/README (29 hồ sơ), SCENARIOS, EVIDENCE_MATRIX. Cấu hình khuyến nghị i5 giữ 4 thread. Bước tiếp: A2 (bỏ upload khi evict), i7 chạy A3 riêng.
 
+## 2026-11-13 — Kết quả A3 trên i7: giữ 4 thread, thống nhất cấu hình hai máy
+
+- Thực hiện A3 theo `docs/WORKFLOWS.md` trên testbed i7 (i7-14650HX 16C/24T, RTX 5060 Laptop 8GB VRAM) với checkpoint chung `models/olmoe-i5` (khớp 16/16 SHA-256). Tập thread i7 palindrome: `4, 8, 16, 24, 24, 16, 8, 4`.
+- Lượt 1 (`20261113T151932.178310Z-threads-c20876d6…`, preflight available ≥10074MiB, eligible: true): Hoàn tất block0 (t4), block1 (t8), block2 (t16) với VmSwap 0KiB. Ở block3 (t24), Chrome khởi động lại chiếm RAM kích hoạt swap hệ thống, kswapd đẩy VmSwap của engine lên 250MiB, watchdog dừng ở giây 11,9 (vượt ngưỡng 128MiB). Giữ nguyên raw lượt 1 vào `attempt1-stopped/`. Tắt hoàn toàn Chrome, MemAvailable đạt > 10,2 GiB.
+- Lượt 2 (`20261113T152744.003149Z-threads-e8fe6ef6…`), HEAD 16835a3 sạch, binary 5b091a4df13fbb6f… trên branch `work/i7-threads`. Preflight đạt (available ≥10205MiB, pswpout đứng yên, eligible: true). COMPLETED 64/64 request, text/usage/5 work counter khớp 100% giữa mọi block. Prompt tokens 19/107/22/20, completion 64.
+- Kết quả: Rule đối xứng: không N nào nhanh hơn hay chậm hơn 4 thread một cách nhất quán ở cả 8 so sánh (`faster_than_4: false`, `slower_than_4: false` cho cả 8, 16, 24 threads).
+  - 4 threads: decode tok/s trung vị 7,72; total trung vị 10825 ms.
+  - 8 threads: decode tok/s trung vị 7,21; total trung vị 11416 ms; total 4/N 0,870–0,995; decode 4/N 0,867–0,994; expert_compute 4/N 0,955–1,084.
+  - 16 threads: decode tok/s trung vị 7,03; total trung vị 11617 ms; total 4/N 0,871–0,980; decode 4/N 0,895–0,979; expert_compute 4/N 0,867–0,992.
+  - 24 threads: decode tok/s trung vị 7,02; total trung vị 11755 ms; total 4/N 0,777–1,004; decode 4/N 0,867–1,032; expert_compute 4/N 0,711–1,001.
+  - Khuyến nghị: `recommended_threads: 4`. Đồng thuận với i5: việc tăng số thread CPU không tăng tốc độ decode (nghẽn memory bandwidth ở batch size 1).
+- Tài nguyên: RSS max 3416,0–3431,4 MiB, VmSwap 0KiB ở cả 8 block, MemAvailable min > 9,5 GiB.
+- Đóng gói: Hồ sơ P2 `benchmarks/experiments/2026-11-13-threads-i7/` (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, khóa 154 file `CHECKSUMS.sha256` không gồm README). Cập nhật `benchmarks/README.md` (30 hồ sơ). Cấu hình khuyến nghị vận hành cho cả hai testbed i5 và i7 thống nhất giữ 4 thread CPU Rayon.
+
+
