@@ -1,0 +1,2 @@
+name, pstate, memory.used [MiB], temperature.gpu, clocks.current.graphics [MHz], utilization.gpu [%]
+NVIDIA GeForce GTX 1650 with Max-Q Design, P0, 238 MiB, 47, 990 MHz, 1 %

@@ -3925,6 +3925,14 @@ Kết luận và bước tiếp theo:
 - Quan sát phụ (không phải đối chứng): 4 thread decode trung vị 8,80 tok/s so với 5,53 ở S5 cùng binary/cấu hình; MemAvailable min lượt này khoảng 9GiB so với 4,4–4,8GiB ở S5 → gợi ý page cache ảnh hưởng mạnh, là lý do cho phép thử RAM hạn chế.
 - Hồ sơ P2 benchmarks/experiments/2026-11-12-threads-i5/README.md (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, CHECKSUMS 121 file không gồm README). Cập nhật benchmarks/README (29 hồ sơ), SCENARIOS, EVIDENCE_MATRIX. Cấu hình khuyến nghị i5 giữ 4 thread. Bước tiếp: A2 (bỏ upload khi evict), i7 chạy A3 riêng.
 
+## 2026-11-12 — A1: tính expert INT8 trên GPU cho expert đã ở VRAM (branch work/a1-gpu-expert-compute)
+
+- Phân tích trước khi code: A2 "bỏ upload khi evict" ≈ policy inclusive đã có; số đo i7 r2 cho thấy riêng tải ngược VRAM→RAM (5,3–6,4s/request) đã chậm hơn đọc file từ page cache (2,9–3,5s) vì expert tính trên CPU. Người dùng đồng ý bỏ A2 riêng, làm thẳng A1.
+- Engine: src/gpu_expert.rs (NVRTC động, kernel `moe_gate_up`/`moe_down`, `forward`/`forward_pairs`), `MOE_GPU_EXPERT_COMPUTE` (mặc định off), `GpuDenseStorage.expert_kernels` + `fill_only`, decode và prefill tính expert ở VRAM trên GPU, victim tắt khi compute bật, counter `expert_gpu_computes`/`expert_gpu_compute_ms`, status `gpu_expert_compute_enabled`. Tài liệu ở ARCHITECTURE.
+- Test: `gpu_int8_swiglu_matches_cpu_expert` EXECUTED (2048×1024, 16×8, 6×10; NVRTC compute_75 trên GTX1650), `gpu_expert_compute_matches_cpu_and_skips_vram_downloads` EXECUTED (logits decode <1e-4 hai lượt, text prefill+decode khớp CPU, 0 VRAM download, fill-only). `python3 tools/check.py --rust --release` PASS.
+- Smoke khám phá trên model thật i5 (`--allow-dirty`, 4 request mixed max64, CPU4, cache64, tier on; không phải bằng chứng): compute on decode 6,20/10,12/9,69/9,43 tok/s, 0 VRAM download, upload 1799MiB chỉ ở request đầu (lấp pool 299 slot), `expert_gpu_computes` 2240–5812/request. Compute off (tier on victim): 3,00–3,47 tok/s, upload 35–41GiB/request. Text 4/4 khớp 64 token.
+- Harness: `run_benchmark.py --gpu-compute-model-ab` (dùng lại đường chat S5), `check_ram_stability --gpu-expert-compute`, validator `validate_gpu_compute_block`, test mới. Protocol `gpu-compute-chat-v1` chốt vào SCENARIOS trước khi đo.
+
 ## 2026-11-13 — Kết quả A3 trên i7: giữ 4 thread, thống nhất cấu hình hai máy
 
 - Thực hiện A3 theo `docs/WORKFLOWS.md` trên testbed i7 (i7-14650HX 16C/24T, RTX 5060 Laptop 8GB VRAM) với checkpoint chung `models/olmoe-i5` (khớp 16/16 SHA-256). Tập thread i7 palindrome: `4, 8, 16, 24, 24, 16, 8, 4`.
@@ -3939,8 +3947,24 @@ Kết luận và bước tiếp theo:
 - Tài nguyên: RSS max 3416,0–3431,4 MiB, VmSwap 0KiB ở cả 8 block, MemAvailable min 7485–7599 MiB (đính chính khi tích hợp 14/11; bản đầu ghi > 9,5 GiB).
 - Đóng gói: Hồ sơ P2 `benchmarks/experiments/2026-11-13-threads-i7/` (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, khóa 154 file `CHECKSUMS.sha256` không gồm README). Cập nhật `benchmarks/README.md` (30 hồ sơ). Cấu hình khuyến nghị vận hành cho cả hai testbed i5 và i7 thống nhất giữ 4 thread CPU Rayon.
 
+## 2026-11-14 — A1 trên i5: hai lượt hỏng do môi trường; thêm power guard
+
+- Lượt 1 (12/11, run 20261112T070938…): block0 on 8/8 (8,9–11,4 tok/s, 0 VRAM download); block1 off bị watchdog dừng sau 5 request vì engine bị swap 154MiB khi Chrome/Slack mở lại. Không có số đo; người dùng đóng app, chạy lại một lần.
+- Lượt 2 (14/11, run 20261114T080033…, HEAD a8ffb71 sạch, binary 372532cb…): preflight đạt (available ≥11999MiB), completed 32/32, text/usage/finish khớp, block on 0 VRAM download. RSS max ≤3539MiB, VmSwap 0. Máy chạy pin suốt lượt (AC offline 14:14–15:12). Từ block2 turn6, attention/kernel GPU chậm khoảng 5–8 lần (P8, sw_power_cap/sw_thermal), làm cặp 2 lệch. Rule "không nhất quán" không dùng làm kết luận. Quan sát phụ ở cặp sạch (block0/1): total on/off 0,686–0,764 ở 4/4 turn, decode khoảng 9,1 so với 6,7 tok/s.
+- Lưu cả hai vào benchmarks/experiments/2026-11-14-gpu-compute-i5 (P3, 81 file trong CHECKSUMS). File preflight của lượt 1 đã mất cùng scratchpad phiên trước; README ghi rõ.
+- Sửa protocol (SCENARIOS, chốt trước lượt mới): preflight thêm AC online và GPU không throttle (`read_power`, `read_gpu_throttle`, `parse_gpu_throttle`); harness A1 ghi `power_checks` trước/sau block và dừng khi rời AC; chạy dưới `systemd-inhibit`, tắt tự khóa màn hình. Test mới: tools/test_preflight_memory.py (4 test), test_benchmark_gate_up_model.py có thêm guard. `python3 tools/check.py` PASS; smoke preflight thật trên AC: on_ac true, gpu_throttle [], eligible.
+- Trạng thái: A1 trên i5 chưa có kết quả; bước tiếp là một lượt mới theo protocol đã sửa. A3 i7 vẫn chờ.
+
+## 2026-11-14 — Kết quả A1 trên i5: GPU expert compute nhanh hơn tier off 8/8
+
+- Lượt chính theo protocol có power guard: run 20261114T081740.484078Z-gpu-compute-model-0486…, HEAD 47008a1 sạch, binary 372532cb…, chạy dưới systemd-inhibit. Preflight: available ≥11998MiB, on_ac true, GPU không throttle; power_checks AC/P0 ở 8/8 điểm.
+- COMPLETED 32/32, text/usage/finish khớp, on có 0 VRAM download, `expert_gpu_computes` 2240–5884/request. `compute_faster: true`: total on/off 0,743–0,813, decode_ms 0,743–0,811, TTFT 0,711–0,866, expert_compute 0,667–0,750, attention 0,952–0,973. Decode trung vị 10,73 so với 8,24 tok/s; expert_io trung vị 2628 so với 4132ms; file load giảm 30–39%; upload 1,8GB chỉ ở request đầu. Warmup cùng chiều (0,745–0,863). RSS max ≤3547MiB, VmSwap 0.
+- Hồ sơ benchmarks/experiments/2026-11-14-gpu-compute-i5 nâng lên P1 (137 file trong CHECKSUMS; giữ hai lượt hỏng). Cập nhật mục lục, SCENARIOS, EVIDENCE_MATRIX. `python3 tools/check.py` PASS.
+- Giới hạn: một lượt, một máy; không logits parity HTTP 7B; mặc định MOE_GPU_EXPERT_COMPUTE vẫn off. Bước tiếp: tích hợp A3 i7, merge A1 vào main, giao i7 chạy gpu-compute-chat-v1.
+
 ## 2026-11-14 — Tích hợp A3 i7 vào main
 
 - Review branch `work/i7-threads` (4c001bf, fast-forward từ 16835a3). Kiểm: `sha256sum -c` 154/154 OK; run 20261113T152744…-threads-e8fe… completed, HEAD 16835a3 git_dirty false ở 8 block, binary 5b091a4d… thống nhất; checkpoint 16/16 hash khớp `olmoe-int8-i5.sha256` ở cả 8 block; số per_threads/comparisons trong README khớp result.json (recommended 4; total 4/N N8 0,870–0,995, N16 0,871–0,980, N24 0,777–1,004).
 - Đính chính khi tích hợp: MemAvailable min thực là 7485–7599MiB (README/PROGRESS ghi > 9,5GiB); diễn giải về đồng bộ Rayon được ghi lại là giả thuyết chưa có profiler. Raw không đổi.
 - Thêm kết quả i7 vào SCENARIOS và EVIDENCE_MATRIX; đánh dấu nhiệm vụ A3 i7 đã xong trong WORKFLOWS. Hai máy thống nhất cấu hình vận hành: GPU auto, tier off, 4 thread.
+- Merge nhánh A1 vào main (mặc định `MOE_GPU_EXPERT_COMPUTE` off), giải xung đột tài liệu bằng cách giữ cả hai phía theo thứ tự thời gian; mục lục 31 hồ sơ. Giao i7 nhiệm vụ A1 trong WORKFLOWS (kiểm NVRTC/kernel EXECUTED trước, power guard, branch `work/i7-gpu-compute`); cập nhật PLAN/AGENTS.

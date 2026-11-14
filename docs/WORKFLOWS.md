@@ -183,6 +183,24 @@ python3 tools/run_benchmark.py --testbed i7 --thread-sweep-model --gpu auto \
 
 4. Lưu vào `benchmarks/experiments/<ngày>-threads-i7/` (run, preflight, nvidia-smi, `CHECKSUMS.sha256` không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng (ví dụ `work/i7-threads`). Báo `recommended_threads`, `comparisons.<N>.faster_than_4/slower_than_4`, `per_threads` (tok/s trung vị). Không đổi tập thread/ngưỡng, không rerun.
 
+## Nhiệm vụ i7: tính expert trên GPU A1 (giao 14/11/2026)
+
+Protocol `gpu-compute-chat-v1` (có power guard) trong [SCENARIOS](../benchmarks/SCENARIOS.md#tính-expert-trên-gpu-a1-gpu-compute-chat-v1-1211). i5 đã có kết quả `compute_faster: true` 8/8 ([P1](../benchmarks/experiments/2026-11-14-gpu-compute-i5/README.md)). i7 chạy độc lập trên checkpoint chung (`models/olmoe-i5`); pool VRAM i7 lớn hơn (khoảng 845 slot), không suy kết quả i5 sang i7. ABBA 4 process, 32 request, khoảng 10 phút.
+
+1. `git switch main && git pull`, `git status --short` rỗng. Build release, rồi `python3 tools/check.py --rust --release` PASS.
+2. **Kiểm kernel GPU thực chạy:** `cargo test --locked --release --lib gpu_ -- --nocapture --test-threads=1 2>&1 | grep -E "SKIPPED|test result|gpu_int8_swiglu|gpu_expert_compute"`: hai test `gpu_int8_swiglu_matches_cpu_expert` và `gpu_expert_compute_matches_cpu_and_skips_vram_downloads` phải ok và **không** có dòng `SKIPPED`. Nếu báo lỗi NVRTC (không tìm thấy `libnvrtc.so.13`/`.12`), cài gói CUDA NVRTC tương ứng driver rồi dừng lại báo người dùng; không sửa engine. Ghi output vào hồ sơ.
+3. Cắm sạc, tắt tự khóa/tự mờ màn hình, đóng Chrome/app nặng. `python3 tools/preflight_memory.py --output /tmp/i7-preflight-a1.json` phải `eligible: true` (`on_ac: true`, `gpu_throttle: []`); ghi `nvidia-smi`.
+4. Chạy đúng một lượt:
+
+```bash
+systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
+  python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-compute-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off \
+  --model-dir models/olmoe-i5
+```
+
+5. Lưu vào `benchmarks/experiments/<ngày>-gpu-compute-i7/` (run, preflight, nvidia-smi, output test CUDA, `CHECKSUMS.sha256` không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng `work/i7-gpu-compute`. Báo `compute_faster`/`compute_slower`, tỉ số total/decode on/off min–max, decode tok/s trung vị, `expert_gpu_computes`, upload VRAM, số slot pool, `power_checks`. Chỉ chạy lại một lần nếu lượt đầu không có số đo do môi trường (watchdog/rời AC); giữ raw lượt hỏng. Không đổi threads/cache/ngưỡng, không đổi mặc định.
+
 ## Bàn giao điều tra prefill/RAM (08/11/2026)
 
 Mục này giữ anchor cho các hồ sơ trước. Điều tra hiện đã có kết quả allocator nêu trên; hướng i5 tiếp theo ở PLAN. Nếu cần mở lại, câu hỏi phải cụ thể: indicator cuối request có tăng không, hay chủ yếu là allocator giữ vùng đã free? Không tự bật trim/đổi allocator/tăng cache hoặc cài profiler và lặp7B chỉ vì RSS chưa phẳng.

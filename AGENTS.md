@@ -6,7 +6,7 @@
 
 - Ưu tiên điều tra OOM và kiểm soát tổng RAM trên i5; các bản vá cache riêng chưa chứng minh total RSS an toàn. Chưa đóng giai đoạn1.
 - Mục tiêu ghi báo cáo trên i5/i7: cùng revision/checkpoint, bộ test, prompt/history/context/token limit, số lượt và ngân sách cache RAM tường minh theo MiB/layer. Ghi cấu hình/hardware/raw riêng từng máy; không mặc định đây là cuộc so tốc độ CPU. Backend/threads khác nhau phải công bố.
-- **Máy i7:** [nhiệm vụ tầng VRAM expert](docs/WORKFLOWS.md#nhiệm-vụ-i7-tầng-vram-expert-bậttắt-giao-10112026) đã xong 11/11 trên checkpoint chung (hồ sơ `2026-11-11-gpu-tier-i7-r2`); nhiệm vụ A3 số thread xong 13/11 (`2026-11-13-threads-i7`). Hai máy dùng chung checkpoint i5 cho mọi benchmark mới. Không tự mở việc OOM/cache/tối ưu khác trên i7 khi chưa được giao.
+- **Máy i7:** [nhiệm vụ tầng VRAM expert](docs/WORKFLOWS.md#nhiệm-vụ-i7-tầng-vram-expert-bậttắt-giao-10112026) đã xong 11/11 trên checkpoint chung (hồ sơ `2026-11-11-gpu-tier-i7-r2`); nhiệm vụ A3 số thread xong 13/11 (`2026-11-13-threads-i7`). Nhiệm vụ hiện hành: [A1 tính expert trên GPU](docs/WORKFLOWS.md#nhiệm-vụ-i7-tính-expert-trên-gpu-a1-giao-14112026). Hai máy dùng chung checkpoint i5 cho mọi benchmark mới. Không tự mở việc OOM/cache/tối ưu khác trên i7 khi chưa được giao.
 - Chưa chốt mức cache chung trước khi kiểm ổn định bộ nhớ. Không dùng adaptive cache hoặc mặc định runner như cấu hình nghiệm thu đã thống nhất. AB/BA inclusive/victim là thí nghiệm policy riêng, không bắt buộc cho bộ ghi báo cáo hai máy.
 
 ## Đọc đúng ngữ cảnh

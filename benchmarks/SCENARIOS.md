@@ -584,3 +584,35 @@ python3 tools/run_benchmark.py --testbed i5 --thread-sweep-model --gpu auto \
 **Kết quả i5 12/11:** [hồ sơ P2](experiments/2026-11-12-threads-i5/README.md) run 20261112T050426.127103Z-threads-d2fd…, HEAD 455bfea sạch, 64/64 completed, text/usage/5 work counter khớp. Không N nào nhanh hơn hay chậm hơn 4 thread ở cả 8 so sánh (total 4/N: N6 0,954–1,021, N8 0,927–1,009, N12 0,890–1,001) → `recommended_threads: 4`. Lượt đầu 20261112T042107… dừng ở block0 do engine bị swap 146MiB khi app khác chiếm RAM; giữ trong hồ sơ, chạy lại một lần sau khi đóng app.
 
 **Kết quả i7 13/11:** [hồ sơ P2](experiments/2026-11-13-threads-i7/README.md) run 20261113T152744.003149Z-threads-e8fe…, HEAD 16835a3 sạch, binary 5b091a4d…, checkpoint chung 16/16 hash. 64/64 completed, text/usage/5 work counter khớp. Không N nào đạt rule (total 4/N: N8 0,870–0,995, N16 0,871–0,980, N24 0,777–1,004; decode trung vị 7,72/7,21/7,03/7,02 tok/s) → `recommended_threads: 4`. Lượt đầu 20261113T151932… dừng ở block3 do engine bị swap 250MiB khi Chrome mở lại; giữ trong hồ sơ.
+
+## Tính expert trên GPU A1 (gpu-compute-chat-v1, 12/11)
+
+Bước A1 (PLAN): engine mới có `MOE_GPU_EXPERT_COMPUTE` (xem [ARCHITECTURE](../docs/ARCHITECTURE.md#tính-expert-trên-gpu-cho-expert-đã-ở-vram-moe_gpu_expert_compute-a1-1211)). Câu hỏi: so với cấu hình khuyến nghị hiện tại (GPU dense, tầng VRAM tắt), bật tầng VRAM kèm tính expert trên GPU có làm chat/decode nhanh hơn không?
+
+Chốt trước đo:
+- Binary mới trên branch `work/a1-gpu-expert-compute` (công tắc mặc định off). Kiểm trước: `python3 tools/check.py --rust --release` PASS; test CUDA kernel và fixture EXECUTED (không SKIPPED). Smoke khám phá trên i5 (`--allow-dirty`, không phải bằng chứng): text 4/4 khớp, decode khoảng 9,4–10,1 tok/s so với 3,0–3,5 tok/s ở tier on victim.
+- `--gpu-compute-model-ab`: ABBA on→off→off→on, 4 process mới. On = `MOE_GPU_EXPERT_TIER=on` + `MOE_GPU_EXPERT_COMPUTE=on`; off = `MOE_GPU_EXPERT_TIER=off`, compute off. Workload mixed v1 ×2 nhóm như S5 (nhóm 1 warmup, nhóm 2 đo), max64, `--gpu auto`, CPU4, cache 64MiB/layer, context 512, victim (bị engine vô hiệu khi compute on), Gate–Up paired, batch off, lookahead off, FP32 KV, greedy. Checkpoint chung.
+- Validator: status compute đúng mode mọi turn; on có `expert_gpu_computes`>0 và `expert_vram_loads`=0 mọi turn; off không có GPU compute và không có VRAM traffic. **Text/usage/finish phải khớp** giữa các block (smoke khớp; lệch thì dừng). Work counter được phép khác theo thiết kế.
+- Rule đối xứng trên 8 so sánh: total_ms VÀ decode_ms on/off ≤1/1,05 ở cả 8 → GPU compute nhanh hơn; ≥1,05 ở cả 8 → chậm hơn; còn lại → không nhất quán. Báo thêm TTFT, decode tok/s, `expert_gpu_computes`, upload, file loads.
+- Guard 5120/headroom 1024/watchdog RSS 5632/available 1536/process swap 128MiB; preflight ngay trước khi chạy; ghi nvidia-smi. Một lượt mỗi máy, không rerun/bỏ mẫu. Không đổi mặc định từ một lượt.
+
+```bash
+python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off --dry-run
+```
+
+**Hai lượt i5 chưa thành kết quả (12/11, 14/11):** [cùng hồ sơ](experiments/2026-11-14-gpu-compute-i5/README.md). Lượt 1 (20261112T070938…) bị watchdog dừng ở block1 vì engine bị swap 154MiB khi Chrome/Slack mở lại, nên không có số đo và được chạy lại một lần. Lượt 2 (20261114T080033…) completed 32/32, text khớp, nhưng máy chạy bằng pin suốt lượt. Từ block2 turn6, phần chạy trên GPU chậm đi khoảng 5–8 lần (trùng lúc màn hình mờ/khóa khi idle), làm cặp gương thứ hai lệch (total on/off cặp 0: 0,686–0,764; cặp 1: 0,894–2,028). Rule cho "không nhất quán", nhưng kết quả này phản ánh sự cố nguồn, không phản ánh A1, nên không dùng làm kết luận.
+
+**Sửa protocol 14/11 (power guard, chốt trước lượt mới):** chỉ thêm điều kiện môi trường, không đổi workload/mode/rule/ngưỡng bộ nhớ.
+- Preflight (`tools/preflight_memory.py`) chỉ eligible khi máy cắm sạc (sysfs Mains online) và GPU không có lý do throttle hw_slowdown/hw_thermal/sw_thermal/hw_power_brake/sw_power_cap.
+- Harness ghi `power_checks` trước/sau mỗi block; máy rời AC thì dừng như environment stop (lượt đó được chạy lại một lần nếu chưa có kết quả đầy đủ).
+- Tắt tự khóa/tự mờ màn hình và chạy dưới `systemd-inhibit`. Lượt mới trên i5 là lượt chính của A1.
+
+```bash
+systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
+  python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off
+```
+
+**Kết quả i5 14/11 (lượt chính):** [hồ sơ P1](experiments/2026-11-14-gpu-compute-i5/README.md) run 20261114T081740.484078Z-gpu-compute-model-0486…, HEAD 47008a1 sạch, binary 372532cb…, power_checks AC/P0/không throttle ở 8/8 điểm. COMPLETED 32/32, text/usage/finish khớp, on có 0 VRAM download. **`compute_faster: true`**: total on/off 0,743–0,813 và decode_ms 0,743–0,811 ở cả 8; TTFT 0,711–0,866; expert_compute 0,667–0,750; attention 0,952–0,973. Decode trung vị 10,73 so với 8,24 tok/s; file load giảm 30–39%; upload 1,8GB một lần. Mặc định chưa đổi; i7 chạy cùng protocol.
+

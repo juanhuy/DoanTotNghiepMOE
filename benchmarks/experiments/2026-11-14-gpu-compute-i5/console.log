@@ -1,0 +1,42 @@
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-0-on/i5/20261114T081740.607060Z-ram-b316266886024b4d93eae219825f4faa
+turn=0 RSS=3406632KiB swap=0KiB
+turn=1 RSS=3440952KiB swap=0KiB
+turn=2 RSS=3504524KiB swap=0KiB
+turn=3 RSS=3535280KiB swap=0KiB
+turn=4 RSS=3578316KiB swap=0KiB
+turn=5 RSS=3567364KiB swap=0KiB
+turn=6 RSS=3612452KiB swap=0KiB
+turn=7 RSS=3630212KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-0-on/i5/20261114T081740.607060Z-ram-b316266886024b4d93eae219825f4faa/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-1-off/i5/20261114T081856.312191Z-ram-85a1ebeed8b14955bf63abbd26089df8
+turn=0 RSS=3360772KiB swap=0KiB
+turn=1 RSS=3394700KiB swap=0KiB
+turn=2 RSS=3461004KiB swap=0KiB
+turn=3 RSS=3497924KiB swap=0KiB
+turn=4 RSS=3540944KiB swap=0KiB
+turn=5 RSS=3549596KiB swap=0KiB
+turn=6 RSS=3574184KiB swap=0KiB
+turn=7 RSS=3583764KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-1-off/i5/20261114T081856.312191Z-ram-85a1ebeed8b14955bf63abbd26089df8/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-2-off/i5/20261114T082027.996744Z-ram-566638c45dde47a883572321d1dc7c97
+turn=0 RSS=3357480KiB swap=0KiB
+turn=1 RSS=3392800KiB swap=0KiB
+turn=2 RSS=3455676KiB swap=0KiB
+turn=3 RSS=3492584KiB swap=0KiB
+turn=4 RSS=3535620KiB swap=0KiB
+turn=5 RSS=3533548KiB swap=0KiB
+turn=6 RSS=3571808KiB swap=0KiB
+turn=7 RSS=3601192KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-2-off/i5/20261114T082027.996744Z-ram-566638c45dde47a883572321d1dc7c97/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-3-on/i5/20261114T082159.430167Z-ram-75726ccc644b4d05a5f06442da455c86
+turn=0 RSS=3405236KiB swap=0KiB
+turn=1 RSS=3440308KiB swap=0KiB
+turn=2 RSS=3503164KiB swap=0KiB
+turn=3 RSS=3531876KiB swap=0KiB
+turn=4 RSS=3574920KiB swap=0KiB
+turn=5 RSS=3581728KiB swap=0KiB
+turn=6 RSS=3606320KiB swap=0KiB
+turn=7 RSS=3632272KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/block-3-on/i5/20261114T082159.430167Z-ram-75726ccc644b4d05a5f06442da455c86/result.json
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261114T081740.484078Z-gpu-compute-model-0486f8ef6e1c4985b98e2ea340b3c728/result.json

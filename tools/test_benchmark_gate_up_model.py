@@ -457,6 +457,64 @@ class GateUpModelTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 common.execute(common.parser().parse_args(bad))
 
+    def compute_record(self, mode):
+        r = self.chat_record(mode)
+        enabled = mode == "on"
+        r["config"]["gpu_expert_compute"] = mode
+        for status in [r["status_start"], *(t["status"] for t in r["turns"])]:
+            status["gpu_expert_compute_enabled"] = enabled
+        for t in r["turns"]:
+            t["response"]["metrics"].update(expert_gpu_computes=40 if enabled else 0, expert_gpu_compute_ms=1.0,
+                                           expert_vram_loads=0)
+        return r
+
+    def test_gpu_compute_block_validation_and_dry_run(self):
+        import io, contextlib, json
+        import run_benchmark as common
+        on, off = self.compute_record("on"), self.compute_record("off")
+        model.validate_gpu_compute_block(on, "on")
+        model.validate_gpu_compute_block(off, "off")
+        model.compare_blocks(on, off, gpu_tier=True, gpu_compute=True)
+        with self.assertRaises(ValueError):
+            model.compare_blocks(on, off, gpu_tier=True)  # compute key differs: only ignored for A1
+        for change in ("status", "download", "never", "off_compute"):
+            r = self.compute_record("off" if change == "off_compute" else "on")
+            if change == "status":
+                r["turns"][3]["status"]["gpu_expert_compute_enabled"] = False
+            elif change == "download":
+                r["turns"][2]["response"]["metrics"]["expert_vram_loads"] = 3
+            elif change == "never":
+                for t in r["turns"]:
+                    t["response"]["metrics"]["expert_gpu_computes"] = 0
+            else:
+                r["turns"][1]["response"]["metrics"]["expert_gpu_computes"] = 2
+            with self.assertRaises(ValueError):
+                model.validate_gpu_compute_block(r, "off" if change == "off_compute" else "on")
+        base = ["--testbed", "i5", "--gpu", "auto", "--gpu-compute-model-ab", "--expert-batch-workload", "mixed",
+                "--threads", "4", "--cache", "64", "--context", "512", "--max-tokens", "64",
+                "--lookahead", "off", "--allow-dirty", "--dry-run"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(common.execute(common.parser().parse_args(base)), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual((protocol["kind"], protocol["modes"], protocol["total_requests"]),
+                         ("gpu_compute_model_ab", ["on", "off", "off", "on"], 32))
+        for bad in (["--expert-batch-workload", "long-prefill"], ["--max-tokens", "1"]):
+            argv = list(base)
+            argv[argv.index(bad[0]) + 1] = bad[1]
+            with self.assertRaises(ValueError):
+                common.execute(common.parser().parse_args(argv))
+        import check_ram_stability as ram
+        self.assertEqual(ram.parser().parse_args(["--testbed", "i5", "--gpu", "auto", "--cache", "64"]).gpu_expert_compute, "off")
+        self.assertIn("power_guard", protocol)
+        record = {}
+        gpu = lambda: {"status": "absent", "throttled": False}
+        model.check_block_power(record, 0, "before", lambda: {"on_ac": True, "supplies": {}}, gpu)
+        with self.assertRaises(ValueError):
+            model.check_block_power(record, 2, "after", lambda: {"on_ac": False, "supplies": {}}, gpu)
+        self.assertEqual([(c["block"], c["when"], c["on_ac"]) for c in record["power_checks"]],
+                         [(0, "before", True), (2, "after", False)])
+
 
 if __name__ == "__main__":
     unittest.main()

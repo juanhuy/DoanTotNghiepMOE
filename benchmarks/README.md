@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 14/11 (A1): [P1 — tính expert trên GPU i5](experiments/2026-11-14-gpu-compute-i5/README.md). Bật tầng VRAM kèm tính expert ngay trên GPU nhanh hơn cấu hình khuyến nghị (tier off) ở 8/8 so sánh (`compute_faster: true`): total on/off 0,743–0,813, decode trung vị 8,24→10,73 tok/s, 0 lần tải VRAM→RAM, upload 1,8GB một lần. Hai lượt trước hỏng vì môi trường (swap, chạy pin) và được giữ trong cùng hồ sơ. Chỉ trên branch A1, mặc định vẫn off.
+
 Kết quả mới 13/11 (A3 i7): [P2 — số thread i7](experiments/2026-11-13-threads-i7/README.md) i7-14650HX (16C/24T), GPU dense, tier off, chat max64: 8/16/24 thread không nhanh hơn 4 thread một cách nhất quán (total 4/N 0,777–1,004; decode tok/s trung vị giảm từ 7,72 xuống 7,21, 7,03, 7,02) → giữ 4 thread trên i7. Thống nhất cấu hình 4 thread cho cả hai máy.
 
 Kết quả mới 12/11 (A3): [P2 — số thread i5](experiments/2026-11-12-threads-i5/README.md) với GPU dense, tier off, chat max64: 6/8/12 thread không nhanh hơn 4 thread một cách nhất quán (total 4/N 0,890–1,021) → giữ 4 thread trên i5. Lượt đầu dừng do RAM bị app khác chiếm, giữ làm hồ sơ.
@@ -47,7 +49,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 30 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 31 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -63,6 +65,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 | [Kiểm chức năng model thật](experiments/2026-10-22-stage1-validation/README.md) | Smoke chức năng và giới hạn kiểm chất lượng; chưa nghiệm thu baseline |
 | [RAM i5 08/11](experiments/2026-11-08-ram-budget-i5/README.md) | RSS thực khác cache budget; chưa bảo đảm plateau/hard-cap |
 | [Allocator i5 08/11](experiments/2026-11-08-allocator-i5/README.md) | Bằng chứng giữ vùng đã free, thu hẹp giả thuyết leak lớn |
+| [Tính expert trên GPU A1 i5 14/11](experiments/2026-11-14-gpu-compute-i5/README.md) | Tầng VRAM + tính expert trên GPU nhanh hơn tier off 8/8 (total 0,743–0,813, decode 8,24→10,73 tok/s), 0 VRAM download, upload 1,8GB một lần; hai lượt hỏng do môi trường giữ cùng hồ sơ |
 | [Chat/decode tầng VRAM S5 10/11](experiments/2026-11-10-gpu-tier-chat-i5/README.md) | Chat nhiều lượt max64, GPU dense: tắt tầng VRAM expert total1,39–1,87× ở8/8, decode trung vị3,13→5,53tok/s; upload33–41GiB/request |
 | [Prefetch theo router S4 10/11](experiments/2026-11-10-prefill-prefetch-i5/README.md) | Prefill prefetch on/off không nhất quán (phủ13–15% lần nạp); lookahead decode gate đủ điều kiện0,066% ở cache64; cơ chế đúng chức năng, lợi ích chưa chứng minh |
 | [Tầng VRAM expert bật/tắt 10/11](experiments/2026-11-10-gpu-expert-tier-i5/README.md) | GPU dense bật hai phía: tắt tầng VRAM expert giảm TTFT17–31% ở4/4; upload ~5,3GiB/request là chi phí chính; mặc định chưa đổi |
