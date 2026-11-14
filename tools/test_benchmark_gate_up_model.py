@@ -506,6 +506,14 @@ class GateUpModelTests(unittest.TestCase):
                 common.execute(common.parser().parse_args(argv))
         import check_ram_stability as ram
         self.assertEqual(ram.parser().parse_args(["--testbed", "i5", "--gpu", "auto", "--cache", "64"]).gpu_expert_compute, "off")
+        self.assertIn("power_guard", protocol)
+        record = {}
+        gpu = lambda: {"status": "absent", "throttled": False}
+        model.check_block_power(record, 0, "before", lambda: {"on_ac": True, "supplies": {}}, gpu)
+        with self.assertRaises(ValueError):
+            model.check_block_power(record, 2, "after", lambda: {"on_ac": False, "supplies": {}}, gpu)
+        self.assertEqual([(c["block"], c["when"], c["on_ac"]) for c in record["power_checks"]],
+                         [(0, "before", True), (2, "after", False)])
 
 
 if __name__ == "__main__":

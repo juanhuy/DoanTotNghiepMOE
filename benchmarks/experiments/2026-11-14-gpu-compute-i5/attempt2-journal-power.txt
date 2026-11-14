@@ -1,0 +1,12 @@
+Nov 14 14:14:25 son kernel: ACPI: AC: AC Adapter [ADP1] (off-line)
+Nov 14 15:03:49 son systemd[1]: Started dbus-:1.4-org.kde.powerdevil.backlighthelper@7.service.
+Nov 14 15:04:00 son systemd[1]: dbus-:1.4-org.kde.powerdevil.backlighthelper@7.service: Deactivated successfully.
+Nov 14 15:06:50 son kscreenlocker_greet[9887]: PamAuthenticators: Authenticator changed to PamAuthenticators::Authenticator::Regular
+Nov 14 15:07:02 son systemd[1]: Started dbus-:1.4-org.kde.powerdevil.backlighthelper@8.service.
+Nov 14 15:07:12 son systemd[1]: dbus-:1.4-org.kde.powerdevil.backlighthelper@8.service: Deactivated successfully.
+Nov 14 15:09:26 son systemd[1]: Started dbus-:1.4-org.kde.powerdevil.backlighthelper@9.service.
+Nov 14 15:09:36 son systemd[1]: dbus-:1.4-org.kde.powerdevil.backlighthelper@9.service: Deactivated successfully.
+Nov 14 15:11:43 son systemd[1]: Started dbus-:1.4-org.kde.powerdevil.backlighthelper@10.service.
+Nov 14 15:11:54 son systemd[1]: dbus-:1.4-org.kde.powerdevil.backlighthelper@10.service: Deactivated successfully.
+Nov 14 15:12:19 son systemd[1]: Started dbus-:1.4-org.kde.powerdevil.backlighthelper@11.service.
+Nov 14 15:12:29 son systemd[1]: dbus-:1.4-org.kde.powerdevil.backlighthelper@11.service: Deactivated successfully.

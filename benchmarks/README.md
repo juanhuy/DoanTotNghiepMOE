@@ -90,6 +90,7 @@ Không đọc mặc định khi hỏi tiến độ hoặc viết phần kết qu
 | Hồ sơ | Vai trò lưu trữ |
 | --- | --- |
 | [Vận hành i7 kỳ 1](experiments/2026-10-23-phase1-i7/README.md) | Lịch sử kỳ 1 trên **model khác** (config `272998dd…`); không trích cho báo cáo mới. Đọc [đính chính](../baocao/README.md) nếu cần |
+| [GPU expert compute A1 i5, hai lượt hỏng 12–14/11](experiments/2026-11-14-gpu-compute-i5/README.md) | Lượt 1 engine bị swap; lượt 2 chạy bằng pin, GPU bị bóp giữa chừng nên rule không dùng được. Căn cứ cho power guard (AC + GPU không throttle) trong preflight; chưa là kết quả A1 |
 | [Lookahead 03/11](experiments/2026-11-03-lookahead-i5/README.md) | Lượt dừng sớm, chưa có đối chứng hiệu năng |
 | [INT8/INT4 và routing từ Huy](experiments/2026-11-03-quantization-tradeoff/README.md) | Dữ liệu tiếp nhận thiếu provenance; chưa là bằng chứng chuẩn hóa |
 | [Chuỗi RAM 04/11](experiments/2026-11-04-ram-sequence-i5/README.md) | Tái hiện pressure trước các bước chẩn đoán sau |

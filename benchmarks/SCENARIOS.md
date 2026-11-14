@@ -599,3 +599,16 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
   --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off --dry-run
 ```
 
+**Hai lượt i5 chưa thành kết quả (12/11, 14/11):** [hồ sơ P3](experiments/2026-11-14-gpu-compute-i5/README.md). Lượt 1 (20261112T070938…) bị watchdog dừng ở block1 vì engine bị swap 154MiB khi Chrome/Slack mở lại, nên không có số đo và được chạy lại một lần. Lượt 2 (20261114T080033…) completed 32/32, text khớp, nhưng máy chạy bằng pin suốt lượt. Từ block2 turn6, phần chạy trên GPU chậm đi khoảng 5–8 lần (trùng lúc màn hình mờ/khóa khi idle), làm cặp gương thứ hai lệch (total on/off cặp 0: 0,686–0,764; cặp 1: 0,894–2,028). Rule cho "không nhất quán", nhưng kết quả này phản ánh sự cố nguồn, không phản ánh A1, nên không dùng làm kết luận.
+
+**Sửa protocol 14/11 (power guard, chốt trước lượt mới):** chỉ thêm điều kiện môi trường, không đổi workload/mode/rule/ngưỡng bộ nhớ.
+- Preflight (`tools/preflight_memory.py`) chỉ eligible khi máy cắm sạc (sysfs Mains online) và GPU không có lý do throttle hw_slowdown/hw_thermal/sw_thermal/hw_power_brake/sw_power_cap.
+- Harness ghi `power_checks` trước/sau mỗi block; máy rời AC thì dừng như environment stop (lượt đó được chạy lại một lần nếu chưa có kết quả đầy đủ).
+- Tắt tự khóa/tự mờ màn hình và chạy dưới `systemd-inhibit`. Lượt mới trên i5 là lượt chính của A1.
+
+```bash
+systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
+  python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
+  --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off
+```
+

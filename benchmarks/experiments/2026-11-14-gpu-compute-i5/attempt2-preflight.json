@@ -1,0 +1,37 @@
+{
+  "samples": [
+    {
+      "utc": "2026-11-14T08:00:13.505064+00:00",
+      "available_kib": 12310920,
+      "swap_used_kib": 0,
+      "pswpout": 0,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=110",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=47"
+      ]
+    },
+    {
+      "utc": "2026-11-14T08:00:18.505484+00:00",
+      "available_kib": 12287324,
+      "swap_used_kib": 0,
+      "pswpout": 0,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=110",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=47"
+      ]
+    },
+    {
+      "utc": "2026-11-14T08:00:23.505910+00:00",
+      "available_kib": 12309220,
+      "swap_used_kib": 0,
+      "pswpout": 0,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=110",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=47"
+      ]
+    }
+  ],
+  "active_engine_build_processes": [],
+  "min_available_required_mib": 5120,
+  "eligible": true
+}

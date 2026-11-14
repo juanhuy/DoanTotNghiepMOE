@@ -1,0 +1,2 @@
+name, memory.used [MiB], memory.total [MiB], temperature.gpu, utilization.gpu [%]
+NVIDIA GeForce GTX 1650 with Max-Q Design, 238 MiB, 4096 MiB, 58, 1 %

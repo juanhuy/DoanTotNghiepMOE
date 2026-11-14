@@ -9,6 +9,7 @@ import uuid
 
 import benchmark_gate_up as kernel
 import check_ram_stability as ram
+import preflight_memory
 import run_benchmark as common
 
 MODES = ("separate", "paired", "paired", "separate")
@@ -288,6 +289,20 @@ def paired_summary(records, expert_batch=False, turns=(0, 1), backend=False, gpu
     return summary
 
 
+def check_block_power(record, index, when, power_reader=None, gpu_reader=None):
+    """A1 power guard: record AC/GPU state around each block; leaving AC stops the protocol.
+
+    GPU throttle reasons are recorded but not enforced here (under load sw_power_cap can be legitimate);
+    the preflight enforces an unthrottled idle GPU before the protocol starts.
+    """
+    power = (power_reader or preflight_memory.read_power)()
+    gpu = (gpu_reader or preflight_memory.read_gpu_throttle)()
+    record.setdefault("power_checks", []).append({"block": index, "when": when, "on_ac": power["on_ac"],
+                                                  "supplies": power["supplies"], "gpu": gpu})
+    if not power["on_ac"]:
+        raise ValueError(f"block {index} {when}: machine is on battery; environment stop")
+
+
 def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefetch=False, gpu_compute=False):
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
     if sum((expert_batch, backend, gpu_tier, prefetch, gpu_compute)) > 1:
@@ -337,6 +352,9 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                 "notes": ["four fresh processes, fixed ABBA, two pairs only; not a population speedup estimate",
                           "checkpoint hashing warms OS cache; compare same binary with one selector changed",
                           "HTTP text/usage/finish parity plus expert workload; no HTTP logits/token-ID parity"]}
+    if gpu_compute:
+        protocol["protocol"] = "gpu-compute-chat-v1"
+        protocol["power_guard"] = "AC online before and after every block (sysfs); GPU throttle reasons recorded"
     if args.dry_run:
         print(json.dumps(protocol, indent=2))
         return 0
@@ -373,7 +391,11 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                     argv.extend(["--gpu-expert-compute", mode])
                 if args.allow_dirty:
                     argv.append("--allow-dirty")
+                if gpu_compute:
+                    check_block_power(record, index, "before")
                 code = ram.execute(ram.parser().parse_args(argv))
+                if gpu_compute:
+                    check_block_power(record, index, "after")
                 paths = list(block_root.rglob("result.json"))
                 if len(paths) != 1:
                     raise ValueError("missing block result")
