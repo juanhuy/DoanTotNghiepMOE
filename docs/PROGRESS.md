@@ -3940,3 +3940,10 @@ Kết luận và bước tiếp theo:
 - Lưu cả hai vào benchmarks/experiments/2026-11-14-gpu-compute-i5 (P3, 81 file trong CHECKSUMS). File preflight của lượt 1 đã mất cùng scratchpad phiên trước; README ghi rõ.
 - Sửa protocol (SCENARIOS, chốt trước lượt mới): preflight thêm AC online và GPU không throttle (`read_power`, `read_gpu_throttle`, `parse_gpu_throttle`); harness A1 ghi `power_checks` trước/sau block và dừng khi rời AC; chạy dưới `systemd-inhibit`, tắt tự khóa màn hình. Test mới: tools/test_preflight_memory.py (4 test), test_benchmark_gate_up_model.py có thêm guard. `python3 tools/check.py` PASS; smoke preflight thật trên AC: on_ac true, gpu_throttle [], eligible.
 - Trạng thái: A1 trên i5 chưa có kết quả; bước tiếp là một lượt mới theo protocol đã sửa. A3 i7 vẫn chờ.
+
+## 2026-11-14 — Kết quả A1 trên i5: GPU expert compute nhanh hơn tier off 8/8
+
+- Lượt chính theo protocol có power guard: run 20261114T081740.484078Z-gpu-compute-model-0486…, HEAD 47008a1 sạch, binary 372532cb…, chạy dưới systemd-inhibit. Preflight: available ≥11998MiB, on_ac true, GPU không throttle; power_checks AC/P0 ở 8/8 điểm.
+- COMPLETED 32/32, text/usage/finish khớp, on có 0 VRAM download, `expert_gpu_computes` 2240–5884/request. `compute_faster: true`: total on/off 0,743–0,813, decode_ms 0,743–0,811, TTFT 0,711–0,866, expert_compute 0,667–0,750, attention 0,952–0,973. Decode trung vị 10,73 so với 8,24 tok/s; expert_io trung vị 2628 so với 4132ms; file load giảm 30–39%; upload 1,8GB chỉ ở request đầu. Warmup cùng chiều (0,745–0,863). RSS max ≤3547MiB, VmSwap 0.
+- Hồ sơ benchmarks/experiments/2026-11-14-gpu-compute-i5 nâng lên P1 (137 file trong CHECKSUMS; giữ hai lượt hỏng). Cập nhật mục lục, SCENARIOS, EVIDENCE_MATRIX. `python3 tools/check.py` PASS.
+- Giới hạn: một lượt, một máy; không logits parity HTTP 7B; mặc định MOE_GPU_EXPERT_COMPUTE vẫn off. Bước tiếp: tích hợp A3 i7, merge A1 vào main, giao i7 chạy gpu-compute-chat-v1.

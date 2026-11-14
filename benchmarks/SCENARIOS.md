@@ -599,7 +599,7 @@ python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
   --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off --dry-run
 ```
 
-**Hai lượt i5 chưa thành kết quả (12/11, 14/11):** [hồ sơ P3](experiments/2026-11-14-gpu-compute-i5/README.md). Lượt 1 (20261112T070938…) bị watchdog dừng ở block1 vì engine bị swap 154MiB khi Chrome/Slack mở lại, nên không có số đo và được chạy lại một lần. Lượt 2 (20261114T080033…) completed 32/32, text khớp, nhưng máy chạy bằng pin suốt lượt. Từ block2 turn6, phần chạy trên GPU chậm đi khoảng 5–8 lần (trùng lúc màn hình mờ/khóa khi idle), làm cặp gương thứ hai lệch (total on/off cặp 0: 0,686–0,764; cặp 1: 0,894–2,028). Rule cho "không nhất quán", nhưng kết quả này phản ánh sự cố nguồn, không phản ánh A1, nên không dùng làm kết luận.
+**Hai lượt i5 chưa thành kết quả (12/11, 14/11):** [cùng hồ sơ](experiments/2026-11-14-gpu-compute-i5/README.md). Lượt 1 (20261112T070938…) bị watchdog dừng ở block1 vì engine bị swap 154MiB khi Chrome/Slack mở lại, nên không có số đo và được chạy lại một lần. Lượt 2 (20261114T080033…) completed 32/32, text khớp, nhưng máy chạy bằng pin suốt lượt. Từ block2 turn6, phần chạy trên GPU chậm đi khoảng 5–8 lần (trùng lúc màn hình mờ/khóa khi idle), làm cặp gương thứ hai lệch (total on/off cặp 0: 0,686–0,764; cặp 1: 0,894–2,028). Rule cho "không nhất quán", nhưng kết quả này phản ánh sự cố nguồn, không phản ánh A1, nên không dùng làm kết luận.
 
 **Sửa protocol 14/11 (power guard, chốt trước lượt mới):** chỉ thêm điều kiện môi trường, không đổi workload/mode/rule/ngưỡng bộ nhớ.
 - Preflight (`tools/preflight_memory.py`) chỉ eligible khi máy cắm sạc (sysfs Mains online) và GPU không có lý do throttle hw_slowdown/hw_thermal/sw_thermal/hw_power_brake/sw_power_cap.
@@ -611,4 +611,6 @@ systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
   python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
   --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off
 ```
+
+**Kết quả i5 14/11 (lượt chính):** [hồ sơ P1](experiments/2026-11-14-gpu-compute-i5/README.md) run 20261114T081740.484078Z-gpu-compute-model-0486…, HEAD 47008a1 sạch, binary 372532cb…, power_checks AC/P0/không throttle ở 8/8 điểm. COMPLETED 32/32, text/usage/finish khớp, on có 0 VRAM download. **`compute_faster: true`**: total on/off 0,743–0,813 và decode_ms 0,743–0,811 ở cả 8; TTFT 0,711–0,866; expert_compute 0,667–0,750; attention 0,952–0,973. Decode trung vị 10,73 so với 8,24 tok/s; file load giảm 30–39%; upload 1,8GB một lần. Mặc định chưa đổi; i7 chạy cùng protocol.
 

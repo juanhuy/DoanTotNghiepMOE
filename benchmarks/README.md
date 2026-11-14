@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 14/11 (A1): [P1 — tính expert trên GPU i5](experiments/2026-11-14-gpu-compute-i5/README.md). Bật tầng VRAM kèm tính expert ngay trên GPU nhanh hơn cấu hình khuyến nghị (tier off) ở 8/8 so sánh (`compute_faster: true`): total on/off 0,743–0,813, decode trung vị 8,24→10,73 tok/s, 0 lần tải VRAM→RAM, upload 1,8GB một lần. Hai lượt trước hỏng vì môi trường (swap, chạy pin) và được giữ trong cùng hồ sơ. Chỉ trên branch A1, mặc định vẫn off.
+
 Kết quả mới 12/11 (A3): [P2 — số thread i5](experiments/2026-11-12-threads-i5/README.md) với GPU dense, tier off, chat max64: 6/8/12 thread không nhanh hơn 4 thread một cách nhất quán (total 4/N 0,890–1,021) → giữ 4 thread trên i5. Lượt đầu dừng do RAM bị app khác chiếm, giữ làm hồ sơ.
 
 Kết quả mới 11/11 (i7, tầng VRAM trên checkpoint chung): [P1 — tầng VRAM bật/tắt trên i7](experiments/2026-11-11-gpu-tier-i7-r2/README.md) RTX 5060 Laptop (7,53 GiB VRAM, pool 845–858/1024 expert ≈ 83%): Phép B chat/decode max 64 tắt nhanh hơn 8/8 (`off_faster: True`, total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s; upload 33–41 GiB/request); Phép A prefill max 1 không nhất quán (`off_faster: False, on_faster: False`, on thắng 1/4 ở cặp 0 turn 2 `0,857×`, off thắng 3/4 `1,186–1,330×`). Mặc định chưa đổi.
@@ -61,6 +63,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 | [Kiểm chức năng model thật](experiments/2026-10-22-stage1-validation/README.md) | Smoke chức năng và giới hạn kiểm chất lượng; chưa nghiệm thu baseline |
 | [RAM i5 08/11](experiments/2026-11-08-ram-budget-i5/README.md) | RSS thực khác cache budget; chưa bảo đảm plateau/hard-cap |
 | [Allocator i5 08/11](experiments/2026-11-08-allocator-i5/README.md) | Bằng chứng giữ vùng đã free, thu hẹp giả thuyết leak lớn |
+| [Tính expert trên GPU A1 i5 14/11](experiments/2026-11-14-gpu-compute-i5/README.md) | Tầng VRAM + tính expert trên GPU nhanh hơn tier off 8/8 (total 0,743–0,813, decode 8,24→10,73 tok/s), 0 VRAM download, upload 1,8GB một lần; hai lượt hỏng do môi trường giữ cùng hồ sơ |
 | [Chat/decode tầng VRAM S5 10/11](experiments/2026-11-10-gpu-tier-chat-i5/README.md) | Chat nhiều lượt max64, GPU dense: tắt tầng VRAM expert total1,39–1,87× ở8/8, decode trung vị3,13→5,53tok/s; upload33–41GiB/request |
 | [Prefetch theo router S4 10/11](experiments/2026-11-10-prefill-prefetch-i5/README.md) | Prefill prefetch on/off không nhất quán (phủ13–15% lần nạp); lookahead decode gate đủ điều kiện0,066% ở cache64; cơ chế đúng chức năng, lợi ích chưa chứng minh |
 | [Tầng VRAM expert bật/tắt 10/11](experiments/2026-11-10-gpu-expert-tier-i5/README.md) | GPU dense bật hai phía: tắt tầng VRAM expert giảm TTFT17–31% ở4/4; upload ~5,3GiB/request là chi phí chính; mặc định chưa đổi |
@@ -90,7 +93,6 @@ Không đọc mặc định khi hỏi tiến độ hoặc viết phần kết qu
 | Hồ sơ | Vai trò lưu trữ |
 | --- | --- |
 | [Vận hành i7 kỳ 1](experiments/2026-10-23-phase1-i7/README.md) | Lịch sử kỳ 1 trên **model khác** (config `272998dd…`); không trích cho báo cáo mới. Đọc [đính chính](../baocao/README.md) nếu cần |
-| [GPU expert compute A1 i5, hai lượt hỏng 12–14/11](experiments/2026-11-14-gpu-compute-i5/README.md) | Lượt 1 engine bị swap; lượt 2 chạy bằng pin, GPU bị bóp giữa chừng nên rule không dùng được. Căn cứ cho power guard (AC + GPU không throttle) trong preflight; chưa là kết quả A1 |
 | [Lookahead 03/11](experiments/2026-11-03-lookahead-i5/README.md) | Lượt dừng sớm, chưa có đối chứng hiệu năng |
 | [INT8/INT4 và routing từ Huy](experiments/2026-11-03-quantization-tradeoff/README.md) | Dữ liệu tiếp nhận thiếu provenance; chưa là bằng chứng chuẩn hóa |
 | [Chuỗi RAM 04/11](experiments/2026-11-04-ram-sequence-i5/README.md) | Tái hiện pressure trước các bước chẩn đoán sau |
