@@ -167,6 +167,8 @@ Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng
 
 ## Nhiệm vụ i7: số thread CPU A3 (giao 12/11/2026)
 
+**Đã xong 13/11** (hồ sơ `2026-11-13-threads-i7`, tích hợp main 14/11): `recommended_threads: 4`.
+
 Protocol `threads-chat-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#số-thread-cpu-theo-máy-a3-threads-chat-v1-1211). i7 chạy độc lập với i5, trên checkpoint chung (`models/olmoe-i5`, hash 16/16). Tập thread i7 là `4,8,16,24` (palindrome, 8 process, 64 request, khoảng 15–25 phút).
 
 1. `git switch main && git pull`, `git status --short` rỗng; build release và `python3 tools/check.py` PASS.

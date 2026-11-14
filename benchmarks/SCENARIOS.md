@@ -582,3 +582,5 @@ python3 tools/run_benchmark.py --testbed i5 --thread-sweep-model --gpu auto \
 ```
 
 **Kết quả i5 12/11:** [hồ sơ P2](experiments/2026-11-12-threads-i5/README.md) run 20261112T050426.127103Z-threads-d2fd…, HEAD 455bfea sạch, 64/64 completed, text/usage/5 work counter khớp. Không N nào nhanh hơn hay chậm hơn 4 thread ở cả 8 so sánh (total 4/N: N6 0,954–1,021, N8 0,927–1,009, N12 0,890–1,001) → `recommended_threads: 4`. Lượt đầu 20261112T042107… dừng ở block0 do engine bị swap 146MiB khi app khác chiếm RAM; giữ trong hồ sơ, chạy lại một lần sau khi đóng app.
+
+**Kết quả i7 13/11:** [hồ sơ P2](experiments/2026-11-13-threads-i7/README.md) run 20261113T152744.003149Z-threads-e8fe…, HEAD 16835a3 sạch, binary 5b091a4d…, checkpoint chung 16/16 hash. 64/64 completed, text/usage/5 work counter khớp. Không N nào đạt rule (total 4/N: N8 0,870–0,995, N16 0,871–0,980, N24 0,777–1,004; decode trung vị 7,72/7,21/7,03/7,02 tok/s) → `recommended_threads: 4`. Lượt đầu 20261113T151932… dừng ở block3 do engine bị swap 250MiB khi Chrome mở lại; giữ trong hồ sơ.

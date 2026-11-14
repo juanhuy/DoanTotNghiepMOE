@@ -3936,7 +3936,11 @@ Kết luận và bước tiếp theo:
   - 16 threads: decode tok/s trung vị 7,03; total trung vị 11617 ms; total 4/N 0,871–0,980; decode 4/N 0,895–0,979; expert_compute 4/N 0,867–0,992.
   - 24 threads: decode tok/s trung vị 7,02; total trung vị 11755 ms; total 4/N 0,777–1,004; decode 4/N 0,867–1,032; expert_compute 4/N 0,711–1,001.
   - Khuyến nghị: `recommended_threads: 4`. Đồng thuận với i5: việc tăng số thread CPU không tăng tốc độ decode (nghẽn memory bandwidth ở batch size 1).
-- Tài nguyên: RSS max 3416,0–3431,4 MiB, VmSwap 0KiB ở cả 8 block, MemAvailable min > 9,5 GiB.
+- Tài nguyên: RSS max 3416,0–3431,4 MiB, VmSwap 0KiB ở cả 8 block, MemAvailable min 7485–7599 MiB (đính chính khi tích hợp 14/11; bản đầu ghi > 9,5 GiB).
 - Đóng gói: Hồ sơ P2 `benchmarks/experiments/2026-11-13-threads-i7/` (run/, attempt1-stopped/, preflight/nvidia-smi hai lượt, khóa 154 file `CHECKSUMS.sha256` không gồm README). Cập nhật `benchmarks/README.md` (30 hồ sơ). Cấu hình khuyến nghị vận hành cho cả hai testbed i5 và i7 thống nhất giữ 4 thread CPU Rayon.
 
+## 2026-11-14 — Tích hợp A3 i7 vào main
 
+- Review branch `work/i7-threads` (4c001bf, fast-forward từ 16835a3). Kiểm: `sha256sum -c` 154/154 OK; run 20261113T152744…-threads-e8fe… completed, HEAD 16835a3 git_dirty false ở 8 block, binary 5b091a4d… thống nhất; checkpoint 16/16 hash khớp `olmoe-int8-i5.sha256` ở cả 8 block; số per_threads/comparisons trong README khớp result.json (recommended 4; total 4/N N8 0,870–0,995, N16 0,871–0,980, N24 0,777–1,004).
+- Đính chính khi tích hợp: MemAvailable min thực là 7485–7599MiB (README/PROGRESS ghi > 9,5GiB); diễn giải về đồng bộ Rayon được ghi lại là giả thuyết chưa có profiler. Raw không đổi.
+- Thêm kết quả i7 vào SCENARIOS và EVIDENCE_MATRIX; đánh dấu nhiệm vụ A3 i7 đã xong trong WORKFLOWS. Hai máy thống nhất cấu hình vận hành: GPU auto, tier off, 4 thread.

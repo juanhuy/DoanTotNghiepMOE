@@ -40,12 +40,12 @@ COMPLETED 64/64. Text/usage/finish và 5 work counter khớp giữa mọi block.
 
 - Kết quả trên i7 hoàn toàn đồng thuận với i5: việc tăng số thread CPU từ 4 lên 8, 16 hay 24 **không** cải thiện tốc độ decode mà có xu hướng giảm nhẹ (decode tok/s trung vị giảm từ 7,72 xuống 7,21, 7,03, 7,02; latency tăng từ 10,8s lên 11,4s, 11,6s, 11,8s).
 - Không có bất kỳ cấu hình N nào đạt ngưỡng nhanh hơn 5% (tỉ số 4/N ≥ 1,05) ở cả 8 cặp so sánh (`faster_than_4: false`).
-- Điều này củng cố giả thuyết: ở batch size 1 (sequential token generation), SwiGLU INT8 inference bị nghẽn bởi memory bandwidth (nạp trọng số expert vào cache CPU/RAM) hơn là compute core; việc phân chia trên nhiều luồng (đặc biệt khi vượt qua số P-cores sang E-cores hoặc hyperthreads trên kiến trúc lai) chỉ làm tăng chi phí đồng bộ hóa/cache thrashing của Rayon.
+- Điều này củng cố giả thuyết: ở batch size 1 (sequential token generation), SwiGLU INT8 inference bị nghẽn bởi memory bandwidth (nạp trọng số expert vào cache CPU/RAM) hơn là compute core; việc chia thêm luồng (nhất là khi vượt số P-core sang E-core hoặc hyperthread trên kiến trúc lai) có thể làm tăng chi phí đồng bộ hóa của Rayon. Chưa có profiler nên đây là giả thuyết, không phải kết luận nhân quả (ghi chú khi tích hợp 14/11).
 - Do đó, cấu hình khuyến nghị vận hành cho cả hai testbed i5 và i7 thống nhất giữ **4 thread CPU**.
 
 ### Tài nguyên
 
-RSS max 3416,0–3431,4MiB ở mọi block, VmSwap 0KiB ở cả 8 block, MemAvailable min luôn > 9,5GiB.
+RSS max 3416,0–3431,4MiB ở mọi block, VmSwap 0KiB ở cả 8 block, MemAvailable min 7485–7599MiB (đính chính khi tích hợp 14/11: bản đầu ghi "> 9,5GiB", không khớp memory.jsonl).
 
 ## Kết luận và giới hạn
 
