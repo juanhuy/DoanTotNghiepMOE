@@ -3997,4 +3997,5 @@ Kết luận và bước tiếp theo:
   - Có upload 5775MiB/block on ở turn0–3 để lấp pool (mục cũ chỉ nêu turn4–7 là 0).
   - Câu "nút thắt không nằm ở capacity" là quá mức: pool i7 chứa 93,75% expert, nên lượt này không tách được lợi ích do chỗ chứa và do chỗ tính.
 - Merge `--no-ff` nhánh i7 vào main. Cập nhật mục lục benchmarks, SCENARIOS, EVIDENCE_MATRIX (thêm dòng i7, bỏ "chưa i7" ở dòng i5), WORKFLOWS (đánh dấu nhiệm vụ đã xong), PLAN, AGENTS. Kiểm tra: `python3 tools/check.py` PASS (tooling/tài liệu; không chạy Rust/CUDA vì không đổi code).
-- Trạng thái: A1 đạt rule trên cả hai máy. Mặc định code `MOE_GPU_EXPERT_COMPUTE` vẫn off. Đổi khuyến nghị vận hành sang tier on + compute on cần owner quyết định. A1b (heat) vẫn ở nhánh `work/a1b-vram-heat-admission`, chưa đạt rule, chưa giao cho i7.
+- Trạng thái: A1 đạt rule trên cả hai máy. Mặc định code `MOE_GPU_EXPERT_COMPUTE` vẫn off.
+- Owner chốt 15/11: cấu hình khuyến nghị vận hành/demo hai máy đổi từ `MOE_GPU_EXPERT_TIER=off` sang `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on` (cache 64MiB/layer, victim, batch prefill off, 4 thread). Phạm vi đã đo: chat mixed max64; chưa đo prefill dài. Cập nhật WORKFLOWS/PLAN. Đã push main. A1b (heat) vẫn ở nhánh `work/a1b-vram-heat-admission`, chưa đạt rule, chưa giao cho i7.

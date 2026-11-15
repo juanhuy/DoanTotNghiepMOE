@@ -163,7 +163,7 @@ Chạy `--dry-run` trước mỗi lệnh để xem protocol. Harness tự dừng
 
 **Kết quả 11/11 ([P1 i7](../benchmarks/experiments/2026-11-11-gpu-tier-i7-r2/README.md), checkpoint chung khớp 16/16 hash ở cả 8 block):** pool i7 845–858/1024 expert (83%); A prefill không nhất quán (bật thắng 1/4), B chat/decode tắt nhanh hơn 8/8 (total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s). Theo bảng trên: dòng "không nhất quán", **giữ mặc định on trong code**. Không phép nào trên hai máy cho thấy bật thắng một cách nhất quán.
 
-**Cấu hình khuyến nghị cho cả i5 và i7 (chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=off`, cache64MiB/layer, victim, batch prefill off. Áp dụng cho demo/vận hành trong phạm vi đã đo (CPU4 threads là cấu hình protocol, không phải tối ưu của i7).
+**Cấu hình khuyến nghị cho cả i5 và i7 (từ 15/11, chưa phải mặc định code):** `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on`, cache64MiB/layer, victim, batch prefill off. Căn cứ: A1 đạt `compute_faster` 8/8 trên cả i5 và i7 (P1 `2026-11-14-gpu-compute-i5`, `2026-11-14-gpu-compute-i7`); chỉ đã đo chat mixed max64, chưa đo prefill dài. Cần NVRTC biên dịch được kernel, nếu không engine tự quay về CPU (kiểm `gpu_expert_compute_enabled` trong status). Cấu hình cũ (`MOE_GPU_EXPERT_TIER=off`) áp dụng cho các hồ sơ trước 15/11. Áp dụng cho demo/vận hành trong phạm vi đã đo (CPU4 threads là cấu hình protocol, không phải tối ưu của i7).
 
 ## Nhiệm vụ i7: số thread CPU A3 (giao 12/11/2026)
 
