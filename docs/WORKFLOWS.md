@@ -185,6 +185,8 @@ python3 tools/run_benchmark.py --testbed i7 --thread-sweep-model --gpu auto \
 
 ## Nhiệm vụ i7: tính expert trên GPU A1 (giao 14/11/2026)
 
+**Đã xong 14/11** ([P1](../benchmarks/experiments/2026-11-14-gpu-compute-i7/README.md), `compute_faster: true` 8/8; tích hợp main 15/11 kèm ghi chú về baseline off). Các bước dưới đây giữ lại để tái lập. Chưa giao việc mới cho i7.
+
 Protocol `gpu-compute-chat-v1` (có power guard) trong [SCENARIOS](../benchmarks/SCENARIOS.md#tính-expert-trên-gpu-a1-gpu-compute-chat-v1-1211). i5 đã có kết quả `compute_faster: true` 8/8 ([P1](../benchmarks/experiments/2026-11-14-gpu-compute-i5/README.md)). i7 chạy độc lập trên checkpoint chung (`models/olmoe-i5`); pool VRAM i7 lớn hơn (khoảng 845 slot), không suy kết quả i5 sang i7. ABBA 4 process, 32 request, khoảng 10 phút.
 
 1. `git switch main && git pull`, `git status --short` rỗng. Build release, rồi `python3 tools/check.py --rust --release` PASS.

@@ -3987,3 +3987,14 @@ Kết luận và bước tiếp theo:
   - Warmup cùng chiều: total on/off 0,094–0,370.
 - Kết luận: Khẳng định nút thắt trước đây của tầng VRAM không nằm ở PCIe bandwidth hay capacity mà nằm ở vị trí thực thi tính toán. Khi chuyển sang tính trực tiếp trên GPU qua NVRTC INT8 SwiGLU kernel (A1), tầng VRAM phát huy sức mạnh vượt trội (>10× throughput).
 - Đóng gói hồ sơ `benchmarks/experiments/2026-11-14-gpu-compute-i7/` (P1, 64 file được khóa bằng CHECKSUMS.sha256).
+
+## 2026-11-15 — Tích hợp kết quả A1 i7 vào main, kèm đính chính
+
+- Soát nhánh `work/i7-gpu-compute` (28a8cde): `sha256sum -c` khớp 64 file; HEAD 771ca28 sạch, checkpoint chung; cuda-test 15/15 ok, có dòng EXECUTED, không SKIPPED; text khớp giữa các block; on có 0 VRAM download và pool 934→960 slot. Rule `compute_faster: true` 8/8 được giữ.
+- Đính chính (raw không đổi, ghi thêm mục "Ghi chú khi tích hợp" trong README hồ sơ):
+  - RAM i7 là ~14,8GiB (`MemTotal` 15.537.172 KiB), không phải 32GB như mục 14/11 ở trên ghi.
+  - Baseline off yếu bất thường: phía off đọc file expert 3,09–3,77 GB/s ở turn4–7, so với 6,10–7,65 GB/s (A3 i7, tier off) và 10,89–12,12 GB/s (r2 i7, off). Số file load không đổi (5532–6737, trùng i5), nên `expert_io_ms` phía off phình theo. Trước lượt, máy đang dùng ~842MiB swap; `Cached` 6,7–8,3GiB. Giả thuyết là page cache không giữ đủ checkpoint, chưa đo trực tiếp. Chiều kết quả đáng tin; tỉ số 0,086–0,124 và mức "~10,9×" không trích như mức điển hình của i7.
+  - Có upload 5775MiB/block on ở turn0–3 để lấp pool (mục cũ chỉ nêu turn4–7 là 0).
+  - Câu "nút thắt không nằm ở capacity" là quá mức: pool i7 chứa 93,75% expert, nên lượt này không tách được lợi ích do chỗ chứa và do chỗ tính.
+- Merge `--no-ff` nhánh i7 vào main. Cập nhật mục lục benchmarks, SCENARIOS, EVIDENCE_MATRIX (thêm dòng i7, bỏ "chưa i7" ở dòng i5), WORKFLOWS (đánh dấu nhiệm vụ đã xong), PLAN, AGENTS. Kiểm tra: `python3 tools/check.py` PASS (tooling/tài liệu; không chạy Rust/CUDA vì không đổi code).
+- Trạng thái: A1 đạt rule trên cả hai máy. Mặc định code `MOE_GPU_EXPERT_COMPUTE` vẫn off. Đổi khuyến nghị vận hành sang tier on + compute on cần owner quyết định. A1b (heat) vẫn ở nhánh `work/a1b-vram-heat-admission`, chưa đạt rule, chưa giao cho i7.

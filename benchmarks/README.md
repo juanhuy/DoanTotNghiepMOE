@@ -1,6 +1,6 @@
 # Benchmark của MoE-TierEngine
 
-Kết quả mới 14/11 (A1 i7): [P1 — tính expert trên GPU i7](experiments/2026-11-14-gpu-compute-i7/README.md). Bật tầng VRAM kèm tính expert trên GPU (pool 960/1024 expert = 93,75%) nhanh hơn tier off ở 8/8 so sánh (`compute_faster: true`): total on/off 0,086–0,124 (nhanh hơn 8,1–11,6×), decode trung vị tăng từ 4,64 lên 50,67 tok/s (~10,9×), 0 lần tải VRAM→RAM, file loads giảm từ 5532–6737 xuống 0–105. Lượt 1 bị swap do Chrome được giữ làm hồ sơ.
+Kết quả mới 14/11 (A1 i7): [P1 — tính expert trên GPU i7](experiments/2026-11-14-gpu-compute-i7/README.md). Bật tầng VRAM kèm tính expert trên GPU (pool 960/1024 expert = 93,75%) nhanh hơn tier off ở 8/8 so sánh (`compute_faster: true`): total on/off 0,086–0,124, decode trung vị 4,64→50,67 tok/s, 0 lần tải VRAM→RAM, file loads giảm từ 5532–6737 xuống 0–105. **Độ lớn tỉ số không đại diện cho i7:** phía off đọc file chỉ 3,1–3,8 GB/s, so với 6,1–12,1 GB/s ở A3/r2 i7 (ghi chú tích hợp trong hồ sơ). Lượt 1 bị swap do Chrome, giữ làm hồ sơ.
 
 Kết quả mới 14/11 (A1): [P1 — tính expert trên GPU i5](experiments/2026-11-14-gpu-compute-i5/README.md). Bật tầng VRAM kèm tính expert ngay trên GPU nhanh hơn cấu hình khuyến nghị (tier off) ở 8/8 so sánh (`compute_faster: true`): total on/off 0,743–0,813, decode trung vị 8,24→10,73 tok/s, 0 lần tải VRAM→RAM, upload 1,8GB một lần. Hai lượt trước hỏng vì môi trường (swap, chạy pin) và được giữ trong cùng hồ sơ. Chỉ trên branch A1, mặc định vẫn off.
 
@@ -61,7 +61,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 
 | Hồ sơ | Dùng cho câu hỏi nào? |
 | --- | --- |
-| [Tính expert trên GPU A1 i7 14/11](experiments/2026-11-14-gpu-compute-i7/README.md) | RTX 5060 Laptop (pool 960/1024 = 93,75%): tính expert trên GPU nhanh hơn tier off 8/8 (`compute_faster: true`), total on/off 0,086–0,124, decode trung vị 4,64→50,67 tok/s; chứng minh triệt để lợi ích tầng VRAM khi tính tại chỗ |
+| [Tính expert trên GPU A1 i7 14/11](experiments/2026-11-14-gpu-compute-i7/README.md) | RTX 5060 Laptop (pool 960/1024 = 93,75%): tính expert trên GPU nhanh hơn tier off 8/8 (`compute_faster: true`), total on/off 0,086–0,124, decode trung vị 4,64→50,67 tok/s; baseline off đọc file chậm bất thường (3,1–3,8 GB/s), chỉ trích chiều kết quả, không trích độ lớn như mức điển hình |
 | [Tầng VRAM expert bật/tắt trên i7 11/11](experiments/2026-11-11-gpu-tier-i7-r2/README.md) | Cùng checkpoint chung với i5 trên RTX 5060 Laptop (pool 845–858/1024 expert): chat/decode max64 tắt nhanh hơn 8/8 (`off_faster: True`, total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s); prefill max1 không nhất quán (`on` thắng 1/4, `off` thắng 3/4) |
 | [Inclusive/victim](experiments/2026-10-22-web-session-i5-081202/README.md) | Đánh đổi cách bố trí cache; số mẫu nhỏ |
 | [KV prefix và dispatch](experiments/2026-10-22-prefill-i5/README.md) | Lợi ích tái sử dụng tiền tố trong workload hẹp; dispatch nhóm bị loại |

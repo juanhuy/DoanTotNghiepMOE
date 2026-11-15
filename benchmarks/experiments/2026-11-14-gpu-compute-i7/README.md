@@ -48,6 +48,15 @@ Warmup (loại) cùng chiều: total on/off 0,094–0,370. Hai block cùng mode 
 - Tốc độ giải mã decode tăng vọt từ **4,64 tok/s lên 50,67 tok/s (tăng gấp ~10,9 lần)**, và total latency giảm từ 15,3–18,0s xuống chỉ còn 1,34–2,24s (tỉ số on/off 0,086–0,124).
 - Kết quả này củng cố mạnh mẽ kết luận từ i5: nút thắt không phải là nơi lưu trữ mà là nơi thực thi tính toán. Khi tính trực tiếp trên GPU, tầng VRAM phát huy hiệu quả tối đa.
 
+## Ghi chú khi tích hợp (15/11, owner i5)
+
+Raw không đổi; checksum 64 file khớp. Rule `compute_faster: true` 8/8 giữ nguyên. Các điểm dưới đây đính chính phần diễn giải ở trên:
+
+- **Baseline off trên i7 yếu bất thường, nên độ lớn ~10× không đại diện cho i7.** Tốc độ đọc file expert phía off (`expert_file_bytes_read / expert_file_read_ms`, turn4–7) chỉ đạt **3,09–3,77 GB/s**, so với 6,10–7,65 GB/s ở mọi block tier off của A3 i7 (13/11) và 10,89–12,12 GB/s ở block off của r2 i7 (11/11). Cùng số file load (5532–6737/request, trùng i5 vì cùng checkpoint và routing), nên `expert_io_ms` phía off (~11,7s) bị phóng to theo. Trước lượt, máy đã dùng ~842MiB swap (sau lượt 1 bị Chrome chiếm RAM); `Cached` hệ thống trong block off chỉ 6,7–8,3GiB. Giả thuyết là page cache không còn giữ đủ checkpoint nên một phần lần đọc đi xuống NVMe, nhưng chưa đo trực tiếp. Phía on hầu như không đọc file nên ít bị ảnh hưởng. Vì vậy chiều kết quả (on nhanh hơn) đáng tin, còn tỉ số 0,086–0,124 và 4,64→50,67 tok/s là của riêng lượt này, không trích như mức tăng điển hình của i7.
+- **RAM i7 là ~14,8GiB** (`MemTotal` 15.537.172 KiB trong memory.jsonl), không phải 32GB như PROGRESS của branch ghi.
+- **Có upload VRAM khi lấp pool:** mỗi block on upload 5775MiB ở turn0–3 (5618MiB ở request đầu), rồi 0 ở turn4–7. Pool đạt 934 slot sau request đầu và 960 slot từ turn sau đó.
+- Câu "nút thắt không nằm ở capacity" là quá mức. Ở i7, pool chứa 93,75% expert nên lợi ích đến từ cả hai yếu tố: chỗ chứa đủ lớn để gần như bỏ I/O file, và tính ngay trên GPU để bỏ download VRAM→RAM. Lượt này không tách riêng được hai yếu tố đó.
+
 ## Giới hạn
 
 Một lượt, một máy (i7, RTX 5060 Laptop GPU 8GB, pool 960 slot), workload mixed max64, CPU4, cache 64MiB/layer. Kernel GPU dùng NVRTC compute_75, kiểm logits so với CPU <1e-4 ở fixture; không có logits parity HTTP trên model 7B (chỉ text/usage khớp). Chưa đo prefill dài, ngân sách cache khác. Mặc định `MOE_GPU_EXPERT_COMPUTE` trong code vẫn off theo quy tắc.
