@@ -3999,3 +3999,15 @@ Kết luận và bước tiếp theo:
 - Merge `--no-ff` nhánh i7 vào main. Cập nhật mục lục benchmarks, SCENARIOS, EVIDENCE_MATRIX (thêm dòng i7, bỏ "chưa i7" ở dòng i5), WORKFLOWS (đánh dấu nhiệm vụ đã xong), PLAN, AGENTS. Kiểm tra: `python3 tools/check.py` PASS (tooling/tài liệu; không chạy Rust/CUDA vì không đổi code).
 - Trạng thái: A1 đạt rule trên cả hai máy. Mặc định code `MOE_GPU_EXPERT_COMPUTE` vẫn off.
 - Owner chốt 15/11: cấu hình khuyến nghị vận hành/demo hai máy đổi từ `MOE_GPU_EXPERT_TIER=off` sang `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on` (cache 64MiB/layer, victim, batch prefill off, 4 thread). Phạm vi đã đo: chat mixed max64; chưa đo prefill dài. Cập nhật WORKFLOWS/PLAN. Đã push main. A1b (heat) vẫn ở nhánh `work/a1b-vram-heat-admission`, chưa đạt rule, chưa giao cho i7.
+
+## 2026-11-15 — Protocol giới hạn RAM của engine (ram-limit-chat-v1), chốt trước đo
+
+- Mục đích: kiểm tầng VRAM–RAM–SSD khi checkpoint không vừa RAM engine được dùng. Đây là thay thế rẻ cho việc chuyển sang model 16B: các model 16B (DeepSeek-V2-Lite, Moonlight) cần MLA, shared expert, converter và tokenizer mới, không kịp trước báo cáo 24/11. Mọi lượt đo trước đều có page cache giữ cả checkpoint 7GB.
+- Nhánh `work/ram-limit-tier` từ main 01c11d0. Chỉ sửa tooling, không đổi engine:
+  - `check_ram_stability.py --memory-max-mib`: engine chạy trong scope `systemd-run --user --scope` (MemoryMax, MemorySwapMax=0). Trước khởi động thì xóa checkpoint khỏi page cache (`posix_fadvise`) và kiểm bằng `fincore` (≤64MiB). Sau khởi động thì đọc lại `memory.max`/`swap.max` của cgroup engine. Cuối block tóm tắt đỉnh `memory.current`/anon/file và `oom_kill` của scope.
+  - `run_benchmark.py --memory-max-mib` chỉ hợp lệ với `--gpu-compute-model-ab`, cho ra kind `ram_limit_model_ab`.
+  - Sửa lỗi phát hiện ở smoke: vòng chờ scope ban đầu dừng ngay vì terminal (kitty) cũng chạy trong `.scope`. Giờ vòng chờ đợi tới khi cgroup của engine khác cgroup của harness.
+- Kiểm cơ chế trên i5 (systemd 262, bộ điều khiển memory đã được giao quyền): file 1,8GB trong scope 512M đọc 12 GB/s nếu không xóa cache trước, và 1,1–1,2 GB/s ở mọi lần đọc nếu đã xóa.
+- Test: thêm 2 test hồi quy (bọc lệnh, kiểm xóa cache, tóm tắt đỉnh/OOM, dry-run protocol, từ chối khi dùng với protocol khác). `tests test_benchmark_gate_up_model` 26/26 OK; `python3 tools/check.py` PASS. Rust không đổi; `cargo build --release --locked` OK.
+- Smoke khám phá trên model thật (`--allow-dirty`, Chrome mở, không ABBA, không phải bằng chứng): trần 5120 off decode 1,6–2,2 tok/s, đọc file 1,16–1,26 GB/s, anon đỉnh 3175MiB, file 2619MiB, không OOM; on 2,4–3,3 tok/s. Trần 4096 off 1,7 tok/s, không OOM.
+- Chốt protocol trong SCENARIOS: hai mức 8192 và 5120MiB, mỗi mức một ABBA A1, rule như A1, OOM là kết quả. Chưa đo chính thức.

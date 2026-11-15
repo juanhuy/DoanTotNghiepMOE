@@ -67,6 +67,9 @@ def parser():
                      help="CPU prefill preload on vs off (demand-only) ABBA on long-prefill, max-tokens1, batch off")
     cli.add_argument("--gpu-compute-model-ab", action="store_true",
                      help="A1 gpu-compute-chat-v1: tier on + GPU expert compute vs tier off, mixed chat max64, GPU auto")
+    cli.add_argument("--memory-max-mib", type=positive, default=None,
+                     help="ram-limit-chat-v1 with --gpu-compute-model-ab: engine-only cgroup memory.max (page cache included), "
+                          "no swap; checkpoint evicted from page cache before each block")
     cli.add_argument("--thread-sweep-model", action="store_true",
                      help="A3 threads-chat-v1: GPU auto, tier off, mixed chat max64, palindrome over the testbed thread set")
     cli.add_argument("--gpu-tier-model-ab", action="store_true",
