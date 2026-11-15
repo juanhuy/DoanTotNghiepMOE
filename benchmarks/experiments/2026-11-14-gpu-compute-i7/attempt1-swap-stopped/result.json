@@ -1,0 +1,146 @@
+{
+  "kind": "gpu_compute_model_ab",
+  "testbed": "i7",
+  "git_commit": "771ca289ac455c19889d0f1fcd790ab2dcf8d185",
+  "git_dirty": false,
+  "modes": [
+    "on",
+    "off",
+    "off",
+    "on"
+  ],
+  "model_dir": "/home/nhat-huy/DOANTN/MoE/models/olmoe-i5",
+  "requests_per_block": 8,
+  "total_requests": 32,
+  "threads": 4,
+  "cache_mib_per_layer": 64,
+  "context": 512,
+  "max_tokens": 64,
+  "workload": "mixed-v1",
+  "measured_turns": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "warmup_turns": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "expected_prompt_tokens_by_tokenizer": null,
+  "environment_pins": {
+    "MOE_TEMPERATURE": "0",
+    "MOE_TOP_P": "1",
+    "MOE_TOP_K": "0",
+    "MOE_REPETITION_PENALTY": "1",
+    "MOE_KV_FP8": "0",
+    "MOE_HOT_PIN_COUNT": "0",
+    "MOE_PILOT_SMOOTH": "0.35"
+  },
+  "removed_environment_keys": [
+    "MOE_SESSION_DIR",
+    "ROUTE_TRACE",
+    "MOE_ROUTE_TRACE",
+    "MOE_USAGE_PATH",
+    "MOE_PILOT_CONF_LIMIT"
+  ],
+  "guards_mib": {
+    "rss": 5120,
+    "headroom": 1024,
+    "watchdog_rss": 5632,
+    "available": 1536,
+    "process_swap": 128
+  },
+  "notes": [
+    "four fresh processes, fixed ABBA, two pairs only; not a population speedup estimate",
+    "checkpoint hashing warms OS cache; compare same binary with one selector changed",
+    "HTTP text/usage/finish parity plus expert workload; no HTTP logits/token-ID parity"
+  ],
+  "protocol": "gpu-compute-chat-v1",
+  "power_guard": "AC online before and after every block (sysfs); GPU throttle reasons recorded",
+  "run_id": "20261114T123814.488508Z-gpu-compute-model-b2790d5d00504e97a3ab37b0bd4ce4ef",
+  "status": "failed",
+  "blocks": [
+    {
+      "mode": "on",
+      "path": "block-0-on/i7/20261114T123814.640710Z-ram-7e3d7764f7b948afbb999cc51ab15387/result.json",
+      "run_id": "20261114T123814.640710Z-ram-7e3d7764f7b948afbb999cc51ab15387",
+      "status": "watchdog_stopped"
+    }
+  ],
+  "power_checks": [
+    {
+      "block": 0,
+      "when": "before",
+      "on_ac": true,
+      "supplies": {
+        "ADP1": {
+          "type": "Mains",
+          "online": "1",
+          "status": null,
+          "capacity": null
+        },
+        "BAT1": {
+          "type": "Battery",
+          "online": null,
+          "status": "Not charging",
+          "capacity": "94"
+        }
+      },
+      "gpu": {
+        "status": "observed",
+        "pstate": "P8",
+        "clock_gr": "180 MHz",
+        "temperature": "54",
+        "power_draw": "4.38 W",
+        "reasons": {
+          "clocks_event_reasons.hw_slowdown": "Not Active",
+          "clocks_event_reasons.hw_thermal_slowdown": "Not Active",
+          "clocks_event_reasons.sw_thermal_slowdown": "Not Active",
+          "clocks_event_reasons.hw_power_brake_slowdown": "Not Active",
+          "clocks_event_reasons.sw_power_cap": "Not Active"
+        },
+        "active_throttle": [],
+        "throttled": false
+      }
+    },
+    {
+      "block": 0,
+      "when": "after",
+      "on_ac": true,
+      "supplies": {
+        "ADP1": {
+          "type": "Mains",
+          "online": "1",
+          "status": null,
+          "capacity": null
+        },
+        "BAT1": {
+          "type": "Battery",
+          "online": null,
+          "status": "Not charging",
+          "capacity": "94"
+        }
+      },
+      "gpu": {
+        "status": "observed",
+        "pstate": "P2",
+        "clock_gr": "1680 MHz",
+        "temperature": "57",
+        "power_draw": "16.34 W",
+        "reasons": {
+          "clocks_event_reasons.hw_slowdown": "Not Active",
+          "clocks_event_reasons.hw_thermal_slowdown": "Not Active",
+          "clocks_event_reasons.sw_thermal_slowdown": "Not Active",
+          "clocks_event_reasons.hw_power_brake_slowdown": "Not Active",
+          "clocks_event_reasons.sw_power_cap": "Not Active"
+        },
+        "active_throttle": [],
+        "throttled": false
+      }
+    }
+  ],
+  "error": "block failed; no further blocks"
+}

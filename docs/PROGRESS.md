@@ -3968,3 +3968,22 @@ Kết luận và bước tiếp theo:
 - Đính chính khi tích hợp: MemAvailable min thực là 7485–7599MiB (README/PROGRESS ghi > 9,5GiB); diễn giải về đồng bộ Rayon được ghi lại là giả thuyết chưa có profiler. Raw không đổi.
 - Thêm kết quả i7 vào SCENARIOS và EVIDENCE_MATRIX; đánh dấu nhiệm vụ A3 i7 đã xong trong WORKFLOWS. Hai máy thống nhất cấu hình vận hành: GPU auto, tier off, 4 thread.
 - Merge nhánh A1 vào main (mặc định `MOE_GPU_EXPERT_COMPUTE` off), giải xung đột tài liệu bằng cách giữ cả hai phía theo thứ tự thời gian; mục lục 31 hồ sơ. Giao i7 nhiệm vụ A1 trong WORKFLOWS (kiểm NVRTC/kernel EXECUTED trước, power guard, branch `work/i7-gpu-compute`); cập nhật PLAN/AGENTS.
+
+## 2026-11-14 — Kết quả A1 trên i7: GPU expert compute nhanh hơn 8/8 (decode 4,64 -> 50,67 tok/s, 10,9x)
+
+- Thực hiện nhiệm vụ A1 trên testbed i7 (RTX 5060 Laptop GPU 8GB, i7-14650HX 16C/24T, 32GB RAM) theo WORKFLOWS.md trên branch riêng `work/i7-gpu-compute` (HEAD 771ca28 sạch, binary 8dc775b2d39bf0808d32f3617b0f38016bf0fb011cd965c6580b7bf96744eabe). Kiểm kernel GPU: 15/15 test PASS, EXECUTED không có SKIPPED (cuda-test.txt). Checkpoint chung `models/olmoe-i5` (khớp 16/16 SHA-256).
+- Lượt 1 (`attempt1-swap-stopped`, run 20261114T123814.488508Z-gpu-compute-model-b2790d5d…): preflight đạt (available ≥9500MiB), nhưng khi block0 (on) vừa nạp xong pool 960 slot thì Chrome tự khởi động lại chiếm RAM, kswapd đẩy VmSwap lên 208MiB vượt ngưỡng watchdog 128MiB ở giây 6,8. Giữ nguyên raw và chạy lại một lần sau khi đóng sạch Chrome theo đúng quy trình.
+- Lượt 2 chính: run 20261114T123957.730046Z-gpu-compute-model-1322346100c8… chạy dưới `systemd-inhibit --what=idle:sleep`. Preflight đạt: available ≥10449MiB, pswpout không đổi [274814, 274814, 274814], on_ac true, GPU không throttle. `power_checks`: AC online, GPU không throttle ở cả 8 điểm trước/sau block. VmSwap = 0 throughout.
+- COMPLETED 32/32 request (ABBA on-off-off-on, 8 request mixed v1/block, max64, CPU4, cache 64MiB/layer). Text/usage/finish khớp giữa các block.
+- **`compute_faster: true`, `compute_slower: false` ở 8/8 so sánh.**
+  - `total_ms` on/off: 0,086–0,124 (nhanh hơn 8,1–11,6×, latency giảm từ ~16,5s xuống ~1,6s).
+  - `decode_ms` on/off: 0,082–0,101 (nhanh hơn 9,9–12,2×).
+  - Decode tok/s trung vị: **50,67 tok/s (on)** so với **4,64 tok/s (off)** — tăng gấp ~10,9×!
+  - `TTFT` on/off: 0,112–0,210 (nhanh hơn 4,8–8,9×).
+  - Expert I/O wait trung vị: giảm từ 11.667 ms xuống 15,3 ms.
+  - Lần đọc file expert/request (turn 4–7): giảm từ 5.532–6.737 lần xuống chỉ còn 0–105 lần.
+  - VRAM Expert Pool: nạp được 960 / 1024 expert (93,75% toàn bộ model) vào VRAM 8GB.
+  - Upload VRAM: 0 MiB ở các turn đo (turn 4–7); download VRAM→RAM: 0 lần ở toàn bộ các block on.
+  - Warmup cùng chiều: total on/off 0,094–0,370.
+- Kết luận: Khẳng định nút thắt trước đây của tầng VRAM không nằm ở PCIe bandwidth hay capacity mà nằm ở vị trí thực thi tính toán. Khi chuyển sang tính trực tiếp trên GPU qua NVRTC INT8 SwiGLU kernel (A1), tầng VRAM phát huy sức mạnh vượt trội (>10× throughput).
+- Đóng gói hồ sơ `benchmarks/experiments/2026-11-14-gpu-compute-i7/` (P1, 64 file được khóa bằng CHECKSUMS.sha256).
