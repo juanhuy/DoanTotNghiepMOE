@@ -3999,3 +3999,31 @@ Kết luận và bước tiếp theo:
 - Merge `--no-ff` nhánh i7 vào main. Cập nhật mục lục benchmarks, SCENARIOS, EVIDENCE_MATRIX (thêm dòng i7, bỏ "chưa i7" ở dòng i5), WORKFLOWS (đánh dấu nhiệm vụ đã xong), PLAN, AGENTS. Kiểm tra: `python3 tools/check.py` PASS (tooling/tài liệu; không chạy Rust/CUDA vì không đổi code).
 - Trạng thái: A1 đạt rule trên cả hai máy. Mặc định code `MOE_GPU_EXPERT_COMPUTE` vẫn off.
 - Owner chốt 15/11: cấu hình khuyến nghị vận hành/demo hai máy đổi từ `MOE_GPU_EXPERT_TIER=off` sang `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on` (cache 64MiB/layer, victim, batch prefill off, 4 thread). Phạm vi đã đo: chat mixed max64; chưa đo prefill dài. Cập nhật WORKFLOWS/PLAN. Đã push main. A1b (heat) vẫn ở nhánh `work/a1b-vram-heat-admission`, chưa đạt rule, chưa giao cho i7.
+
+## 2026-11-15 — Protocol giới hạn RAM của engine (ram-limit-chat-v1), chốt trước đo
+
+- Mục đích: kiểm tầng VRAM–RAM–SSD khi checkpoint không vừa RAM engine được dùng. Đây là thay thế rẻ cho việc chuyển sang model 16B: các model 16B (DeepSeek-V2-Lite, Moonlight) cần MLA, shared expert, converter và tokenizer mới, không kịp trước báo cáo 24/11. Mọi lượt đo trước đều có page cache giữ cả checkpoint 7GB.
+- Nhánh `work/ram-limit-tier` từ main 01c11d0. Chỉ sửa tooling, không đổi engine:
+  - `check_ram_stability.py --memory-max-mib`: engine chạy trong scope `systemd-run --user --scope` (MemoryMax, MemorySwapMax=0). Trước khởi động thì xóa checkpoint khỏi page cache (`posix_fadvise`) và kiểm bằng `fincore` (≤64MiB). Sau khởi động thì đọc lại `memory.max`/`swap.max` của cgroup engine. Cuối block tóm tắt đỉnh `memory.current`/anon/file và `oom_kill` của scope.
+  - `run_benchmark.py --memory-max-mib` chỉ hợp lệ với `--gpu-compute-model-ab`, cho ra kind `ram_limit_model_ab`.
+  - Sửa lỗi phát hiện ở smoke: vòng chờ scope ban đầu dừng ngay vì terminal (kitty) cũng chạy trong `.scope`. Giờ vòng chờ đợi tới khi cgroup của engine khác cgroup của harness.
+- Kiểm cơ chế trên i5 (systemd 262, bộ điều khiển memory đã được giao quyền): file 1,8GB trong scope 512M đọc 12 GB/s nếu không xóa cache trước, và 1,1–1,2 GB/s ở mọi lần đọc nếu đã xóa.
+- Test: thêm 2 test hồi quy (bọc lệnh, kiểm xóa cache, tóm tắt đỉnh/OOM, dry-run protocol, từ chối khi dùng với protocol khác). `tests test_benchmark_gate_up_model` 26/26 OK; `python3 tools/check.py` PASS. Rust không đổi; `cargo build --release --locked` OK.
+- Smoke khám phá trên model thật (`--allow-dirty`, Chrome mở, không ABBA, không phải bằng chứng): trần 5120 off decode 1,6–2,2 tok/s, đọc file 1,16–1,26 GB/s, anon đỉnh 3175MiB, file 2619MiB, không OOM; on 2,4–3,3 tok/s. Trần 4096 off 1,7 tok/s, không OOM.
+- Chốt protocol trong SCENARIOS: hai mức 8192 và 5120MiB, mỗi mức một ABBA A1, rule như A1, OOM là kết quả. Chưa đo chính thức.
+
+## 2026-11-16 — Kết quả giới hạn RAM i5 (ram-limit-chat-v1): trần 5120 `compute_faster` 8/8; trần 8192 không nhất quán
+
+- Chạy đúng một lượt mỗi mức, theo thứ tự 8192 rồi 5120MiB, dưới `systemd-inhibit`, HEAD a752868 sạch, binary 372532cb… Trước khi chạy: đóng Chrome/Slack, preflight eligible (available ≥8658MiB, pswpout 0, AC, GPU không throttle). Run 20261116T083243.802179Z-ram-limit-model-88fd… (8192) và 20261116T084036.395004Z-ram-limit-model-2f69… (5120), tổng khoảng 25 phút.
+- Cả hai COMPLETED 32/32, text/usage/finish khớp, power_checks đạt 16/16, checkpoint còn 0 byte trong page cache sau khi xóa ở 8/8 block, `memory.max` của scope khớp, không OOM, VmSwap 0, on có 0 VRAM download.
+- **5120MiB: `compute_faster: true`.** total on/off 0,389–0,616, decode_ms 0,389–0,599, TTFT 0,381–0,758. Decode trung vị 4,13 (on) so với 2,14 (off) tok/s. Đọc file on 1,61–2,56 / off 1,28–1,71 GB/s. expert_io_ms trung vị on khoảng 11,6–12,0s / off khoảng 27,5–28,0s. Đỉnh scope 5120MiB, anon khoảng 3,3GB.
+- **8192MiB: không nhất quán.** total 0,566–1,057. Cặp 1 cho 0,566–0,833; cặp 0 cho 1,024/1,057/0,831/0,841. Block0 (on) có AnonPages hệ thống 5,6–8,5GiB (block2/3 chỉ 1,5–4,8GiB), scope chỉ đạt đỉnh 6908MiB và đọc file 3,6–5,1 GB/s (block3 đạt 7,5–9,5). Có tiến trình ngoài engine chiếm RAM, chưa xác định là gì. Guard không bị kích, lượt có số đo nên theo protocol không chạy lại.
+- So hồi cứu với A1 không giới hạn (14/11, khác ngày, chỉ mô tả): off 8,24→2,14 tok/s, on 10,73→4,13 tok/s; tỉ số total từ 0,743–0,813 xuống 0,389–0,616. Diễn giải: khi mỗi lần đọc phải xuống SSD, những lần đọc mà VRAM tránh được (30–39%) có giá trị lớn hơn.
+- Đóng gói `benchmarks/experiments/2026-11-16-ram-limit-i5/` (P1, 109 file trong CHECKSUMS, không gồm README). Cập nhật mục lục (33 hồ sơ), SCENARIOS, EVIDENCE_MATRIX, PLAN. `python3 tools/check.py` PASS.
+- Giới hạn: một lượt mỗi mức, chỉ i5; mô phỏng bằng cgroup, không phải model lớn hơn RAM thật; tốc độ đọc là payload engine, không phải I/O thiết bị. Trạng thái: chưa giao cho i7; nhánh `work/ram-limit-tier` chưa push.
+
+## 2026-11-16 — Merge thí nghiệm giới hạn RAM vào main; giao i7
+
+- Merge `--no-ff` nhánh `work/ram-limit-tier` (tooling `--memory-max-mib`, protocol `ram-limit-chat-v1`, hồ sơ P1 `2026-11-16-ram-limit-i5`) vào main và push.
+- Giao i7 [nhiệm vụ giới hạn RAM](WORKFLOWS.md#nhiệm-vụ-i7-giới-hạn-ram-của-engine-giao-16112026): kiểm cgroup memory/`systemd-run --user`/`fincore` trước, kiểm kernel GPU, đóng Chrome/Slack, một lượt mỗi mức (8192 rồi 5120), lưu trên branch `work/i7-ram-limit`. Cập nhật AGENTS/PLAN/WORKFLOWS. `python3 tools/check.py` PASS.
+- Nhánh A1b (`work/a1b-vram-heat-admission`) dừng theo quyết định của owner; giữ local, chưa push hay merge.

@@ -307,6 +307,9 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
     workload = getattr(args, "expert_batch_workload", "kv-switch") or "kv-switch"
     if sum((expert_batch, backend, gpu_tier, prefetch, gpu_compute)) > 1:
         raise ValueError("choose one model A/B selector")
+    memory_max = getattr(args, "memory_max_mib", None)
+    if memory_max is not None and not gpu_compute:
+        raise ValueError("--memory-max-mib is defined only for --gpu-compute-model-ab (ram-limit-chat-v1)")
     if gpu_compute:
         # A1 reuses the S5 chat path: 'on' = tier on + GPU expert compute, 'off' = tier off.
         if workload != "mixed":
@@ -355,11 +358,19 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
     if gpu_compute:
         protocol["protocol"] = "gpu-compute-chat-v1"
         protocol["power_guard"] = "AC online before and after every block (sysfs); GPU throttle reasons recorded"
+    if memory_max is not None:
+        protocol["kind"] = "ram_limit_model_ab"
+        protocol["protocol"] = "ram-limit-chat-v1"
+        protocol["memory_limit"] = {"memory_max_mib": memory_max, "memory_swap_max": 0, "scope": "engine process only",
+                                    "page_cache": "charged to the limit; checkpoint evicted (posix_fadvise) before each block"}
+        protocol["notes"] = protocol["notes"][:1] + [
+            "checkpoint hashed, then evicted from page cache before each block; expert reads beyond the limit hit the SSD",
+            protocol["notes"][2]]
     if args.dry_run:
         print(json.dumps(protocol, indent=2))
         return 0
     now = datetime.datetime.now(datetime.timezone.utc)
-    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-gpu-compute-model-" if gpu_compute else "-prefetch-model-" if prefetch else "-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
+    run_id = now.strftime("%Y%m%dT%H%M%S.%fZ") + ("-ram-limit-model-" if memory_max is not None else "-gpu-compute-model-" if gpu_compute else "-prefetch-model-" if prefetch else "-gpu-tier-model-" if gpu_tier else "-backend-model-" if backend else "-expert-batch-model-" if expert_batch else "-gate-up-model-") + uuid.uuid4().hex
     directory = common.absolute(args.output_root, root) / args.testbed / run_id
     directory.mkdir(parents=True, exist_ok=False)
     record = {**protocol, "run_id": run_id, "status": "failed", "blocks": []}
@@ -389,6 +400,8 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                     argv.extend(["--gpu-expert-tier", mode])
                 if gpu_compute:
                     argv.extend(["--gpu-expert-compute", mode])
+                if memory_max is not None:
+                    argv.extend(["--memory-max-mib", str(memory_max)])
                 if args.allow_dirty:
                     argv.append("--allow-dirty")
                 if gpu_compute:
@@ -402,6 +415,8 @@ def execute(args, root, expert_batch=False, backend=False, gpu_tier=False, prefe
                 current = json.loads(paths[0].read_text())
                 record["blocks"].append({"mode": mode, "path": str(paths[0].relative_to(directory)),
                                          "run_id": current["run_id"], "status": current["status"]})
+                if memory_max is not None:
+                    record["blocks"][-1]["memory_limit"] = current.get("memory_limit")
                 if code:
                     raise ValueError("block failed; no further blocks")
                 if gpu_compute:

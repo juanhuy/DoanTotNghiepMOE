@@ -185,7 +185,7 @@ python3 tools/run_benchmark.py --testbed i7 --thread-sweep-model --gpu auto \
 
 ## Nhiệm vụ i7: tính expert trên GPU A1 (giao 14/11/2026)
 
-**Đã xong 14/11** ([P1](../benchmarks/experiments/2026-11-14-gpu-compute-i7/README.md), `compute_faster: true` 8/8; tích hợp main 15/11 kèm ghi chú về baseline off). Các bước dưới đây giữ lại để tái lập. Chưa giao việc mới cho i7.
+**Đã xong 14/11** ([P1](../benchmarks/experiments/2026-11-14-gpu-compute-i7/README.md), `compute_faster: true` 8/8; tích hợp main 15/11 kèm ghi chú về baseline off). Các bước dưới đây giữ lại để tái lập. Việc tiếp theo của i7: [giới hạn RAM](#nhiệm-vụ-i7-giới-hạn-ram-của-engine-giao-16112026).
 
 Protocol `gpu-compute-chat-v1` (có power guard) trong [SCENARIOS](../benchmarks/SCENARIOS.md#tính-expert-trên-gpu-a1-gpu-compute-chat-v1-1211). i5 đã có kết quả `compute_faster: true` 8/8 ([P1](../benchmarks/experiments/2026-11-14-gpu-compute-i5/README.md)). i7 chạy độc lập trên checkpoint chung (`models/olmoe-i5`); pool VRAM i7 lớn hơn (khoảng 845 slot), không suy kết quả i5 sang i7. ABBA 4 process, 32 request, khoảng 10 phút.
 
@@ -202,6 +202,39 @@ systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
 ```
 
 5. Lưu vào `benchmarks/experiments/<ngày>-gpu-compute-i7/` (run, preflight, nvidia-smi, output test CUDA, `CHECKSUMS.sha256` không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng `work/i7-gpu-compute`. Báo `compute_faster`/`compute_slower`, tỉ số total/decode on/off min–max, decode tok/s trung vị, `expert_gpu_computes`, upload VRAM, số slot pool, `power_checks`. Chỉ chạy lại một lần nếu lượt đầu không có số đo do môi trường (watchdog/rời AC); giữ raw lượt hỏng. Không đổi threads/cache/ngưỡng, không đổi mặc định.
+
+## Nhiệm vụ i7: giới hạn RAM của engine (giao 16/11/2026)
+
+Protocol `ram-limit-chat-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#giới-hạn-ram-của-engine-ram-limit-chat-v1-1511). Engine chạy trong cgroup `memory.max` (tính cả page cache, không swap), và checkpoint bị xóa khỏi page cache trước mỗi block, nên engine phải đọc SSD thật. i5 đã có kết quả ([P1](../benchmarks/experiments/2026-11-16-ram-limit-i5/README.md)): ở trần 5120MiB, `compute_faster` 8/8, decode 2,14→4,13 tok/s; trần 8192 không nhất quán do nhiễu RAM ngoài engine. i7 chạy độc lập trên checkpoint chung; pool VRAM i7 lớn hơn (960 slot), không suy kết quả i5 sang i7. Hai mức, mỗi mức ABBA 4 process, tổng khoảng 25–40 phút. Chỉ đổi tooling Python; engine giống main 01c11d0.
+
+1. `git switch main && git pull`, `git status --short` rỗng. Build release, rồi `python3 tools/check.py` PASS (kèm `--rust --release` nếu binary chưa build từ commit này).
+2. **Kiểm cơ chế giới hạn RAM** (không cần root):
+   - `cat /sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers` phải có `memory`;
+   - `systemd-run --user --scope -p MemoryMax=300M -p MemorySwapMax=0 -- cat /proc/self/cgroup` phải chạy được và in một `run-…scope`;
+   - `which fincore` phải có (gói util-linux).
+
+   Thiếu điều kiện nào thì dừng lại báo người dùng; không chạy bằng sudo, không đổi cấu hình systemd.
+3. Kiểm kernel GPU như A1: `cargo test --locked --release --lib gpu_ -- --nocapture --test-threads=1 2>&1 | grep -E "SKIPPED|test result|gpu_expert_compute"` phải ok, không có `SKIPPED`.
+4. Cắm sạc, tắt tự khóa/tự mờ màn hình, **đóng hẳn Chrome/Slack** (ở A1 i7, Chrome tự mở lại làm hỏng lượt 1; ở i5, áp lực RAM ngoài engine làm nhiễu mức 8192). `python3 tools/preflight_memory.py --output /tmp/i7-preflight-ramlimit.json` phải `eligible: true`; ghi `nvidia-smi`.
+5. Chạy đúng một lượt mỗi mức, theo thứ tự 8192 rồi 5120:
+
+```bash
+for limit in 8192 5120; do
+  systemd-inhibit --what=idle:sleep --why="ram-limit benchmark" \
+    python3 tools/run_benchmark.py --testbed i7 --gpu auto --gpu-compute-model-ab \
+    --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off \
+    --model-dir models/olmoe-i5 --memory-max-mib $limit
+done 2>&1 | tee /tmp/i7-ramlimit-console.log
+```
+
+6. Lưu vào `benchmarks/experiments/<ngày>-ram-limit-i7/` (`limit-8192/`, `limit-5120/`, preflight, nvidia-smi, console, output test CUDA, `CHECKSUMS.sha256` không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng `work/i7-ram-limit`. Báo:
+   - `compute_faster`/`compute_slower` từng mức;
+   - tỉ số total/decode on/off min–max, decode tok/s trung vị;
+   - tốc độ đọc file `expert_file_bytes_read / expert_file_read_ms` turn4–7 từng block;
+   - `memory_limit` từng block (residency sau khi xóa phải ≤64MiB, đỉnh current/anon/file, `oom_kill`), VmSwap, `power_checks`;
+   - nếu một block lệch hẳn so với block cùng mode, ghi `AnonPages`/`MemAvailable` hệ thống trong `memory.jsonl` của block đó.
+
+   Chỉ chạy lại một lần nếu lượt không có số đo do môi trường (watchdog, rời AC). OOM ở mức đã chốt là kết quả, không phải lỗi môi trường. Không đổi mức trần, threads, cache, ngưỡng hay mặc định.
 
 ## Bàn giao điều tra prefill/RAM (08/11/2026)
 

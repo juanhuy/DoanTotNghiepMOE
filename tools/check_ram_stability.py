@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -22,6 +23,72 @@ ROOT = common.WORKSPACE_DIR
 
 def pressure_reason(sample, args):
     return http.memory_pressure_reason(sample, args)
+
+
+# ram-limit-chat-v1 (15/11): run only the engine in a transient systemd user scope with a
+# cgroup v2 memory.max (page cache included) and no swap, after dropping the checkpoint
+# from the OS page cache. Pages cached by another cgroup are not reclaimed by our limit,
+# so eviction is what makes expert reads reach the SSD.
+EVICT_RESIDENT_MAX_BYTES = 64 * 1024**2
+
+
+def checkpoint_files(model):
+    return sorted(p for p in Path(model).rglob('*') if p.is_file())
+
+
+def checkpoint_resident_bytes(model):
+    """Bytes of the checkpoint in the page cache (fincore), or None when fincore is unavailable."""
+    tool = shutil.which('fincore')
+    files = checkpoint_files(model)
+    if tool is None or not files:
+        return None
+    out = subprocess.run([tool, '--bytes', '--raw', '--noheadings', '--output', 'RES', *map(str, files)],
+                         check=True, capture_output=True, text=True).stdout
+    return sum(int(line.split()[0]) for line in out.splitlines() if line.strip())
+
+
+def evict_checkpoint(model):
+    for path in checkpoint_files(model):
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+
+
+def server_command(binary, memory_max_mib):
+    if memory_max_mib is None:
+        return [str(binary)]
+    return ['systemd-run', '--user', '--scope', '--quiet', '--collect',
+            '-p', f'MemoryMax={memory_max_mib}M', '-p', 'MemorySwapMax=0', '--', str(binary)]
+
+
+def prepare_memory_limit(model, memory_max_mib, resident=checkpoint_resident_bytes, evict=evict_checkpoint):
+    if shutil.which('systemd-run') is None:
+        raise RuntimeError('--memory-max-mib needs systemd-run (cgroup v2 user scope)')
+    before = resident(model)
+    evict(model)
+    after = resident(model)
+    if after is None:
+        raise RuntimeError('fincore unavailable; cannot verify checkpoint eviction')
+    if after > EVICT_RESIDENT_MAX_BYTES:
+        raise RuntimeError(f'checkpoint still {after} bytes in page cache after eviction (mapped elsewhere?)')
+    return {'memory_max_mib': memory_max_mib, 'memory_swap_max': 0,
+            'checkpoint_resident_bytes_before_evict': before, 'checkpoint_resident_bytes_after_evict': after}
+
+
+def scope_limit(pid, timeout=5.0):
+    """memory.max/swap.max of the server's own cgroup; waits until systemd-run has moved it into the scope."""
+    own = Path('/proc/self/cgroup').read_text().strip().split('::', 1)[-1]
+    deadline = time.monotonic() + timeout
+    while True:
+        path = Path(f'/proc/{pid}/cgroup').read_text().strip().split('::', 1)[-1]
+        if path != own or time.monotonic() > deadline:
+            break
+        time.sleep(.02)
+    base = Path('/sys/fs/cgroup' + path)
+    return {'cgroup': path, 'memory.max': (base / 'memory.max').read_text().strip(),
+            'memory.swap.max': (base / 'memory.swap.max').read_text().strip()}
 
 
 # S2 long-prefill-v1 (10/11): 64 and 128 prompt tokens after chat template/tokenizer,
@@ -73,6 +140,30 @@ def turn_plan(spec, turn, keep_cache):
     return spec['prompts'][phase], new_session, reset
 
 
+def memory_limit_summary(samples):
+    """Peak of the engine scope (ancestor level 0) over memory.jsonl samples; MiB except counters."""
+    peak = {'current': None, 'anon': None, 'file': None}
+    oom_kill, oom = 0, 0
+    for sample in samples:
+        cgroup = (sample.get('reclaim') or {}).get('cgroup_v2') or {}
+        ancestors = cgroup.get('ancestors') or []
+        if not ancestors:
+            continue
+        files = ancestors[0]['files']
+        values = {'current': (files.get('memory.current') or {}).get('values')}
+        stat = (files.get('memory.stat') or {}).get('values') or {}
+        values.update(anon=stat.get('anon'), file=stat.get('file'))
+        for key, value in values.items():
+            if isinstance(value, int) and (peak[key] is None or value > peak[key]):
+                peak[key] = value
+        events = (files.get('memory.events') or {}).get('values') or {}
+        oom_kill = max(oom_kill, events.get('oom_kill', 0))
+        oom = max(oom, events.get('oom', 0))
+    mib = lambda v: None if v is None else round(v / 1024**2, 1)
+    return {'peak_current_mib': mib(peak['current']), 'peak_anon_mib': mib(peak['anon']),
+            'peak_file_mib': mib(peak['file']), 'oom_events': oom, 'oom_kill_events': oom_kill}
+
+
 def parser():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument('--testbed', choices=('i5', 'i7'), required=True)
@@ -101,6 +192,8 @@ def parser():
     cli.add_argument('--stop-rss-mib', type=common.positive, default=5632)
     cli.add_argument('--min-available-mib', type=common.positive, default=1536)
     cli.add_argument('--stop-swap-mib', type=common.nonnegative, default=128)
+    cli.add_argument('--memory-max-mib', type=common.positive, default=None,
+                     help='ram-limit: engine-only cgroup memory.max incl. page cache, no swap; evicts checkpoint first')
     cli.add_argument('--output-root', type=Path, default=Path('benchmarks/runs'))
     cli.add_argument('--allow-dirty', action='store_true')
     cli.add_argument('--dry-run', action='store_true')
@@ -157,8 +250,16 @@ def execute(args):
     stop = threading.Event()
     violations = []
     print('Artifact: ' + str(directory), flush=True)
+    if args.memory_max_mib is not None:
+        record['memory_limit'] = prepare_memory_limit(model, args.memory_max_mib)
     with (directory / 'server.log').open('x') as log:
-        server = subprocess.Popen([str(binary)], cwd=ROOT, env=env, stdout=log, stderr=log)
+        server = subprocess.Popen(server_command(binary, args.memory_max_mib), cwd=ROOT, env=env, stdout=log, stderr=log)
+        if args.memory_max_mib is not None:
+            limit = scope_limit(server.pid)
+            record['memory_limit']['scope'] = limit
+            if limit['memory.max'] != str(args.memory_max_mib * 1024**2) or limit['memory.swap.max'] != '0':
+                server.kill(); server.wait()
+                raise RuntimeError('engine scope did not get the requested memory limit')
 
         def supervise():
             with (directory / 'memory.jsonl').open('x') as samples:
@@ -256,6 +357,11 @@ def execute(args):
             except subprocess.TimeoutExpired:
                 server.kill(); server.wait()
         record['watchdog_violations'] = violations
+        if args.memory_max_mib is not None:
+            with (directory / 'memory.jsonl').open() as samples:
+                record['memory_limit'].update(memory_limit_summary(json.loads(l) for l in samples if l.strip()))
+            if record['memory_limit']['oom_kill_events']:
+                record['status'] = 'oom_killed'
         if violations: record['status'] = 'watchdog_stopped'
     common.write_exclusive_json(directory / 'result.json', record)
     print(record['status'] + ': ' + str(directory / 'result.json'), flush=True)

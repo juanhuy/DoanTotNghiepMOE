@@ -618,3 +618,30 @@ systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
 
 **Kết quả i7 14/11:** [hồ sơ P1](experiments/2026-11-14-gpu-compute-i7/README.md) run 20261114T123957.730046Z-gpu-compute-model-1322…, HEAD 771ca28 sạch, checkpoint chung, test CUDA EXECUTED, power_checks AC/không throttle ở 8/8 điểm. COMPLETED 32/32, text/usage/finish khớp, 0 VRAM download, pool 960/1024 slot. **`compute_faster: true`**: total on/off 0,086–0,124, decode_ms 0,082–0,101, TTFT 0,112–0,210; decode trung vị 50,67 so với 4,64 tok/s. Baseline off đọc file chỉ 3,1–3,8 GB/s (A3/r2 i7: 6,1–12,1 GB/s), nên chỉ chiều kết quả là đáng tin, độ lớn thì không. Lượt 1 bị watchdog dừng vì swap (Chrome), giữ raw.
 
+
+## Giới hạn RAM của engine (ram-limit-chat-v1, 15/11)
+
+Câu hỏi: khi engine **không được dùng đủ RAM để giữ cả checkpoint** (giống tình huống model lớn hơn RAM), tầng VRAM + tính expert trên GPU (A1) có còn nhanh hơn tier off không? Mọi lượt trước đều có page cache của OS giữ cả checkpoint 7GB, nên "đọc từ SSD" thực ra là đọc từ RAM (9–12 GB/s). Phép đo này buộc engine đọc SSD thật.
+
+Cơ chế (tooling, không đổi engine):
+- Engine chạy trong một scope systemd người dùng tạm thời (`systemd-run --user --scope -p MemoryMax=<N>M -p MemorySwapMax=0`). cgroup v2 tính cả page cache vào `memory.max`; harness Python và client nằm ngoài scope. Harness đọc lại `memory.max`/`memory.swap.max` của chính cgroup engine sau khi khởi động, sai thì dừng.
+- Trước mỗi block, sau khi harness băm checkpoint (bước này làm nóng cache), harness xóa checkpoint khỏi page cache (`posix_fadvise(DONTNEED)`) và kiểm bằng `fincore` rằng còn ≤64MiB; không đạt thì dừng. Bước này cần thiết vì trang đã cache ở cgroup khác không bị trần của scope thu hồi (kiểm 15/11: file 1,8GB vẫn đọc 12 GB/s trong scope 512M nếu không xóa cache trước, còn 1,1–1,2 GB/s nếu đã xóa).
+- Mỗi block ghi `memory_limit`: trần, residency trước/sau khi xóa, đỉnh `memory.current`/anon/file của scope, `oom`/`oom_kill`. Có `oom_kill` thì block là `oom_killed`.
+
+Chốt trước đo:
+- Cùng protocol A1 (`--gpu-compute-model-ab`): ABBA on→off→off→on, 4 process mới, mixed v1 ×2 nhóm (turn4–7 đo), max64, `--gpu auto`, CPU4, cache 64MiB/layer, context 512, lookahead off, batch off, checkpoint chung. On = tier on + GPU expert compute (`fill`); off = tier off. Validator và yêu cầu text/usage/finish khớp như A1.
+- **Hai mức trần, mỗi mức một lượt ABBA riêng, chạy theo thứ tự 8192 rồi 5120MiB.** Mức 8192 là trung gian (page cache chứa được khoảng 5GB trên 7GB checkpoint). Mức 5120 là mức nghiêm ngặt (khoảng 2GB page cache, vẫn chừa khoảng 1,9GB so với phần anon đỉnh). Mốc không giới hạn là hồ sơ A1 của từng máy (đo khác ngày, chỉ dùng để mô tả, không đưa vào rule).
+- Rule giống A1 ở từng mức: total_ms VÀ decode_ms on/off ≤1/1,05 ở cả 8 → `compute_faster`; ≥1,05 ở cả 8 → `compute_slower`; còn lại → không nhất quán. Báo thêm decode tok/s, tốc độ đọc file (`expert_file_bytes_read/expert_file_read_ms`), file loads, đỉnh scope, OOM.
+- Guard như A1 (5120/headroom 1024/watchdog RSS 5632/available 1536/process swap 128MiB), power guard, preflight, `systemd-inhibit`; đóng Chrome/Slack. Mỗi mức một lượt mỗi máy, không rerun hay bỏ mẫu. Chỉ chạy lại một lần nếu lượt không có số đo do môi trường (watchdog, rời AC). OOM ở mức đã chốt là **kết quả**, không phải lỗi môi trường: ghi lại, không hạ hay nâng mức.
+- Smoke khám phá i5 15/11 (`--allow-dirty`, Chrome mở, không ABBA, không phải bằng chứng), trần 5120: off 4 request decode 1,6–2,2 tok/s, đọc file 1,16–1,26 GB/s; on 2,4–3,3 tok/s; không OOM, anon đỉnh khoảng 3,2GB. Trần 4096 (off, 2 request) cũng không OOM, 1,7 tok/s.
+
+```bash
+for limit in 8192 5120; do
+  systemd-inhibit --what=idle:sleep --why="ram-limit benchmark" \
+    python3 tools/run_benchmark.py --testbed i5 --gpu auto --gpu-compute-model-ab \
+    --expert-batch-workload mixed --threads 4 --cache 64 --context 512 --max-tokens 64 --lookahead off \
+    --memory-max-mib $limit
+done
+```
+
+**Kết quả i5 16/11:** [hồ sơ P1](experiments/2026-11-16-ram-limit-i5/README.md), HEAD a752868 sạch, binary 372532cb… (trùng A1 i5), power_checks đạt 16/16, checkpoint còn 0 byte trong page cache sau khi xóa ở 8/8 block, không OOM, VmSwap 0, text khớp. **5120MiB: `compute_faster: true`**: total on/off 0,389–0,616, decode_ms 0,389–0,599, decode trung vị 4,13 so với 2,14 tok/s, đọc file on 1,61–2,56 / off 1,28–1,71 GB/s. **8192MiB: không nhất quán** (total 0,566–1,057). Cặp 0 lệch vì block0 có AnonPages hệ thống 5,6–8,5GiB do tiến trình ngoài engine, scope chỉ đạt đỉnh 6908MiB; theo protocol không chạy lại.

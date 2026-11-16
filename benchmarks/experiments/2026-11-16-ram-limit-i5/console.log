@@ -1,0 +1,88 @@
+=== limit 8192 2026-11-16T15:32:43+07:00
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-0-on/i5/20261116T083244.115312Z-ram-8534443fc6ce4025af7135db93775f33
+turn=0 RSS=3405160KiB swap=0KiB
+turn=1 RSS=3438080KiB swap=0KiB
+turn=2 RSS=3503072KiB swap=0KiB
+turn=3 RSS=3529960KiB swap=0KiB
+turn=4 RSS=3571552KiB swap=0KiB
+turn=5 RSS=3573076KiB swap=0KiB
+turn=6 RSS=3626336KiB swap=0KiB
+turn=7 RSS=3633768KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-0-on/i5/20261116T083244.115312Z-ram-8534443fc6ce4025af7135db93775f33/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-1-off/i5/20261116T083509.751133Z-ram-f82fdac6b1c1433cb39f2cec1ba78e3d
+turn=0 RSS=3360860KiB swap=0KiB
+turn=1 RSS=3393884KiB swap=0KiB
+turn=2 RSS=3457456KiB swap=0KiB
+turn=3 RSS=3505272KiB swap=0KiB
+turn=4 RSS=3542132KiB swap=0KiB
+turn=5 RSS=3540076KiB swap=0KiB
+turn=6 RSS=3582956KiB swap=0KiB
+turn=7 RSS=3604496KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-1-off/i5/20261116T083509.751133Z-ram-f82fdac6b1c1433cb39f2cec1ba78e3d/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-2-off/i5/20261116T083709.718774Z-ram-6ba0cb88c26f429fafd0e9f50494b4e5
+turn=0 RSS=3358852KiB swap=0KiB
+turn=1 RSS=3392840KiB swap=0KiB
+turn=2 RSS=3456400KiB swap=0KiB
+turn=3 RSS=3494688KiB swap=0KiB
+turn=4 RSS=3537684KiB swap=0KiB
+turn=5 RSS=3549312KiB swap=0KiB
+turn=6 RSS=3578000KiB swap=0KiB
+turn=7 RSS=3591664KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-2-off/i5/20261116T083709.718774Z-ram-6ba0cb88c26f429fafd0e9f50494b4e5/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-3-on/i5/20261116T083910.311283Z-ram-6fcd4bb16d6746f7964d830c0c270a4a
+turn=0 RSS=3406076KiB swap=0KiB
+turn=1 RSS=3438992KiB swap=0KiB
+turn=2 RSS=3501880KiB swap=0KiB
+turn=3 RSS=3530572KiB swap=0KiB
+turn=4 RSS=3572228KiB swap=0KiB
+turn=5 RSS=3572860KiB swap=0KiB
+turn=6 RSS=3613884KiB swap=0KiB
+turn=7 RSS=3624820KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/block-3-on/i5/20261116T083910.311283Z-ram-6fcd4bb16d6746f7964d830c0c270a4a/result.json
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T083243.802179Z-ram-limit-model-88fd5c51a17e4a02ac4beb857c99c010/result.json
+=== exit 0 2026-11-16T15:40:36+07:00
+=== limit 5120 2026-11-16T15:40:36+07:00
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-0-on/i5/20261116T084036.507467Z-ram-2e0ca7ab17a9472a803169846fe9632a
+turn=0 RSS=3406040KiB swap=0KiB
+turn=1 RSS=3438956KiB swap=0KiB
+turn=2 RSS=3496388KiB swap=0KiB
+turn=3 RSS=3528512KiB swap=0KiB
+turn=4 RSS=3571508KiB swap=0KiB
+turn=5 RSS=3562092KiB swap=0KiB
+turn=6 RSS=3604468KiB swap=0KiB
+turn=7 RSS=3616784KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-0-on/i5/20261116T084036.507467Z-ram-2e0ca7ab17a9472a803169846fe9632a/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-1-off/i5/20261116T084322.784292Z-ram-fe61fb826f5b48dca9041bf3dcc242ef
+turn=0 RSS=3358760KiB swap=0KiB
+turn=1 RSS=3392684KiB swap=0KiB
+turn=2 RSS=3456232KiB swap=0KiB
+turn=3 RSS=3493172KiB swap=0KiB
+turn=4 RSS=3536176KiB swap=0KiB
+turn=5 RSS=3528640KiB swap=0KiB
+turn=6 RSS=3569628KiB swap=0KiB
+turn=7 RSS=3587392KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-1-off/i5/20261116T084322.784292Z-ram-fe61fb826f5b48dca9041bf3dcc242ef/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-2-off/i5/20261116T084850.970159Z-ram-ec7a8a900e0a400ea9cc7f6b78208e2b
+turn=0 RSS=3358756KiB swap=0KiB
+turn=1 RSS=3392696KiB swap=0KiB
+turn=2 RSS=3455580KiB swap=0KiB
+turn=3 RSS=3492496KiB swap=0KiB
+turn=4 RSS=3536220KiB swap=0KiB
+turn=5 RSS=3549348KiB swap=0KiB
+turn=6 RSS=3580080KiB swap=0KiB
+turn=7 RSS=3599220KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-2-off/i5/20261116T084850.970159Z-ram-ec7a8a900e0a400ea9cc7f6b78208e2b/result.json
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-3-on/i5/20261116T085424.448764Z-ram-acebad8d231445269886f2449ce96ec1
+turn=0 RSS=3406052KiB swap=0KiB
+turn=1 RSS=3438996KiB swap=0KiB
+turn=2 RSS=3496420KiB swap=0KiB
+turn=3 RSS=3528540KiB swap=0KiB
+turn=4 RSS=3572228KiB swap=0KiB
+turn=5 RSS=3571836KiB swap=0KiB
+turn=6 RSS=3615420KiB swap=0KiB
+turn=7 RSS=3646072KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/block-3-on/i5/20261116T085424.448764Z-ram-acebad8d231445269886f2449ce96ec1/result.json
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261116T084036.395004Z-ram-limit-model-2f69341492f34a1aa71499bdd19ec1ea/result.json
+=== exit 0 2026-11-16T15:58:08+07:00

@@ -516,5 +516,56 @@ class GateUpModelTests(unittest.TestCase):
                          [(0, "before", True), (2, "after", False)])
 
 
+    def test_ram_limit_protocol_wraps_engine_and_verifies_eviction(self):
+        import io, contextlib, json
+        import run_benchmark as common
+        import check_ram_stability as ram
+        base = ["--testbed", "i5", "--gpu", "auto", "--gpu-compute-model-ab", "--expert-batch-workload", "mixed",
+                "--threads", "4", "--cache", "64", "--context", "512", "--max-tokens", "64",
+                "--lookahead", "off", "--allow-dirty", "--dry-run", "--memory-max-mib", "5120"]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(common.execute(common.parser().parse_args(base)), 0)
+        protocol = json.loads(out.getvalue())
+        self.assertEqual((protocol["kind"], protocol["protocol"], protocol["modes"]),
+                         ("ram_limit_model_ab", "ram-limit-chat-v1", ["on", "off", "off", "on"]))
+        self.assertEqual(protocol["memory_limit"]["memory_max_mib"], 5120)
+        other = [x if x != "--gpu-compute-model-ab" else "--gpu-tier-model-ab" for x in base]
+        with self.assertRaises(ValueError):
+            common.execute(common.parser().parse_args(other))
+        self.assertEqual(ram.server_command("/bin/engine", None), ["/bin/engine"])
+        command = ram.server_command("/bin/engine", 5120)
+        self.assertEqual(command[:3], ["systemd-run", "--user", "--scope"])
+        self.assertIn("MemoryMax=5120M", command)
+        self.assertIn("MemorySwapMax=0", command)
+        self.assertEqual(command[-1], "/bin/engine")
+        self.assertIsNone(ram.parser().parse_args(["--testbed", "i5", "--gpu", "auto", "--cache", "64"]).memory_max_mib)
+        evicted = []
+        state = iter([7 * 1024**3, 0])
+        with patch.object(ram.shutil, "which", return_value="/usr/bin/systemd-run"):
+            info = ram.prepare_memory_limit("m", 5120, resident=lambda m: next(state), evict=evicted.append)
+            self.assertEqual((evicted, info["checkpoint_resident_bytes_after_evict"]), (["m"], 0))
+            for after in (None, ram.EVICT_RESIDENT_MAX_BYTES + 1):
+                with self.assertRaises(RuntimeError):
+                    ram.prepare_memory_limit("m", 5120, resident=lambda m, a=after: a, evict=lambda m: None)
+        with patch.object(ram.shutil, "which", return_value=None):
+            with self.assertRaises(RuntimeError):
+                ram.prepare_memory_limit("m", 5120, resident=lambda m: 0, evict=lambda m: None)
+
+    def test_ram_limit_summary_reads_engine_scope_peaks_and_oom(self):
+        import check_ram_stability as ram
+        def sample(current, anon, file, oom_kill):
+            files = {"memory.current": {"status": "ok", "values": current},
+                     "memory.stat": {"status": "ok", "values": {"anon": anon, "file": file}},
+                     "memory.events": {"status": "ok", "values": {"oom": oom_kill, "oom_kill": oom_kill}}}
+            return {"reclaim": {"cgroup_v2": {"ancestors": [{"files": files},
+                                                            {"files": {"memory.current": {"values": 10 * 1024**3}}}]}}}
+        mib = 1024**2
+        summary = ram.memory_limit_summary([sample(100 * mib, 60 * mib, 40 * mib, 0),
+                                            {"reclaim": {"cgroup_v2": {"status": "unavailable"}}},
+                                            sample(300 * mib, 50 * mib, 250 * mib, 1)])
+        self.assertEqual(summary, {"peak_current_mib": 300.0, "peak_anon_mib": 60.0, "peak_file_mib": 250.0,
+                                   "oom_events": 1, "oom_kill_events": 1})
+
 if __name__ == "__main__":
     unittest.main()

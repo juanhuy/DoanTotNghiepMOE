@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 16/11 (giới hạn RAM i5): [P1 — trần RAM của engine](experiments/2026-11-16-ram-limit-i5/README.md). Engine chạy trong cgroup `memory.max` (tính cả page cache), checkpoint bị xóa khỏi page cache trước mỗi block, nên engine đọc SSD thật (1,3–2,6 GB/s). Ở trần 5120MiB, tier on + GPU compute nhanh hơn tier off 8/8 (`compute_faster`), total 0,389–0,616, decode trung vị 2,14→4,13 tok/s. Lợi ích lớn hơn so với khi không giới hạn (0,743–0,813). Trần 8192MiB không nhất quán, do block0 bị nhiễu bởi áp lực RAM từ tiến trình ngoài engine. Không OOM, không swap.
+
 Kết quả mới 14/11 (A1 i7): [P1 — tính expert trên GPU i7](experiments/2026-11-14-gpu-compute-i7/README.md). Bật tầng VRAM kèm tính expert trên GPU (pool 960/1024 expert = 93,75%) nhanh hơn tier off ở 8/8 so sánh (`compute_faster: true`): total on/off 0,086–0,124, decode trung vị 4,64→50,67 tok/s, 0 lần tải VRAM→RAM, file loads giảm từ 5532–6737 xuống 0–105. **Độ lớn tỉ số không đại diện cho i7:** phía off đọc file chỉ 3,1–3,8 GB/s, so với 6,1–12,1 GB/s ở A3/r2 i7 (ghi chú tích hợp trong hồ sơ). Lượt 1 bị swap do Chrome, giữ làm hồ sơ.
 
 Kết quả mới 14/11 (A1): [P1 — tính expert trên GPU i5](experiments/2026-11-14-gpu-compute-i5/README.md). Bật tầng VRAM kèm tính expert ngay trên GPU nhanh hơn cấu hình khuyến nghị (tier off) ở 8/8 so sánh (`compute_faster: true`): total on/off 0,743–0,813, decode trung vị 8,24→10,73 tok/s, 0 lần tải VRAM→RAM, upload 1,8GB một lần. Hai lượt trước hỏng vì môi trường (swap, chạy pin) và được giữ trong cùng hồ sơ. Chỉ trên branch A1, mặc định vẫn off.
@@ -51,7 +53,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 32 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 33 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -61,6 +63,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 
 | Hồ sơ | Dùng cho câu hỏi nào? |
 | --- | --- |
+| [Giới hạn RAM engine i5 16/11](experiments/2026-11-16-ram-limit-i5/README.md) | Checkpoint không vừa RAM được cấp (cgroup, đọc SSD thật): trần 5120 `compute_faster` 8/8, total 0,389–0,616, decode 2,14→4,13 tok/s; trần 8192 không nhất quán (nhiễu block0). Bằng chứng cho tầng SSD và lợi ích tầng VRAM khi RAM thiếu |
 | [Tính expert trên GPU A1 i7 14/11](experiments/2026-11-14-gpu-compute-i7/README.md) | RTX 5060 Laptop (pool 960/1024 = 93,75%): tính expert trên GPU nhanh hơn tier off 8/8 (`compute_faster: true`), total on/off 0,086–0,124, decode trung vị 4,64→50,67 tok/s; baseline off đọc file chậm bất thường (3,1–3,8 GB/s), chỉ trích chiều kết quả, không trích độ lớn như mức điển hình |
 | [Tầng VRAM expert bật/tắt trên i7 11/11](experiments/2026-11-11-gpu-tier-i7-r2/README.md) | Cùng checkpoint chung với i5 trên RTX 5060 Laptop (pool 845–858/1024 expert): chat/decode max64 tắt nhanh hơn 8/8 (`off_faster: True`, total 1,78–2,00×, decode trung vị 4,92→9,75 tok/s); prefill max1 không nhất quán (`on` thắng 1/4, `off` thắng 3/4) |
 | [Inclusive/victim](experiments/2026-10-22-web-session-i5-081202/README.md) | Đánh đổi cách bố trí cache; số mẫu nhỏ |
