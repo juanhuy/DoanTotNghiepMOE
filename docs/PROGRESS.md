@@ -4011,3 +4011,13 @@ Kết luận và bước tiếp theo:
 - Test: thêm 2 test hồi quy (bọc lệnh, kiểm xóa cache, tóm tắt đỉnh/OOM, dry-run protocol, từ chối khi dùng với protocol khác). `tests test_benchmark_gate_up_model` 26/26 OK; `python3 tools/check.py` PASS. Rust không đổi; `cargo build --release --locked` OK.
 - Smoke khám phá trên model thật (`--allow-dirty`, Chrome mở, không ABBA, không phải bằng chứng): trần 5120 off decode 1,6–2,2 tok/s, đọc file 1,16–1,26 GB/s, anon đỉnh 3175MiB, file 2619MiB, không OOM; on 2,4–3,3 tok/s. Trần 4096 off 1,7 tok/s, không OOM.
 - Chốt protocol trong SCENARIOS: hai mức 8192 và 5120MiB, mỗi mức một ABBA A1, rule như A1, OOM là kết quả. Chưa đo chính thức.
+
+## 2026-11-16 — Kết quả giới hạn RAM i5 (ram-limit-chat-v1): trần 5120 `compute_faster` 8/8; trần 8192 không nhất quán
+
+- Chạy đúng một lượt mỗi mức, theo thứ tự 8192 rồi 5120MiB, dưới `systemd-inhibit`, HEAD a752868 sạch, binary 372532cb… Trước khi chạy: đóng Chrome/Slack, preflight eligible (available ≥8658MiB, pswpout 0, AC, GPU không throttle). Run 20261116T083243.802179Z-ram-limit-model-88fd… (8192) và 20261116T084036.395004Z-ram-limit-model-2f69… (5120), tổng khoảng 25 phút.
+- Cả hai COMPLETED 32/32, text/usage/finish khớp, power_checks đạt 16/16, checkpoint còn 0 byte trong page cache sau khi xóa ở 8/8 block, `memory.max` của scope khớp, không OOM, VmSwap 0, on có 0 VRAM download.
+- **5120MiB: `compute_faster: true`.** total on/off 0,389–0,616, decode_ms 0,389–0,599, TTFT 0,381–0,758. Decode trung vị 4,13 (on) so với 2,14 (off) tok/s. Đọc file on 1,61–2,56 / off 1,28–1,71 GB/s. expert_io_ms trung vị on khoảng 11,6–12,0s / off khoảng 27,5–28,0s. Đỉnh scope 5120MiB, anon khoảng 3,3GB.
+- **8192MiB: không nhất quán.** total 0,566–1,057. Cặp 1 cho 0,566–0,833; cặp 0 cho 1,024/1,057/0,831/0,841. Block0 (on) có AnonPages hệ thống 5,6–8,5GiB (block2/3 chỉ 1,5–4,8GiB), scope chỉ đạt đỉnh 6908MiB và đọc file 3,6–5,1 GB/s (block3 đạt 7,5–9,5). Có tiến trình ngoài engine chiếm RAM, chưa xác định là gì. Guard không bị kích, lượt có số đo nên theo protocol không chạy lại.
+- So hồi cứu với A1 không giới hạn (14/11, khác ngày, chỉ mô tả): off 8,24→2,14 tok/s, on 10,73→4,13 tok/s; tỉ số total từ 0,743–0,813 xuống 0,389–0,616. Diễn giải: khi mỗi lần đọc phải xuống SSD, những lần đọc mà VRAM tránh được (30–39%) có giá trị lớn hơn.
+- Đóng gói `benchmarks/experiments/2026-11-16-ram-limit-i5/` (P1, 109 file trong CHECKSUMS, không gồm README). Cập nhật mục lục (33 hồ sơ), SCENARIOS, EVIDENCE_MATRIX, PLAN. `python3 tools/check.py` PASS.
+- Giới hạn: một lượt mỗi mức, chỉ i5; mô phỏng bằng cgroup, không phải model lớn hơn RAM thật; tốc độ đọc là payload engine, không phải I/O thiết bị. Trạng thái: chưa giao cho i7; nhánh `work/ram-limit-tier` chưa push.

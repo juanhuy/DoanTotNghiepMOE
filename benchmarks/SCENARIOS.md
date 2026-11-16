@@ -643,3 +643,5 @@ for limit in 8192 5120; do
     --memory-max-mib $limit
 done
 ```
+
+**Kết quả i5 16/11:** [hồ sơ P1](experiments/2026-11-16-ram-limit-i5/README.md), HEAD a752868 sạch, binary 372532cb… (trùng A1 i5), power_checks đạt 16/16, checkpoint còn 0 byte trong page cache sau khi xóa ở 8/8 block, không OOM, VmSwap 0, text khớp. **5120MiB: `compute_faster: true`**: total on/off 0,389–0,616, decode_ms 0,389–0,599, decode trung vị 4,13 so với 2,14 tok/s, đọc file on 1,61–2,56 / off 1,28–1,71 GB/s. **8192MiB: không nhất quán** (total 0,566–1,057). Cặp 0 lệch vì block0 có AnonPages hệ thống 5,6–8,5GiB do tiến trình ngoài engine, scope chỉ đạt đỉnh 6908MiB; theo protocol không chạy lại.
