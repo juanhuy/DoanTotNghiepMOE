@@ -4021,3 +4021,9 @@ Kết luận và bước tiếp theo:
 - So hồi cứu với A1 không giới hạn (14/11, khác ngày, chỉ mô tả): off 8,24→2,14 tok/s, on 10,73→4,13 tok/s; tỉ số total từ 0,743–0,813 xuống 0,389–0,616. Diễn giải: khi mỗi lần đọc phải xuống SSD, những lần đọc mà VRAM tránh được (30–39%) có giá trị lớn hơn.
 - Đóng gói `benchmarks/experiments/2026-11-16-ram-limit-i5/` (P1, 109 file trong CHECKSUMS, không gồm README). Cập nhật mục lục (33 hồ sơ), SCENARIOS, EVIDENCE_MATRIX, PLAN. `python3 tools/check.py` PASS.
 - Giới hạn: một lượt mỗi mức, chỉ i5; mô phỏng bằng cgroup, không phải model lớn hơn RAM thật; tốc độ đọc là payload engine, không phải I/O thiết bị. Trạng thái: chưa giao cho i7; nhánh `work/ram-limit-tier` chưa push.
+
+## 2026-11-16 — Merge thí nghiệm giới hạn RAM vào main; giao i7
+
+- Merge `--no-ff` nhánh `work/ram-limit-tier` (tooling `--memory-max-mib`, protocol `ram-limit-chat-v1`, hồ sơ P1 `2026-11-16-ram-limit-i5`) vào main và push.
+- Giao i7 [nhiệm vụ giới hạn RAM](WORKFLOWS.md#nhiệm-vụ-i7-giới-hạn-ram-của-engine-giao-16112026): kiểm cgroup memory/`systemd-run --user`/`fincore` trước, kiểm kernel GPU, đóng Chrome/Slack, một lượt mỗi mức (8192 rồi 5120), lưu trên branch `work/i7-ram-limit`. Cập nhật AGENTS/PLAN/WORKFLOWS. `python3 tools/check.py` PASS.
+- Nhánh A1b (`work/a1b-vram-heat-admission`) dừng theo quyết định của owner; giữ local, chưa push hay merge.
