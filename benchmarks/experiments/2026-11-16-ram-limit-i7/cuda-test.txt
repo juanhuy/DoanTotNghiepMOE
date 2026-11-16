@@ -1,0 +1,40 @@
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running unittests src/lib.rs (target/release/deps/moe_tier_engine-91aba9dc12e5dce2)
+
+running 15 tests
+test gpu::tests::test_gpu_compute_gemm ... cuBLAS SGEMM result: [30.0, 70.0, 110.0, 1.0, 9.0, 17.0]
+ok
+test gpu::tests::test_gpu_compute_gemm_qkv ... ok
+test gpu::tests::test_gpu_compute_gemm_qkv_across_threads_and_scratch_expansion ... ok
+test gpu::tests::test_gpu_compute_gemv ... cuBLAS GEMV result: [30.0, 70.0, 110.0]
+ok
+test gpu::tests::test_gpu_compute_gemv_qkv ... ok
+test gpu::tests::test_gpu_expert_cache_lru_eviction ... ok
+test gpu::tests::test_gpu_expert_cache_remove_accounts_bytes_and_is_idempotent ... ok
+test gpu::tests::test_gpu_expert_pool_lifecycle ... ok
+test gpu::tests::test_gpu_expert_weights_upload_download ... ok
+test gpu::tests::test_gpu_pinned_buffer ... EXECUTED pinned allocation bounds/zero-init/typed roundtrip on CUDA
+ok
+test gpu::tests::test_gpu_probe ... 
+=== GPU PROBE TEST RESULT ===
+Available: true
+Device: NVIDIA GeForce RTX 5060 Laptop GPU
+Total VRAM: 7.53 GB
+Dense Offloaded: true
+Message: Hoạt động (1.50 GB / 7.53 GB VRAM · cuBLAS SGEMV Active)
+=============================
+
+ok
+test gpu_expert::tests::gpu_int8_swiglu_matches_cpu_expert ... EXECUTED GPU INT8 SwiGLU h=2048 i=1024 arch=compute_75 matches CPU
+EXECUTED GPU INT8 SwiGLU h=16 i=8 arch=compute_75 matches CPU
+EXECUTED GPU INT8 SwiGLU h=6 i=10 arch=compute_75 matches CPU
+ok
+test olmoe::cancellation_tests::gpu_expert_compute_matches_cpu_and_skips_vram_downloads ... EXECUTED GPU expert compute CUDA: logits parity, VRAM compute, no downloads
+ok
+test olmoe::cancellation_tests::gpu_expert_tier_off_keeps_dense_on_gpu_without_vram_uploads ... EXECUTED GPU expert tier off on CUDA: dense GPU, no VRAM uploads, logits parity
+ok
+test olmoe::cancellation_tests::victim_cache_gpu_keeps_tiers_disjoint_and_matches_cpu_logits ... EXECUTED victim cache CUDA: logits, disjoint tiers, pool reset passed
+ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 112 filtered out; finished in 3.02s
+
