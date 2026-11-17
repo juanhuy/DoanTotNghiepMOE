@@ -4058,3 +4058,22 @@ Kết luận và bước tiếp theo:
   - mỗi câu trả lời thêm dòng `GPU EXPERT` (`expert_gpu_computes`, `expert_gpu_compute_ms`), chỉ hiện khi lớn hơn 0.
 - README: lệnh demo dùng `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on`, kèm link P1 của A1 và giới hạn RAM. PLAN: sửa câu cũ "expert vẫn tính CPU".
 - Kiểm tra: `python3 tools/check.py --web` PASS; `node --check` script inline PASS. Smoke thật trên i5 (GTX 1650 Max-Q, cấu hình khuyến nghị): `/experts` báo `gpu_expert_compute_enabled: true`; một request 24 token trả lời đúng, `expert_gpu_computes` 780, pool 299 expert sau request. Trang `/` phục vụ bản mới. Đây là smoke chức năng, không phải số đo. Chưa kiểm hiển thị bằng trình duyệt thật.
+
+## 2026-11-17 — Mở rộng engine cho Qwen3-30B-A3B (nhánh `work/qwen3-moe`, owner quyết định 17/11)
+
+Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy) dưới trần RAM 10GB. Nghiệm thu: (1) parity logits trên checkpoint nhỏ ngẫu nhiên, (2) hết workload dưới trần 10GB không OOM, (3) tok/s thật trên i5. Giới hạn thời gian: dừng nếu đến 20/11 model thật chưa trả lời đúng.
+
+- Engine (99fa81d, b8b68e2):
+  - Config nhận `qwen3_moe` khi mọi layer đều sparse; expert dùng `moe_intermediate_size`; `head_dim` tách khỏi hidden/heads (q_dim 4096 ≠ hidden 2048).
+  - QK-norm theo từng head; giới hạn 128 expert (`MAX_EXPERTS`) cho routing và ma trận lookahead. Pilot lookahead giữ ngưỡng kích hoạt ≥64 như cũ.
+  - `MOE_EMBEDDING_STORAGE=ram|disk|auto`: bảng embedding lớn hơn 512MiB được đọc từng dòng từ checkpoint (Qwen3 tiết kiệm ~1,16GiB). OLMoE (393MiB) vẫn nạp vào RAM.
+  - `MOE_DENSE_STORAGE=f32|bf16` (mặc định f32): giữ ma trận dense BF16 của checkpoint ở dạng BF16. Kết quả giống hệt f32 đến từng bit (BF16→F32 chính xác, cùng thứ tự cộng); RAM dense giảm một nửa. Với Qwen3, ước tính 4,9GB → 2,45GB, chưa đo.
+  - Chat template: undefined dạng SemiStrict, thêm các method chuỗi Python, `tools`/`enable_thinking` (`MOE_CHAT_THINKING`, mặc định off). Template Qwen3 khớp `transformers.apply_chat_template` từng ký tự, cả khi thinking on/off và hội thoại nhiều lượt.
+  - `/experts` báo thêm `model_type`, `dense_storage`, `dense_matrix_bytes`, `embedding_on_disk`.
+- Converter `tools/prepare_olmoe.py` nhận `qwen3_moe` (từ chối model có layer dense).
+- Fixture `tests/fixtures/qwen3moe/` sinh bằng `tools/make_qwen3moe_reference.py` (Transformers 4.51.3, CPU), gồm head_dim≠d/h + GQA, 72 expert, và dense BF16. Test `tests/qwen3moe_reference.rs` và `tests/dense_bf16.rs`: sai số logits <2e-5 khi cache 0/900/100000, trên CPU và GPU dense (GTX 1650).
+- Kiểm tra: `python3 tools/check.py --rust` PASS (OLMoE không đổi). `test_prepare_olmoe.py` 2/2 PASS trong venv có torch.
+- Giới hạn đã biết:
+  - Fixture nhỏ không bật được GPU expert compute (pool/kernel không khởi tạo với kích thước tí hon), nên A1 trên Qwen3 phải kiểm trên model thật.
+  - GPU dense vẫn upload FP32 (~4,9GB với Qwen3), nên không vừa GTX 1650 4GB. i5 sẽ chạy Qwen3 bằng CPU; chỉ i7 (8GB) có thể dùng GPU.
+- Đang tải checkpoint Qwen/Qwen3-30B-A3B (61GB BF16) vào `../Models/qwen3-30b-a3b-hf`.
