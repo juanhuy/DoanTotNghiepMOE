@@ -272,27 +272,66 @@ impl TensorIndex {
         }
         let raw = &mut raw_scratch[..info.byte_len];
         self.read_raw_into(name, raw)?;
-
-        match info.dtype {
-            DType::F32 => {
-                for (chunk, target) in raw.chunks_exact(4).zip(buf.iter_mut()) {
-                    *target = f32::from_le_bytes(chunk.try_into().unwrap());
-                }
-            }
-            DType::BF16 => {
-                for (chunk, target) in raw.chunks_exact(2).zip(buf.iter_mut()) {
-                    *target =
-                        f32::from_bits((u16::from_le_bytes([chunk[0], chunk[1]]) as u32) << 16);
-                }
-            }
-            DType::F16 => {
-                for (chunk, target) in raw.chunks_exact(2).zip(buf.iter_mut()) {
-                    *target = half_to_f32(u16::from_le_bytes([chunk[0], chunk[1]]));
-                }
-            }
-            DType::I8 | DType::U8 => unreachable!(),
-        }
+        decode_float(info.dtype, raw, buf);
         Ok(())
+    }
+
+    /// Reads one row of a 2-D F32/BF16/F16 tensor straight from the shard (pread), so large
+    /// lookup tables such as token embeddings need not stay resident in RAM.
+    pub fn read_row_f32_into(
+        &self,
+        name: &str,
+        row: usize,
+        raw_scratch: &mut Vec<u8>,
+        buf: &mut [f32],
+    ) -> io::Result<()> {
+        let info = self.tensor(name)?;
+        if !matches!(info.dtype, DType::F32 | DType::BF16 | DType::F16)
+            || info.shape.len() != 2
+            || row >= info.shape[0]
+            || buf.len() != info.shape[1]
+        {
+            return Err(invalid(format!("{name}: invalid row read")));
+        }
+        let row_bytes = info.shape[1] * info.dtype.size();
+        raw_scratch.resize(row_bytes, 0);
+        let offset = info.offset + (row * row_bytes) as u64;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileExt;
+            self.shards[info.shard].read_exact_at(raw_scratch, offset)?;
+        }
+        #[cfg(not(unix))]
+        {
+            let mut file = self.shards[info.shard]
+                .lock()
+                .map_err(|_| io::Error::other("Safetensors shard lock poisoned"))?;
+            file.seek(SeekFrom::Start(offset))?;
+            file.read_exact(raw_scratch)?;
+        }
+        decode_float(info.dtype, raw_scratch, buf);
+        Ok(())
+    }
+}
+
+fn decode_float(dtype: DType, raw: &[u8], buf: &mut [f32]) {
+    match dtype {
+        DType::F32 => {
+            for (chunk, target) in raw.chunks_exact(4).zip(buf.iter_mut()) {
+                *target = f32::from_le_bytes(chunk.try_into().unwrap());
+            }
+        }
+        DType::BF16 => {
+            for (chunk, target) in raw.chunks_exact(2).zip(buf.iter_mut()) {
+                *target = f32::from_bits((u16::from_le_bytes([chunk[0], chunk[1]]) as u32) << 16);
+            }
+        }
+        DType::F16 => {
+            for (chunk, target) in raw.chunks_exact(2).zip(buf.iter_mut()) {
+                *target = half_to_f32(u16::from_le_bytes([chunk[0], chunk[1]]));
+            }
+        }
+        DType::I8 | DType::U8 => unreachable!(),
     }
 }
 

@@ -1,0 +1,13 @@
+<|im_start|>system
+Bạn là trợ lý.<|im_end|>
+<|im_start|>user
+Mars là gì?<|im_end|>
+<|im_start|>assistant
+Mars là sao Hỏa.<|im_end|>
+<|im_start|>user
+  Còn Venus?  <|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+

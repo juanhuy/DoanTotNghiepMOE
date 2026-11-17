@@ -53,6 +53,127 @@ pub struct Config {
     #[serde(default)]
     clip_qkv: Option<f32>,
     hidden_act: String,
+    /// Qwen3-MoE: explicit attention head width (may differ from hidden/heads).
+    #[serde(default)]
+    head_dim: Option<usize>,
+    /// Qwen3-MoE: expert FFN width; `intermediate_size` there is the unused dense width.
+    #[serde(default)]
+    moe_intermediate_size: Option<usize>,
+    #[serde(default)]
+    decoder_sparse_step: Option<usize>,
+    #[serde(default)]
+    mlp_only_layers: Vec<usize>,
+    #[serde(default)]
+    use_sliding_window: bool,
+}
+
+/// Largest expert count per layer supported by fixed-size routing scratch.
+const MAX_EXPERTS: usize = 128;
+
+/// Embedding tables above this decoded size are read per token from the checkpoint in
+/// `auto` mode (Qwen3-MoE: 151936 x 2048 x 4 B = 1.16 GiB; OLMoE: 393 MiB stays in RAM).
+const EMBEDDING_DISK_THRESHOLD_BYTES: usize = 512 * 1024 * 1024;
+const EMBEDDING_TENSOR: &str = "model.embed_tokens.weight";
+
+/// Token embedding table: decoded in RAM, or one row read from the shard per token.
+enum Embedding {
+    Ram(Matrix),
+    Disk { columns: usize },
+}
+
+impl Embedding {
+    fn copy_row(
+        &self,
+        index: &TensorIndex,
+        token: usize,
+        raw: &mut Vec<u8>,
+        output: &mut [f32],
+    ) -> io::Result<()> {
+        match self {
+            Self::Ram(matrix) => {
+                let d = matrix.columns;
+                output.copy_from_slice(&matrix.values[token * d..(token + 1) * d]);
+                Ok(())
+            }
+            Self::Disk { columns } => {
+                if output.len() != *columns {
+                    return Err(invalid("embedding row width mismatch"));
+                }
+                index.read_row_f32_into(EMBEDDING_TENSOR, token, raw, output)?;
+                finite(output)
+            }
+        }
+    }
+}
+
+/// Python `str` methods used by HF chat templates (Qwen3: startswith/endswith/split/strip).
+/// Only string receivers are supported; anything else stays an unknown-method error.
+fn python_string_methods(
+    _state: &minijinja::State,
+    value: &minijinja::Value,
+    method: &str,
+    args: &[minijinja::Value],
+) -> Result<minijinja::Value, minijinja::Error> {
+    use minijinja::{Error, ErrorKind, Value};
+    let Some(text) = value.as_str() else {
+        return Err(Error::from(ErrorKind::UnknownMethod));
+    };
+    let arg = |i: usize| -> Result<Option<&str>, Error> {
+        match args.get(i) {
+            None => Ok(None),
+            Some(v) if v.is_none() => Ok(None),
+            Some(v) => v
+                .as_str()
+                .map(Some)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidOperation, "expected string argument")),
+        }
+    };
+    if args.len() > 1 {
+        return Err(Error::new(ErrorKind::TooManyArguments, method.to_owned()));
+    }
+    let chars = arg(0)?;
+    let trim_set = |c: char| chars.map_or(c.is_whitespace(), |set| set.contains(c));
+    Ok(match method {
+        "startswith" => Value::from(text.starts_with(arg(0)?.unwrap_or_default())),
+        "endswith" => Value::from(text.ends_with(arg(0)?.unwrap_or_default())),
+        "strip" => Value::from(text.trim_matches(trim_set).to_owned()),
+        "lstrip" => Value::from(text.trim_start_matches(trim_set).to_owned()),
+        "rstrip" => Value::from(text.trim_end_matches(trim_set).to_owned()),
+        "split" => match arg(0)? {
+            Some(sep) if !sep.is_empty() => {
+                Value::from(text.split(sep).map(str::to_owned).collect::<Vec<_>>())
+            }
+            Some(_) => return Err(Error::new(ErrorKind::InvalidOperation, "empty separator")),
+            None => Value::from(
+                text.split_whitespace()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>(),
+            ),
+        },
+        _ => return Err(Error::from(ErrorKind::UnknownMethod)),
+    })
+}
+
+/// MOE_CHAT_THINKING=on|off (default off): passed to chat templates that support a
+/// reasoning block (Qwen3). Off keeps answers short for the bounded demo/benchmarks.
+fn chat_thinking_enabled() -> io::Result<bool> {
+    match std::env::var("MOE_CHAT_THINKING").as_deref() {
+        Ok("on") => Ok(true),
+        Ok("off") | Err(std::env::VarError::NotPresent) => Ok(false),
+        _ => Err(invalid("MOE_CHAT_THINKING must be on or off")),
+    }
+}
+
+/// MOE_EMBEDDING_STORAGE=ram|disk|auto (default auto: disk only for large tables).
+fn embedding_on_disk(decoded_bytes: usize) -> io::Result<bool> {
+    match std::env::var("MOE_EMBEDDING_STORAGE").as_deref() {
+        Ok("ram") => Ok(false),
+        Ok("disk") => Ok(true),
+        Ok("auto") | Err(std::env::VarError::NotPresent) => {
+            Ok(decoded_bytes > EMBEDDING_DISK_THRESHOLD_BYTES)
+        }
+        _ => Err(invalid("MOE_EMBEDDING_STORAGE must be ram, disk or auto")),
+    }
 }
 
 fn default_rms_norm_eps() -> f32 {
@@ -60,9 +181,51 @@ fn default_rms_norm_eps() -> f32 {
 }
 
 impl Config {
+    fn is_qwen3_moe(&self) -> bool {
+        self.model_type == "qwen3_moe"
+    }
+
+    /// Attention head width: explicit `head_dim` (Qwen3) or hidden/heads (OLMoE).
+    fn head_dim(&self) -> usize {
+        self.head_dim
+            .unwrap_or(self.hidden_size / self.num_attention_heads.max(1))
+    }
+
+    /// Width of the concatenated query/context vector (heads x head_dim).
+    fn q_dim(&self) -> usize {
+        self.head_dim() * self.num_attention_heads
+    }
+
+    fn kv_dim(&self) -> usize {
+        self.head_dim() * self.num_key_value_heads
+    }
+
+    /// Map architecture-specific fields onto the shared engine layout. For Qwen3-MoE the
+    /// expert width is `moe_intermediate_size`; every layer is sparse (checked in validate).
+    fn normalize(&mut self) {
+        if self.is_qwen3_moe() {
+            if let Some(width) = self.moe_intermediate_size {
+                self.intermediate_size = width;
+            }
+        }
+    }
+
     fn validate(&self) -> io::Result<()> {
         let d = self.hidden_size;
-        if self.model_type != "olmoe"
+        let architecture_ok = match self.model_type.as_str() {
+            "olmoe" => self
+                .head_dim
+                .is_none_or(|h| h * self.num_attention_heads == d),
+            "qwen3_moe" => {
+                self.moe_intermediate_size.is_some()
+                    && self.decoder_sparse_step.unwrap_or(1) == 1
+                    && self.mlp_only_layers.is_empty()
+                    && !self.use_sliding_window
+            }
+            _ => false,
+        };
+        let hd = self.head_dim();
+        if !architecture_ok
             || d == 0
             || d > 16384
             || self.intermediate_size == 0
@@ -71,11 +234,13 @@ impl Config {
             || self.num_hidden_layers > 128
             || self.num_attention_heads == 0
             || self.num_key_value_heads == 0
-            || d % self.num_attention_heads != 0
+            || (self.head_dim.is_none() && d % self.num_attention_heads != 0)
             || self.num_attention_heads % self.num_key_value_heads != 0
-            || (d / self.num_attention_heads) % 2 != 0
+            || hd == 0
+            || hd > 1024
+            || hd % 2 != 0
             || self.num_experts == 0
-            || self.num_experts > 64
+            || self.num_experts > MAX_EXPERTS
             || self.num_experts_per_tok == 0
             || self.num_experts_per_tok > self.num_experts
             || self.vocab_size == 0
@@ -92,7 +257,7 @@ impl Config {
             || self.clip_qkv.is_some()
             || self.hidden_act != "silu"
         {
-            return Err(invalid("unsupported OLMoE config (requires unscaled RoPE, no biases/clipping, untied embeddings, SiLU)"));
+            return Err(invalid("unsupported config (OLMoE or all-sparse Qwen3-MoE; requires unscaled RoPE, no biases/clipping, untied embeddings, SiLU)"));
         }
         Ok(())
     }
@@ -447,6 +612,7 @@ struct StepScratch {
     sincos: Vec<(f32, f32)>,
     fp8_key: Vec<u8>,
     fp8_value: Vec<u8>,
+    embedding_raw: Vec<u8>,
 }
 
 impl StepScratch {
@@ -480,10 +646,11 @@ impl StepScratch {
 
     fn new(config: &Config) -> Self {
         let hidden = config.hidden_size;
-        let hd = hidden / config.num_attention_heads;
+        let hd = config.head_dim();
         let half_hd = hd / 2;
-        let key_value = hd * config.num_key_value_heads;
-        let total_qkv = hidden + key_value + key_value;
+        let key_value = config.kv_dim();
+        let q_dim = config.q_dim();
+        let total_qkv = q_dim + key_value + key_value;
         let rope_bases: Vec<f32> = (0..half_hd)
             .map(|i| config.rope_theta.powf(2.0 * i as f32 / hd as f32))
             .collect();
@@ -497,11 +664,11 @@ impl StepScratch {
             expert_scratches,
             x: vec![0.0; hidden],
             hidden: vec![0.0; hidden],
-            query: vec![0.0; hidden],
+            query: vec![0.0; q_dim],
             key: vec![0.0; key_value],
             value: vec![0.0; key_value],
             qkv_buffer: vec![0.0; total_qkv],
-            context: vec![0.0; hidden],
+            context: vec![0.0; q_dim],
             projected: vec![0.0; hidden],
             router: vec![0.0; config.num_experts],
             pilot_hidden: vec![0.0; hidden],
@@ -511,6 +678,7 @@ impl StepScratch {
             sincos,
             fp8_key: vec![0u8; key_value],
             fp8_value: vec![0u8; key_value],
+            embedding_raw: Vec::new(),
         }
     }
 }
@@ -566,7 +734,7 @@ pub struct OlmoeModel {
     ram_guard: crate::ram::RamGuard,
     dense_bytes: usize,
     index: TensorIndex,
-    embedding: Matrix,
+    embedding: Embedding,
     head: Matrix,
     norm: Vec<f32>,
     layers: Vec<Layer>,
@@ -694,15 +862,18 @@ impl OlmoeModel {
         if path.join("INCOMPLETE").exists() {
             return Err(invalid("checkpoint conversion is incomplete"));
         }
-        let config: Config = serde_json::from_slice(&fs::read(path.join("config.json"))?)
+        let mut config: Config = serde_json::from_slice(&fs::read(path.join("config.json"))?)
             .map_err(|e| invalid(e.to_string()))?;
         config.validate()?;
+        config.normalize();
         if context_limit == 0 || context_limit > config.max_position_embeddings {
             return Err(invalid("context limit exceeds model configuration"));
         }
         let index = TensorIndex::open(path)?;
         let d = config.hidden_size;
-        let kd = d / config.num_attention_heads * config.num_key_value_heads;
+        let kd = config.kv_dim();
+        let qd = config.q_dim();
+        let hd = config.head_dim();
         let raw_weight_count = d
             .checked_mul(config.intermediate_size)
             .and_then(|count| count.checked_mul(3))
@@ -750,10 +921,18 @@ impl OlmoeModel {
             Err(_) => return Err(invalid("invalid MOE_EXPERT_BATCH_PREFILL")),
         };
         let ram_guard = crate::ram::RamGuard::from_environment()?;
+        let embedding_disk = embedding_on_disk(
+            config
+                .vocab_size
+                .saturating_mul(d)
+                .saturating_mul(std::mem::size_of::<f32>()),
+        )?;
         let dense_planned = index
             .tensors()
             .iter()
-            .filter(|(name, _)| name.ends_with(".weight"))
+            .filter(|(name, _)| {
+                name.ends_with(".weight") && !(embedding_disk && name.as_str() == EMBEDDING_TENSOR)
+            })
             .try_fold(0usize, |total, (_, tensor)| {
                 let count = tensor
                     .shape
@@ -790,13 +969,21 @@ impl OlmoeModel {
             );
         }
         let mut budget = dense_budget;
-        let embedding = mat(
-            &index,
-            "model.embed_tokens.weight",
-            config.vocab_size,
-            d,
-            &mut budget,
-        )?;
+        let embedding = if embedding_disk {
+            if index.tensor(EMBEDDING_TENSOR)?.shape != [config.vocab_size, d] {
+                return Err(invalid(format!("{EMBEDDING_TENSOR}: incorrect shape")));
+            }
+            info!("Token embedding read per token from the checkpoint (not resident in RAM)");
+            Embedding::Disk { columns: d }
+        } else {
+            Embedding::Ram(mat(
+                &index,
+                EMBEDDING_TENSOR,
+                config.vocab_size,
+                d,
+                &mut budget,
+            )?)
+        };
         let head = mat(&index, "lm_head.weight", config.vocab_size, d, &mut budget)?;
         let norm = tensor(&index, "model.norm.weight", &[d], &mut budget)?;
         let mut layers = Vec::new();
@@ -807,15 +994,22 @@ impl OlmoeModel {
             };
             let input_norm = load("input_layernorm.weight", &[d])?;
             let post_norm = load("post_attention_layernorm.weight", &[d])?;
-            let q_norm = load("self_attn.q_norm.weight", &[d])?;
-            let k_norm = load("self_attn.k_norm.weight", &[kd])?;
-            let mut matrix =
-                |suffix: &str, rows| mat(&index, &format!("{p}.{suffix}"), rows, d, &mut budget);
-            let q = matrix("self_attn.q_proj.weight", d)?;
-            let k = matrix("self_attn.k_proj.weight", kd)?;
-            let v = matrix("self_attn.v_proj.weight", kd)?;
-            let o = matrix("self_attn.o_proj.weight", d)?;
-            let router = matrix("mlp.gate.weight", config.num_experts)?;
+            // OLMoE normalizes the whole q/k vector; Qwen3 normalizes each head.
+            let (q_norm_width, k_norm_width) = if config.is_qwen3_moe() {
+                (hd, hd)
+            } else {
+                (qd, kd)
+            };
+            let q_norm = load("self_attn.q_norm.weight", &[q_norm_width])?;
+            let k_norm = load("self_attn.k_norm.weight", &[k_norm_width])?;
+            let mut matrix = |suffix: &str, rows, columns| {
+                mat(&index, &format!("{p}.{suffix}"), rows, columns, &mut budget)
+            };
+            let q = matrix("self_attn.q_proj.weight", qd, d)?;
+            let k = matrix("self_attn.k_proj.weight", kd, d)?;
+            let v = matrix("self_attn.v_proj.weight", kd, d)?;
+            let o = matrix("self_attn.o_proj.weight", d, qd)?;
+            let router = matrix("mlp.gate.weight", config.num_experts, d)?;
             // Validate expert descriptors without reading all expert payloads.
             for expert in 0..config.num_experts {
                 let ep = format!("{p}.mlp.experts.{expert}");
@@ -1077,7 +1271,10 @@ impl OlmoeModel {
             gpu_mode_at_load: gpu_mode,
             gpu_tier,
             gpu_dense,
-            inter_layer_transitions: vec![vec![0u16; 64 * 64]; num_layers.saturating_sub(1)],
+            inter_layer_transitions: vec![
+                vec![0u16; MAX_EXPERTS * MAX_EXPERTS];
+                num_layers.saturating_sub(1)
+            ],
             usage_path,
             route_trace,
             kv_fp8,
@@ -1447,11 +1644,16 @@ impl OlmoeModel {
                 .to_owned()
         };
         let mut env = minijinja::Environment::new();
-        env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+        // SemiStrict: undefined attributes are falsy in tests (HF templates probe `message.tool_calls`),
+        // but printing or iterating an undefined value is still an error.
+        env.set_undefined_behavior(minijinja::UndefinedBehavior::SemiStrict);
+        env.set_unknown_method_callback(python_string_methods);
         env.add_template("chat", template)
             .map_err(|e| invalid(e.to_string()))?;
         env.get_template("chat").unwrap().render(minijinja::context! {
-            messages => messages, bos_token => special("bos_token"), eos_token => special("eos_token"), add_generation_prompt => true
+            messages => messages, bos_token => special("bos_token"), eos_token => special("eos_token"), add_generation_prompt => true,
+            // Qwen3 templates test `tools` and `enable_thinking`; other templates ignore them.
+            tools => (), enable_thinking => chat_thinking_enabled()?
         }).map_err(|e| invalid(e.to_string()))
     }
 
@@ -1745,24 +1947,25 @@ impl OlmoeModel {
             return (Vec::new(), CandidateDiagnostics::default());
         }
         let trans = &transitions[curr_layer_id];
-        let mut scores = [0u32; 64];
+        let mut scores = [0u32; MAX_EXPERTS];
 
         // 1. Tín hiệu dự phóng động PILOT Router: xếp hạng Top-K logits của router tầng kế tiếp
         // Áp dụng Cumulative Confidence Cutoff (học hỏi từ Colibrì olmoe.c pilot_conf_limit)
         let mut pilot_selected_count = max_candidates;
         if let Some(logits) = pilot_router {
-            if logits.len() >= 64 {
-                let max_l = logits[..64]
-                    .iter()
-                    .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-                let mut exps = [0.0f32; 64];
+            // Pilot scoring keeps its original activation threshold (full 64-expert routers);
+            // larger routers (Qwen3-MoE, 128) use all their logits.
+            let n = logits.len().min(MAX_EXPERTS);
+            if n >= 64 {
+                let max_l = logits[..n].iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+                let mut exps = [0.0f32; MAX_EXPERTS];
                 let mut sum_exp = 0.0f32;
-                for i in 0..64 {
+                for i in 0..n {
                     exps[i] = (logits[i] - max_l).exp();
                     sum_exp += exps[i];
                 }
 
-                let mut pilot_order: Vec<usize> = (0..64).collect();
+                let mut pilot_order: Vec<usize> = (0..n).collect();
                 pilot_order.sort_unstable_by(|&a, &b| logits[b].total_cmp(&logits[a]));
 
                 let mut cum_prob = 0.0f32;
@@ -1790,8 +1993,8 @@ impl OlmoeModel {
 
         // 2. Tích lũy xác suất chuyển tiếp từ các expert đang hoạt động ở tầng hiện tại (Markov)
         for &src in curr_top_experts {
-            if src < 64 {
-                let row_offset = src * 64;
+            if src < MAX_EXPERTS {
+                let row_offset = src * MAX_EXPERTS;
                 for (dst, score) in scores.iter_mut().enumerate() {
                     *score = score.saturating_add(trans[row_offset + dst] as u32);
                 }
@@ -2170,14 +2373,17 @@ impl OlmoeModel {
             return Err(invalid("token ID exceeds model vocabulary"));
         }
         let d = c.hidden_size;
-        let hd = d / c.num_attention_heads;
-        let kd = hd * c.num_key_value_heads;
+        let hd = c.head_dim();
+        let kd = c.kv_dim();
         let intermediate_size = c.intermediate_size;
         let weight_count = d * intermediate_size * 3;
         let scale_count = intermediate_size * 2 + d;
-        scratch
-            .x
-            .copy_from_slice(&self.embedding.values[token * d..(token + 1) * d]);
+        self.embedding.copy_row(
+            &self.index,
+            token,
+            &mut scratch.embedding_raw,
+            &mut scratch.x,
+        )?;
 
         let (layers, gpu_dense, gpu_tier, index, cache_bytes_per_layer, transitions, route_trace) = (
             &mut self.layers,
@@ -2223,8 +2429,8 @@ impl OlmoeModel {
                 &mut scratch.hidden,
             )?;
             Self::dense_qkv(&*gpu_dense, gpu_tier.is_enabled(), id, layer, scratch)?;
-            rms_norm_in_place(&mut scratch.query, &layer.q_norm, c.rms_norm_eps)?;
-            rms_norm_in_place(&mut scratch.key, &layer.k_norm, c.rms_norm_eps)?;
+            qk_norm_in_place(&mut scratch.query, &layer.q_norm, c.rms_norm_eps)?;
+            qk_norm_in_place(&mut scratch.key, &layer.k_norm, c.rms_norm_eps)?;
             prepare_rope_sincos(&mut scratch.sincos, &scratch.rope_bases, position);
             apply_rope_cached(&mut scratch.query, hd, &scratch.sincos);
             apply_rope_cached(&mut scratch.key, hd, &scratch.sincos);
@@ -2281,7 +2487,7 @@ impl OlmoeModel {
             layer.update_router_ema(&scratch.router, pilot_smooth);
             softmax(&mut scratch.router)?;
 
-            let mut expert_indices = [0usize; 64];
+            let mut expert_indices = [0usize; MAX_EXPERTS];
             for (i, idx) in expert_indices.iter_mut().enumerate().take(c.num_experts) {
                 *idx = i;
             }
@@ -2327,10 +2533,10 @@ impl OlmoeModel {
             if id > 0 && !prev_top_experts.is_empty() && id - 1 < transitions.len() {
                 let trans = &mut transitions[id - 1];
                 for &src in &prev_top_experts {
-                    if src < 64 {
-                        let row_offset = src * 64;
+                    if src < MAX_EXPERTS {
+                        let row_offset = src * MAX_EXPERTS;
                         for &dst in top_experts.iter() {
-                            if dst < 64 {
+                            if dst < MAX_EXPERTS {
                                 let idx = row_offset + dst;
                                 trans[idx] = trans[idx].saturating_add(1);
                             }
@@ -2911,8 +3117,9 @@ impl OlmoeModel {
         let gpu_compute = self.gpu_expert_compute_enabled;
         let c = &self.config;
         let d = c.hidden_size;
-        let hd = d / c.num_attention_heads;
-        let kd = hd * c.num_key_value_heads;
+        let hd = c.head_dim();
+        let kd = c.kv_dim();
+        let qd = c.q_dim();
         let batch_enabled = self.expert_batch_prefill_enabled && tokens.len() > 1;
         let prefetch_enabled = self.prefill_prefetch_enabled;
         let mut batch2 = batch_enabled.then(|| BatchScratch::<2>::new(d, c.intermediate_size));
@@ -2924,15 +3131,16 @@ impl OlmoeModel {
             if token >= c.vocab_size {
                 return Err(invalid("token ID exceeds model vocabulary"));
             }
-            output.copy_from_slice(&self.embedding.values[token * d..(token + 1) * d]);
+            self.embedding
+                .copy_row(&self.index, token, &mut scratch.embedding_raw, output)?;
         }
         let mut hidden_batch = vec![0.0; batch.len()];
         let batch_size = tokens.len();
-        let mut all_q = vec![0.0f32; batch_size * d];
+        let mut all_q = vec![0.0f32; batch_size * qd];
         let mut all_k = vec![0.0f32; batch_size * kd];
         let mut all_v = vec![0.0f32; batch_size * kd];
         let mut norm_batch = vec![0.0f32; batch_size * d];
-        let mut context_batch = vec![0.0f32; batch_size * d];
+        let mut context_batch = vec![0.0f32; batch_size * qd];
         let mut projected_batch = vec![0.0f32; batch_size * d];
 
         let route_count = tokens
@@ -3039,16 +3247,16 @@ impl OlmoeModel {
             for local_position in 0..batch_size {
                 check()?;
                 let position = base_position + local_position;
-                let q_slice = &mut all_q[local_position * d..(local_position + 1) * d];
+                let q_slice = &mut all_q[local_position * qd..(local_position + 1) * qd];
                 let k_slice = &mut all_k[local_position * kd..(local_position + 1) * kd];
                 let v_slice = &all_v[local_position * kd..(local_position + 1) * kd];
 
-                rms_norm_in_place(q_slice, &layer.q_norm, c.rms_norm_eps)?;
-                rms_norm_in_place(k_slice, &layer.k_norm, c.rms_norm_eps)?;
+                qk_norm_in_place(q_slice, &layer.q_norm, c.rms_norm_eps)?;
+                qk_norm_in_place(k_slice, &layer.k_norm, c.rms_norm_eps)?;
                 prepare_rope_sincos(&mut scratch.sincos, &scratch.rope_bases, position);
                 apply_rope_cached(q_slice, hd, &scratch.sincos);
                 apply_rope_cached(k_slice, hd, &scratch.sincos);
-                let ctx_slice = &mut context_batch[local_position * d..(local_position + 1) * d];
+                let ctx_slice = &mut context_batch[local_position * qd..(local_position + 1) * qd];
                 if kv[layer_id].is_fp8 {
                     let k_scale = quantize_row_fp8(k_slice, &mut scratch.fp8_key);
                     let v_scale = quantize_row_fp8(v_slice, &mut scratch.fp8_value);
@@ -3118,7 +3326,7 @@ impl OlmoeModel {
                     .multiply_loaded_into(&scratch.hidden, &mut scratch.router)?;
                 softmax(&mut scratch.router)?;
 
-                let mut expert_indices = [0usize; 64];
+                let mut expert_indices = [0usize; MAX_EXPERTS];
                 for (i, idx) in expert_indices.iter_mut().enumerate().take(c.num_experts) {
                     *idx = i;
                 }
@@ -3422,8 +3630,7 @@ impl OlmoeModel {
         if tokens.is_empty() || tokens.len() > self.context_limit {
             return Err(invalid("invalid token count"));
         }
-        let d = self.config.hidden_size;
-        let kd = d / self.config.num_attention_heads * self.config.num_key_value_heads;
+        let kd = self.config.kv_dim();
         let mut kv: Vec<_> = (0..self.layers.len())
             .map(|_| Kv::with_capacity_precision(self.context_limit, kd, self.kv_fp8))
             .collect();
@@ -3552,8 +3759,7 @@ impl OlmoeModel {
         }
         let is_fp8 = kv[0].is_fp8;
         let c = &self.config;
-        let hd = c.hidden_size / c.num_attention_heads;
-        let kd = hd * c.num_key_value_heads;
+        let kd = c.kv_dim();
         let num_layers = kv.len();
         let num_tokens = kv[0].positions(kd).min(tokens.len());
         if num_tokens == 0 {
@@ -4059,8 +4265,7 @@ impl OlmoeModel {
         ready()?;
         check()?;
         self.session_clock = self.session_clock.wrapping_add(1);
-        let d = self.config.hidden_size;
-        let kd = d / self.config.num_attention_heads * self.config.num_key_value_heads;
+        let kd = self.config.kv_dim();
         let (cached_prompt_tokens, mut kv, mut prepared_session) = self.take_prefix_kv(
             &tokens,
             session_id,
@@ -4448,6 +4653,21 @@ fn session_bytes(state: &SessionState) -> usize {
     )
 }
 
+/// Q/K RMSNorm: one weight over the whole vector (OLMoE) or the same per-head weight
+/// applied to each head slice (Qwen3-MoE, weight length = head_dim).
+fn qk_norm_in_place(values: &mut [f32], weight: &[f32], eps: f32) -> io::Result<()> {
+    if weight.len() == values.len() {
+        return rms_norm_in_place(values, weight, eps);
+    }
+    if weight.is_empty() || values.len() % weight.len() != 0 {
+        return Err(invalid("Q/K norm dimension mismatch"));
+    }
+    for head in values.chunks_exact_mut(weight.len()) {
+        rms_norm_in_place(head, weight, eps)?;
+    }
+    Ok(())
+}
+
 fn ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
@@ -4663,8 +4883,7 @@ mod memory_trace_tests {
             reused
                 .generate_controlled("[BOS]token3 ", 3, Some("a"), &|| Ok(()), || Ok(()), None)
                 .unwrap();
-            let kd = reused.config.hidden_size / reused.config.num_attention_heads
-                * reused.config.num_key_value_heads;
+            let kd = reused.config.kv_dim();
             for kv in &mut reused.sessions.get_mut("a").unwrap().kv {
                 if too_large {
                     kv.keys.reserve_exact(reused.context_limit * kd * 4);
@@ -4768,8 +4987,7 @@ mod memory_trace_tests {
                 .unwrap();
             reused.session_cache_bytes =
                 reused.expert_status().session_cache_allocated_bytes + 1024;
-            let kd = reused.config.hidden_size / reused.config.num_attention_heads
-                * reused.config.num_key_value_heads;
+            let kd = reused.config.kv_dim();
             let mut metrics = KvBufferReuseMetrics::default();
             let (_, mut kv, prepared) =
                 reused.take_prefix_kv(&[1, 8], Some("b"), kd, 3, &mut metrics);
@@ -4885,8 +5103,7 @@ mod memory_trace_tests {
                 None,
             )
             .unwrap();
-        let kd = traced.config.hidden_size / traced.config.num_attention_heads
-            * traced.config.num_key_value_heads;
+        let kd = traced.config.kv_dim();
         let mut reuse = KvBufferReuseMetrics::default();
         let (prefix, buffers, _) =
             traced.take_prefix_kv(&[usize::MAX], Some("a"), kd, 3, &mut reuse);
@@ -4953,8 +5170,7 @@ mod memory_trace_tests {
                 if length >= 7 {
                     assert!(profile.prefill_expert_batch4_calls > 0);
                 }
-                let kd = candidate.config.hidden_size / candidate.config.num_attention_heads
-                    * candidate.config.num_key_value_heads;
+                let kd = candidate.config.kv_dim();
                 assert!(kv.iter().all(|k| k.positions(kd) == length));
             }
         }
@@ -5343,8 +5559,7 @@ mod cancellation_tests {
                 .map(|(actual, expected)| (actual - expected).abs())
                 .fold(0.0f32, f32::max);
             assert!(error < 2e-5, "{fixture}: max logit error={error}");
-            let kd = model.config.hidden_size / model.config.num_attention_heads
-                * model.config.num_key_value_heads;
+            let kd = model.config.kv_dim();
             assert!(kv.iter().all(|cache| cache.keys.len() / kd == tokens.len()));
         }
     }
@@ -5733,8 +5948,7 @@ mod cancellation_tests {
                 .collect();
             let tokens = [1, 3, 4, 6];
             let expected = model.logits(&tokens).unwrap().pop().unwrap();
-            let kd = model.config.hidden_size / model.config.num_attention_heads
-                * model.config.num_key_value_heads;
+            let kd = model.config.kv_dim();
             let (prefix, mut kv, _) = model.take_prefix_kv(
                 &tokens,
                 Some("fork"),
@@ -5864,8 +6078,7 @@ mod cancellation_tests {
                     error < 2e-5,
                     "{fixture}, split {split}: logit error={error}"
                 );
-                let kd = model.config.hidden_size / model.config.num_attention_heads
-                    * model.config.num_key_value_heads;
+                let kd = model.config.kv_dim();
                 assert!(kv.iter().all(|cache| cache.keys.len() / kd == tokens.len()));
             }
         }
@@ -6322,6 +6535,30 @@ mod routing_and_topk_tests {
     }
 
     #[test]
+    fn disk_embedding_rows_match_ram_logits_for_olmoe_and_qwen3() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        for fixture in ["olmoe/normalized-gqa", "qwen3moe/gqa-headdim"] {
+            let directory = root.join(fixture);
+            let mut model =
+                OlmoeModel::load_with_gpu_mode(&directory, 8192, 32, 10_000_000, GpuMode::Cpu)
+                    .unwrap();
+            assert!(matches!(model.embedding, Embedding::Ram(_)));
+            let tokens = [1, 3, 4, 5];
+            let expected = model.logits(&tokens).unwrap();
+            model.embedding = Embedding::Disk {
+                columns: model.config.hidden_size,
+            };
+            assert_eq!(model.logits(&tokens).unwrap(), expected, "{fixture}");
+            let mut raw = Vec::new();
+            let mut row = vec![0.0; model.config.hidden_size];
+            assert!(model
+                .embedding
+                .copy_row(&model.index, model.config.vocab_size, &mut raw, &mut row)
+                .is_err());
+        }
+    }
+
+    #[test]
     fn test_rope_fast_path_matches_legacy_rotate() {
         let hd = 128;
         let num_heads = 16;
@@ -6631,7 +6868,7 @@ mod routing_and_topk_tests {
         let mut router = vec![0.1f32; 64];
         router[3] = 0.9;
         router[7] = 0.8;
-        let mut expert_indices = [0usize; 64];
+        let mut expert_indices = [0usize; MAX_EXPERTS];
         let num_experts = 64;
         let top_k = 64; // top_k == valid_indices.len()
         for (i, idx) in expert_indices.iter_mut().enumerate().take(num_experts) {
@@ -6878,8 +7115,8 @@ mod routing_and_topk_tests {
                 hits_in_cache: 1,
                 is_protected: false,
             });
-            model.inter_layer_transitions[0][id * 64] = 10;
-            model.inter_layer_transitions[0][id * 64 + 3] = 10;
+            model.inter_layer_transitions[0][id * MAX_EXPERTS] = 10;
+            model.inter_layer_transitions[0][id * MAX_EXPERTS + 3] = 10;
         }
         model
     }
@@ -7098,7 +7335,7 @@ mod routing_and_topk_tests {
     fn test_inter_layer_lookahead_prefetch_and_markov_transition() {
         // Kiểm tra cơ chế dự đoán Lookahead và cập nhật Ma trận chuyển tiếp liên tầng
         let num_layers = 4;
-        let mut transitions = vec![vec![0u16; 64 * 64]; num_layers - 1];
+        let mut transitions = vec![vec![0u16; MAX_EXPERTS * MAX_EXPERTS]; num_layers - 1];
 
         // 1. Tầng 0 kích hoạt expert 7 và 12
         let layer0_experts = vec![7, 12];
@@ -7109,14 +7346,15 @@ mod routing_and_topk_tests {
         let trans0 = &mut transitions[0];
         for &src in &layer0_experts {
             for &dst in &layer1_experts {
-                trans0[src * 64 + dst] = trans0[src * 64 + dst].saturating_add(10);
+                trans0[src * MAX_EXPERTS + dst] =
+                    trans0[src * MAX_EXPERTS + dst].saturating_add(10);
             }
         }
 
-        assert_eq!(transitions[0][7 * 64 + 25], 10);
-        assert_eq!(transitions[0][7 * 64 + 48], 10);
-        assert_eq!(transitions[0][12 * 64 + 25], 10);
-        assert_eq!(transitions[0][12 * 64 + 48], 10);
+        assert_eq!(transitions[0][7 * MAX_EXPERTS + 25], 10);
+        assert_eq!(transitions[0][7 * MAX_EXPERTS + 48], 10);
+        assert_eq!(transitions[0][12 * MAX_EXPERTS + 25], 10);
+        assert_eq!(transitions[0][12 * MAX_EXPERTS + 48], 10);
         assert_eq!(transitions[0][7 * 64], 0);
 
         // 2. Dự đoán cho tầng 1 dựa trên router tầng 0
@@ -7162,7 +7400,7 @@ mod routing_and_topk_tests {
         // Kiểm tra cơ chế PILOT Router Lookahead từ Colibrì:
         // Tín hiệu logits động từ router tầng kế tiếp dự phóng chính xác ứng viên
         let num_layers = 4;
-        let transitions = vec![vec![0u16; 64 * 64]; num_layers - 1];
+        let transitions = vec![vec![0u16; MAX_EXPERTS * MAX_EXPERTS]; num_layers - 1];
         let layer0_experts = vec![1, 2];
         let next_layer_heat = vec![0u32; 64];
         let next_layer_cache = VecDeque::new();
@@ -7260,7 +7498,7 @@ mod routing_and_topk_tests {
     fn test_pilot_confidence_cutoff_pruning() {
         // Kiểm tra Cumulative Confidence Cutoff (pilot_conf_limit) từ Colibrì:
         let num_layers = 4;
-        let transitions = vec![vec![0u16; 64 * 64]; num_layers - 1];
+        let transitions = vec![vec![0u16; MAX_EXPERTS * MAX_EXPERTS]; num_layers - 1];
         let layer0_experts = vec![1, 2];
         let next_layer_heat = vec![0u32; 64];
         let next_layer_cache = VecDeque::new();
@@ -7650,8 +7888,7 @@ mod routing_and_topk_tests {
             }
 
             // Kiểm tra tỉ lệ nén bộ nhớ KV Cache
-            let kd = model_fp8.config.hidden_size / model_fp8.config.num_attention_heads
-                * model_fp8.config.num_key_value_heads;
+            let kd = model_fp8.config.kv_dim();
             let mut kv_fp32 = Kv::with_capacity_precision(1024, kd, false);
             let mut kv_fp8 = Kv::with_capacity_precision(1024, kd, true);
 
@@ -7720,8 +7957,7 @@ mod routing_and_topk_tests {
         let directory =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/olmoe/unnormalized-mha");
         let model = OlmoeModel::load(&directory, 100_000, 64, 10_000_000).unwrap();
-        let kd = model.config.hidden_size / model.config.num_attention_heads
-            * model.config.num_key_value_heads;
+        let kd = model.config.kv_dim();
 
         // 1. Kiểm thử lưu và nạp định dạng FP32
         let tokens: Vec<usize> = vec![10, 20, 30, 40, 50];
