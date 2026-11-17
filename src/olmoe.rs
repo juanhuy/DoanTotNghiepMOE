@@ -4,6 +4,7 @@ use crate::{
         causal_attention_fp8_into, causal_attention_into, configure_parallelism, finite, invalid,
         rms_norm_in_place, rms_norm_into, softmax, Matrix,
     },
+    dense::{DenseMatrix, DenseStorage},
     generation::{
         Generation, GenerationMetrics, KvBufferReuseMetrics, LookaheadMetrics, MemoryStageSample,
         RequestMemoryTrace,
@@ -301,6 +302,14 @@ pub struct ExpertStatusReport {
     pub gpu_expert_compute_enabled: bool,
     pub gate_up_mode: &'static str,
     pub expert_quantization: &'static str,
+    /// Checkpoint architecture (`olmoe` or `qwen3_moe`).
+    pub model_type: String,
+    /// MOE_DENSE_STORAGE actually used for attention/router/LM head matrices.
+    pub dense_storage: &'static str,
+    /// Resident bytes of dense projection matrices (excludes embedding and norms).
+    pub dense_matrix_bytes: usize,
+    /// Token embedding read per token from the checkpoint instead of resident in RAM.
+    pub embedding_on_disk: bool,
     pub kv_buffer_reuse_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_kv_buffer_reuse: Option<KvBufferReuseMetrics>,
@@ -344,11 +353,11 @@ struct Layer {
     post_norm: Vec<f32>,
     q_norm: Vec<f32>,
     k_norm: Vec<f32>,
-    q: Matrix,
-    k: Matrix,
-    v: Matrix,
-    o: Matrix,
-    router: Matrix,
+    q: DenseMatrix,
+    k: DenseMatrix,
+    v: DenseMatrix,
+    o: DenseMatrix,
+    router: DenseMatrix,
     cache: VecDeque<CachedExpert>,
     bytes: usize,
     heat: Vec<u32>,
@@ -735,7 +744,8 @@ pub struct OlmoeModel {
     dense_bytes: usize,
     index: TensorIndex,
     embedding: Embedding,
-    head: Matrix,
+    head: DenseMatrix,
+    dense_storage: DenseStorage,
     norm: Vec<f32>,
     layers: Vec<Layer>,
     cache_bytes_per_layer: usize,
@@ -781,6 +791,29 @@ fn mat(
         values,
     })
 }
+/// Dense projection in the requested storage. BF16 storage applies only to BF16 tensors;
+/// anything else decodes to F32 exactly as `mat` does.
+fn dense_mat(
+    index: &TensorIndex,
+    name: &str,
+    rows: usize,
+    columns: usize,
+    budget: &mut usize,
+    storage: DenseStorage,
+) -> io::Result<DenseMatrix> {
+    let info = index.tensor(name)?;
+    if storage == DenseStorage::Bf16 && info.dtype == crate::safetensors::DType::BF16 {
+        if info.shape != [rows, columns] {
+            return Err(invalid(format!("{name}: incorrect shape")));
+        }
+        let raw = index.read_raw(name, *budget)?;
+        let matrix = DenseMatrix::from_bf16_bytes(rows, columns, &raw)?;
+        *budget -= matrix.resident_bytes();
+        return Ok(matrix);
+    }
+    mat(index, name, rows, columns, budget).map(DenseMatrix::from)
+}
+
 fn tensor(
     index: &TensorIndex,
     name: &str,
@@ -921,6 +954,7 @@ impl OlmoeModel {
             Err(_) => return Err(invalid("invalid MOE_EXPERT_BATCH_PREFILL")),
         };
         let ram_guard = crate::ram::RamGuard::from_environment()?;
+        let dense_storage = DenseStorage::from_environment()?;
         let embedding_disk = embedding_on_disk(
             config
                 .vocab_size
@@ -938,7 +972,15 @@ impl OlmoeModel {
                     .shape
                     .iter()
                     .try_fold(1usize, |n, &dim| n.checked_mul(dim))?;
-                total.checked_add(count.checked_mul(4)?)
+                let width = if dense_storage == DenseStorage::Bf16
+                    && tensor.dtype == crate::safetensors::DType::BF16
+                    && tensor.shape.len() == 2
+                {
+                    2
+                } else {
+                    4
+                };
+                total.checked_add(count.checked_mul(width)?)
             })
             .ok_or_else(|| invalid("dense RAM estimate overflow"))?;
         // Reserve full configured caches and conservative transient/tokenizer/
@@ -984,7 +1026,14 @@ impl OlmoeModel {
                 &mut budget,
             )?)
         };
-        let head = mat(&index, "lm_head.weight", config.vocab_size, d, &mut budget)?;
+        let head = dense_mat(
+            &index,
+            "lm_head.weight",
+            config.vocab_size,
+            d,
+            &mut budget,
+            dense_storage,
+        )?;
         let norm = tensor(&index, "model.norm.weight", &[d], &mut budget)?;
         let mut layers = Vec::new();
         for id in 0..config.num_hidden_layers {
@@ -1003,7 +1052,14 @@ impl OlmoeModel {
             let q_norm = load("self_attn.q_norm.weight", &[q_norm_width])?;
             let k_norm = load("self_attn.k_norm.weight", &[k_norm_width])?;
             let mut matrix = |suffix: &str, rows, columns| {
-                mat(&index, &format!("{p}.{suffix}"), rows, columns, &mut budget)
+                dense_mat(
+                    &index,
+                    &format!("{p}.{suffix}"),
+                    rows,
+                    columns,
+                    &mut budget,
+                    dense_storage,
+                )
             };
             let q = matrix("self_attn.q_proj.weight", qd, d)?;
             let k = matrix("self_attn.k_proj.weight", kd, d)?;
@@ -1082,10 +1138,10 @@ impl OlmoeModel {
                 let mut failed = false;
                 for l in &layers {
                     if let (Some(q), Some(k), Some(v), Some(o)) = (
-                        crate::gpu::GpuMatrix::from_matrix(&l.q, &engine),
-                        crate::gpu::GpuMatrix::from_matrix(&l.k, &engine),
-                        crate::gpu::GpuMatrix::from_matrix(&l.v, &engine),
-                        crate::gpu::GpuMatrix::from_matrix(&l.o, &engine),
+                        l.q.to_gpu(&engine),
+                        l.k.to_gpu(&engine),
+                        l.v.to_gpu(&engine),
+                        l.o.to_gpu(&engine),
                     ) {
                         total_bytes += q.bytes + k.bytes + v.bytes + o.bytes;
                         gpu_layers.push(crate::gpu::LayerDenseGpu {
@@ -1100,7 +1156,7 @@ impl OlmoeModel {
                     }
                 }
                 if !failed {
-                    if let Some(lm_head_gpu) = crate::gpu::GpuMatrix::from_matrix(&head, &engine) {
+                    if let Some(lm_head_gpu) = head.to_gpu(&engine) {
                         total_bytes += lm_head_gpu.bytes;
                         gpu_tier.set_dense_allocated_bytes(total_bytes);
                         info!(
@@ -1253,6 +1309,7 @@ impl OlmoeModel {
             index,
             embedding,
             head,
+            dense_storage,
             norm,
             layers,
             cache_bytes_per_layer,
@@ -1438,6 +1495,20 @@ impl OlmoeModel {
             gpu_expert_compute_enabled: self.gpu_expert_compute_enabled,
             gate_up_mode: self.gate_up_mode.as_str(),
             expert_quantization: self.expert_quantization,
+            model_type: self.config.model_type.clone(),
+            dense_storage: self.dense_storage.as_str(),
+            dense_matrix_bytes: self.head.resident_bytes()
+                + self
+                    .layers
+                    .iter()
+                    .map(|l| {
+                        [&l.q, &l.k, &l.v, &l.o, &l.router]
+                            .iter()
+                            .map(|m| m.resident_bytes())
+                            .sum::<usize>()
+                    })
+                    .sum::<usize>(),
+            embedding_on_disk: matches!(self.embedding, Embedding::Disk { .. }),
             kv_buffer_reuse_enabled: self.kv_buffer_reuse_enabled,
             last_kv_buffer_reuse: self.last_kv_buffer_reuse.clone(),
             memory_trace_enabled: self.memory_trace_enabled,
@@ -1660,7 +1731,7 @@ impl OlmoeModel {
     fn dense_gemv(
         gpu_dense: &Option<crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
-        matrix_cpu: &Matrix,
+        matrix_cpu: &DenseMatrix,
         matrix_gpu: impl FnOnce(&crate::gpu::GpuDenseStorage) -> &crate::gpu::GpuMatrix,
         input: &[f32],
         output: &mut [f32],
@@ -1732,7 +1803,7 @@ impl OlmoeModel {
     fn dense_gemm<F>(
         gpu_dense: &Option<crate::gpu::GpuDenseStorage>,
         gpu_enabled: bool,
-        matrix_cpu: &crate::backend::Matrix,
+        matrix_cpu: &DenseMatrix,
         matrix_gpu: F,
         batch_input: &[f32],
         batch_output: &mut [f32],
@@ -1761,8 +1832,8 @@ impl OlmoeModel {
                 }
             }
         }
-        let in_dim = matrix_cpu.columns;
-        let out_dim = matrix_cpu.rows;
+        let in_dim = matrix_cpu.columns();
+        let out_dim = matrix_cpu.rows();
         for (x_chunk, out_chunk) in batch_input
             .chunks_exact(in_dim)
             .zip(batch_output.chunks_exact_mut(out_dim))
@@ -1810,10 +1881,10 @@ impl OlmoeModel {
                 }
             }
         }
-        let d = layer.q.columns;
-        let q_dim = layer.q.rows;
-        let k_dim = layer.k.rows;
-        let v_dim = layer.v.rows;
+        let d = layer.q.columns();
+        let q_dim = layer.q.rows();
+        let k_dim = layer.k.rows();
+        let v_dim = layer.v.rows();
         for (i, h_chunk) in batch_hidden.chunks_exact(d).enumerate() {
             layer
                 .q
@@ -6910,27 +6981,32 @@ mod routing_and_topk_tests {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             k: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             v: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             o: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             router: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             cache: VecDeque::new(),
             bytes: 0,
             heat: vec![0; 64],
@@ -7102,7 +7178,7 @@ mod routing_and_topk_tests {
         model.lookahead_enabled = enabled;
         // Tie-break routes to 0/1. Predict 0 (used) and 3 (unused) at the next layer.
         for layer in &mut model.layers {
-            layer.router.values.fill(0.0);
+            layer.router.as_f32_mut().unwrap().values.fill(0.0);
         }
         for id in [0, 1] {
             let expert = Int8Expert::load(&model.index, 0, id, 16, 8, 512).unwrap();
@@ -7444,27 +7520,32 @@ mod routing_and_topk_tests {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             k: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             v: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             o: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             router: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             cache: VecDeque::new(),
             bytes: 0,
             heat: vec![0; 64],
@@ -7615,27 +7696,32 @@ mod routing_and_topk_tests {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             k: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             v: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             o: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             router: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             cache: VecDeque::new(),
             bytes: 0,
             heat: vec![0; 64],
@@ -7759,27 +7845,32 @@ mod routing_and_topk_tests {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             k: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             v: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             o: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             router: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             cache: VecDeque::new(),
             bytes: 0,
             heat: vec![0; 64],
@@ -7803,27 +7894,32 @@ mod routing_and_topk_tests {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             k: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             v: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             o: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             router: Matrix {
                 rows: 0,
                 columns: 0,
                 values: vec![],
-            },
+            }
+            .into(),
             cache: VecDeque::new(),
             bytes: 0,
             heat: vec![0; 64],

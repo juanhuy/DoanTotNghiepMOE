@@ -1,5 +1,6 @@
 pub mod attention;
 pub mod backend;
+pub mod dense;
 pub mod engine;
 pub mod expert;
 pub mod generation;

@@ -16,11 +16,12 @@ from tokenizers import Tokenizer, models, pre_tokenizers
 torch.set_num_threads(1)
 root = Path(sys.argv[1])
 VARIANTS = [
-    # name, heads, kv_heads, head_dim, experts, top_k
-    ('gqa-headdim', 4, 2, 6, 8, 2),
-    ('many-experts', 2, 1, 12, 72, 4),
+    # name, heads, kv_heads, head_dim, experts, top_k, BF16 dense tensors on disk
+    ('gqa-headdim', 4, 2, 6, 8, 2, False),
+    ('many-experts', 2, 1, 12, 72, 4, False),
+    ('bf16-dense', 4, 2, 6, 8, 2, True),
 ]
-for name, heads, kv_heads, head_dim, experts, top_k in VARIANTS:
+for name, heads, kv_heads, head_dim, experts, top_k, bf16_dense in VARIANTS:
     torch.manual_seed(321)
     config = Qwen3MoeConfig(hidden_size=16, intermediate_size=40, moe_intermediate_size=8,
         num_hidden_layers=2, num_attention_heads=heads, num_key_value_heads=kv_heads,
@@ -37,6 +38,9 @@ for name, heads, kv_heads, head_dim, experts, top_k in VARIANTS:
         for module_name, param in model.named_parameters():
             if module_name.endswith('norm.weight'):
                 param.copy_(1.0 + 0.5 * torch.randn_like(param))
+            if bf16_dense and '.mlp.experts.' not in module_name:
+                # Reference uses exactly the BF16 values stored on disk (BF16 -> F32 is exact).
+                param.copy_(param.bfloat16().float())
         for layer_id, layer in enumerate(model.model.layers):
             for expert_id, expert in enumerate(layer.mlp.experts):
                 quantized, scales = [], []
@@ -52,7 +56,7 @@ for name, heads, kv_heads, head_dim, experts, top_k in VARIANTS:
                 tensors[prefix + '.qs'] = torch.cat(scales)
         for tensor_name, value in model.state_dict().items():
             if '.mlp.experts.' not in tensor_name:
-                tensors[tensor_name] = value.contiguous()
+                tensors[tensor_name] = (value.bfloat16() if bf16_dense else value).contiguous()
         ids = [1, 3, 4, 5, 9, 2]
         logits = model(torch.tensor([ids]), use_cache=False).logits[0].tolist()
     out = root / name
@@ -69,5 +73,7 @@ for name, heads, kv_heads, head_dim, experts, top_k in VARIANTS:
     tokenizer.add_special_tokens(['[BOS]', '[EOS]'])
     tokenizer.save(str(out / 'tokenizer.json'))
     template = "{{ bos_token }}{% for message in messages %}{{ message['content'] + ' ' }}{% endfor %}"
-    (out / 'tokenizer_config.json').write_text(json.dumps({'bos_token': '[BOS]', 'eos_token': '[EOS]', 'chat_template': template}))
+    # gqa-headdim carries the real Qwen3 chat template (copied from the HF repo); keep it.
+    if not (out / 'tokenizer_config.json').exists():
+        (out / 'tokenizer_config.json').write_text(json.dumps({'bos_token': '[BOS]', 'eos_token': '[EOS]', 'chat_template': template}))
     print(out)
