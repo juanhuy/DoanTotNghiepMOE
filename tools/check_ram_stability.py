@@ -194,6 +194,10 @@ def parser():
     cli.add_argument('--stop-swap-mib', type=common.nonnegative, default=128)
     cli.add_argument('--memory-max-mib', type=common.positive, default=None,
                      help='ram-limit: engine-only cgroup memory.max incl. page cache, no swap; evicts checkpoint first')
+    cli.add_argument('--dense-storage', choices=['f32', 'bf16'], default='f32',
+                     help='MOE_DENSE_STORAGE: keep BF16 dense matrices as BF16 in RAM (exact)')
+    cli.add_argument('--embedding-storage', choices=['auto', 'ram', 'disk'], default='auto',
+                     help='MOE_EMBEDDING_STORAGE: auto reads tables >512MiB per token from disk')
     cli.add_argument('--output-root', type=Path, default=Path('benchmarks/runs'))
     cli.add_argument('--allow-dirty', action='store_true')
     cli.add_argument('--dry-run', action='store_true')
@@ -245,6 +249,8 @@ def execute(args):
                MOE_MEMORY_TRACE=args.memory_trace, MOE_KV_BUFFER_REUSE=args.kv_buffer_reuse, MOE_GATE_UP_MODE=args.gate_up_mode, MOE_EXPERT_BATCH_PREFILL=args.expert_batch_prefill,
                MOE_GPU_EXPERT_TIER=args.gpu_expert_tier, MOE_PREFILL_PREFETCH=args.prefill_prefetch,
                MOE_GPU_EXPERT_COMPUTE=args.gpu_expert_compute,
+               MOE_DENSE_STORAGE=args.dense_storage, MOE_EMBEDDING_STORAGE=args.embedding_storage,
+               MOE_CHAT_THINKING='off',
                MOE_EXPERT_CACHE_POLICY='victim', MOE_RAM_LIMIT_BYTES=str(args.ram_limit_mib * 1024**2),
                MOE_RAM_HEADROOM_BYTES=str(args.headroom_mib * 1024**2))
     stop = threading.Event()

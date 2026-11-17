@@ -647,3 +647,23 @@ done
 **Kết quả i5 16/11:** [hồ sơ P1](experiments/2026-11-16-ram-limit-i5/README.md), HEAD a752868 sạch, binary 372532cb… (trùng A1 i5), power_checks đạt 16/16, checkpoint còn 0 byte trong page cache sau khi xóa ở 8/8 block, không OOM, VmSwap 0, text khớp. **5120MiB: `compute_faster: true`**: total on/off 0,389–0,616, decode_ms 0,389–0,599, decode trung vị 4,13 so với 2,14 tok/s, đọc file on 1,61–2,56 / off 1,28–1,71 GB/s. **8192MiB: không nhất quán** (total 0,566–1,057). Cặp 0 lệch vì block0 có AnonPages hệ thống 5,6–8,5GiB do tiến trình ngoài engine, scope chỉ đạt đỉnh 6908MiB; theo protocol không chạy lại.
 
 **Kết quả i7 16/11:** [hồ sơ P1](experiments/2026-11-16-ram-limit-i7/README.md), HEAD 00c9d98 sạch, binary 8dc775b2… (trùng A1 i7), pool 960 slot, checkpoint còn 0 byte trong page cache sau khi xóa ở 8/8 block, không OOM, VmSwap 0, text khớp. **5120MiB: `compute_faster: true`**, total 0,068–0,104, decode trung vị 50,56 so với 3,83 tok/s. **8192MiB: `compute_faster: true`**, total 0,137–0,204, decode 50,27 so với 7,85 tok/s. Một điểm power ghi `sw_power_cap` lúc GPU nhàn rỗi (8192 block0 trước khi chạy).
+
+## Qwen3-30B-A3B dưới trần RAM 10GB (qwen3-ram-cap-v1, 17/11)
+
+Câu hỏi: model INT8 khoảng 30GB (gấp đôi RAM máy) có chạy hết workload dưới trần RAM 10GB (cgroup `memory.max`, tính cả page cache, không swap) mà không OOM không? RSS và tok/s thật là bao nhiêu? Đây là quan sát ổn định có giới hạn, không phải so sánh A/B tốc độ.
+
+- Checkpoint: `Qwen/Qwen3-30B-A3B` revision `ad44e777bcd18fa416d9da3bd8f70d33ebb85d39`, SHA256 16 shard khớp Hub (`SOURCE_SHA256.json`), convert bằng `tools/prepare_olmoe.py` sang expert INT8 theo hàng, dense giữ BF16.
+- Engine: `MOE_DENSE_STORAGE=bf16`, embedding `auto` (đọc từ đĩa), thinking off, GPU `cpu` trên i5 (dense FP32 không vừa VRAM 4GB), cache 64MiB/layer × 48, context 512, max64, CPU4, victim, lookahead off, batch off.
+- Workload `mixed` (4 prompt, có follow-up), 8 request liên tiếp, `--keep-cache`. Checkpoint bị xóa khỏi page cache trước khi chạy và kiểm bằng `fincore`.
+- Hai mức, mỗi mức một lượt, theo thứ tự 10240 rồi 8192MiB. Guard hợp tác `--ram-limit-mib` thấp hơn trần 1024MiB.
+- Kết quả được ghi nhận nếu chạy hết 8/8 request với `oom_kill` = 0 và VmSwap = 0. OOM hoặc lỗi guard được ghi là kết quả, không chạy lại để tìm số đẹp. Báo cáo: RSS max, đỉnh scope current/anon/file, TTFT, decode tok/s, expert_io_ms, tốc độ đọc file, kèm text trả lời.
+
+```bash
+for limit in 10240 8192; do
+  systemd-inhibit --what=idle:sleep --why="qwen3 ram cap" \
+    python3 tools/check_ram_stability.py --testbed i5 --gpu cpu --workload mixed --cycles 8 --keep-cache \
+    --cache 64 --context 512 --max-tokens 64 --threads 4 --lookahead off --dense-storage bf16 \
+    --model-dir ../Models/qwen3-30b-a3b-int8 --memory-max-mib $limit \
+    --ram-limit-mib $((limit-1024)) --stop-rss-mib $((limit-512)) --headroom-mib 512
+done
+```
