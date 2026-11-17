@@ -1,0 +1,22 @@
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261117T044548.140906Z-ram-a25a0147c5a348038dd493e9baf79792
+turn=0 RSS=5688100KiB swap=0KiB
+turn=1 RSS=5715688KiB swap=0KiB
+turn=2 RSS=5758528KiB swap=0KiB
+turn=3 RSS=5806212KiB swap=0KiB
+turn=4 RSS=5832520KiB swap=0KiB
+turn=5 RSS=5841760KiB swap=0KiB
+turn=6 RSS=5866156KiB swap=0KiB
+turn=7 RSS=5899900KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261117T044548.140906Z-ram-a25a0147c5a348038dd493e9baf79792/result.json
+EXIT 10240 0
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261117T045514.352650Z-ram-3dfbbd7bf2ad402ba93041f1b9e34c14
+turn=0 RSS=5688196KiB swap=0KiB
+turn=1 RSS=5711332KiB swap=0KiB
+turn=2 RSS=5757756KiB swap=0KiB
+turn=3 RSS=5805584KiB swap=0KiB
+turn=4 RSS=5832112KiB swap=0KiB
+turn=5 RSS=5833164KiB swap=0KiB
+turn=6 RSS=5854112KiB swap=0KiB
+turn=7 RSS=5887296KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261117T045514.352650Z-ram-3dfbbd7bf2ad402ba93041f1b9e34c14/result.json
+EXIT 8192 0

@@ -4077,3 +4077,18 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - Fixture nhỏ không bật được GPU expert compute (pool/kernel không khởi tạo với kích thước tí hon), nên A1 trên Qwen3 phải kiểm trên model thật.
   - GPU dense vẫn upload FP32 (~4,9GB với Qwen3), nên không vừa GTX 1650 4GB. i5 sẽ chạy Qwen3 bằng CPU; chỉ i7 (8GB) có thể dùng GPU.
 - Đang tải checkpoint Qwen/Qwen3-30B-A3B (61GB BF16) vào `../Models/qwen3-30b-a3b-hf`.
+
+## 2026-11-17 — Qwen3-30B-A3B chạy thật trên i5 dưới trần RAM 10GB và 8GB
+
+- Tải `Qwen/Qwen3-30B-A3B` (revision ad44e77, 57GB), SHA256 16 shard khớp Hub. Convert INT8 bằng `prepare_olmoe.py` trong 6 phút 18 giây, ra 30GB. Smoke không giới hạn RAM: trả lời đúng tiếng Anh và tiếng Việt, RSS 2,4GiB sau load và 5,4GiB khi trả lời.
+- Thêm `--dense-storage`/`--embedding-storage` vào `check_ram_stability.py` để ghi cấu hình tường minh, thay vì để biến môi trường của shell lọt vào. Chốt protocol `qwen3-ram-cap-v1` (f695629) trước khi đo.
+- Đo `qwen3-ram-cap-v1` (CPU-only, dense BF16, cache 64MiB/layer, mixed × 8, max64): hồ sơ P1 `benchmarks/experiments/2026-11-17-qwen3-ram-cap-i5/` (30 file trong CHECKSUMS).
+  - 10240MiB và 8192MiB đều 8/8, oom_kill 0, VmSwap 0, anon đỉnh 5756 / 5740MiB.
+  - Decode trung vị 1,34 / 1,13 tok/s, TTFT 9,8 / 11,0s.
+  - Cache hit 38–73%; mỗi request đọc 60–91GB payload expert; 58–76% thời gian là chờ đọc.
+  - Text giống hệt nhau giữa hai mức.
+- Cả ba tiêu chí nghiệm thu đã đặt cho nhánh Qwen3 đều đạt (parity trên fixture, không OOM dưới 10GB, có tok/s thật). Giới hạn:
+  - chưa có parity hoặc đánh giá chất lượng trên model 30B thật;
+  - GPU chưa dùng được trên i5 (dense FP32 4,9GB > 4GB VRAM);
+  - một lượt mỗi mức, không A/B.
+- Cập nhật benchmarks/README (35 hồ sơ), EVIDENCE_MATRIX, SCENARIOS. `python3 tools/check.py` PASS.

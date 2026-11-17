@@ -667,3 +667,5 @@ for limit in 10240 8192; do
     --ram-limit-mib $((limit-1024)) --stop-rss-mib $((limit-512)) --headroom-mib 512
 done
 ```
+
+**Kết quả i5 17/11:** [hồ sơ P1](experiments/2026-11-17-qwen3-ram-cap-i5/README.md). 10240MiB và 8192MiB đều 8/8, `oom_kill` 0, VmSwap 0, anon đỉnh 5756 / 5740MiB, decode trung vị 1,34 / 1,13 tok/s, TTFT 9,8 / 11,0s. Text giống hệt nhau giữa hai mức.
