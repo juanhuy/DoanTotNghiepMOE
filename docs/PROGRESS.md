@@ -4027,3 +4027,24 @@ Kết luận và bước tiếp theo:
 - Merge `--no-ff` nhánh `work/ram-limit-tier` (tooling `--memory-max-mib`, protocol `ram-limit-chat-v1`, hồ sơ P1 `2026-11-16-ram-limit-i5`) vào main và push.
 - Giao i7 [nhiệm vụ giới hạn RAM](WORKFLOWS.md#nhiệm-vụ-i7-giới-hạn-ram-của-engine-giao-16112026): kiểm cgroup memory/`systemd-run --user`/`fincore` trước, kiểm kernel GPU, đóng Chrome/Slack, một lượt mỗi mức (8192 rồi 5120), lưu trên branch `work/i7-ram-limit`. Cập nhật AGENTS/PLAN/WORKFLOWS. `python3 tools/check.py` PASS.
 - Nhánh A1b (`work/a1b-vram-heat-admission`) dừng theo quyết định của owner; giữ local, chưa push hay merge.
+
+## 2026-11-16 — Kết quả giới hạn RAM i7 (ram-limit-chat-v1): cả hai mức 8192 và 5120 `compute_faster` 8/8
+
+- Thực hiện nhiệm vụ giới hạn RAM trên testbed i7 (RTX 5060 Laptop GPU 8GB, pool 960/1024 expert = 93,75%) theo WORKFLOWS.md trên branch riêng `work/i7-ram-limit` (HEAD 00c9d98 sạch, binary 8dc775b2d39bf0808d32f3617b0f38016bf0fb011cd965c6580b7bf96744eabe). Kiểm tra tiền điều kiện: cgroup memory OK, `systemd-run --user --scope` OK, `fincore` cài qua gói `util-linux-extra` OK, CUDA kernel 15/15 PASS (EXECUTED, 0 SKIPPED).
+- Preflight đạt: available ≥9823MiB, pswpout không đổi [1314, 1314, 1314], on_ac true, GPU không throttle; chạy dưới `systemd-inhibit --what=idle:sleep`.
+- Chạy đúng một lượt mỗi mức theo thứ tự 8192 rồi 5120MiB: run 20261116T153832.311372Z-ram-limit-model-d6195b7d… (8192) và 20261116T154228.744986Z-ram-limit-model-43115da6… (5120), tổng khoảng 10 phút. Cả hai COMPLETED 32/32, text/usage/finish khớp, `power_checks` on_ac true 16/16, checkpoint xác nhận 0 byte trong page cache sau khi xóa ở cả 8/8 block (fincore), 0 OOM, VmSwap 0, on có 0 lần tải VRAM→RAM.
+- **5120MiB: `compute_faster: true` 8/8.** total on/off 0,068–0,104 (nhanh hơn 9,6–14,7×), decode_ms 0,065–0,083 (nhanh hơn 12,0–15,4×), TTFT 0,086–0,183. Decode trung vị 50,56 (on) so với 3,83 (off) tok/s (~13,2×). Phía off đọc SSD thật 2,50–2,95 GB/s, expert_io_ms trung vị 13.194 ms (~13,2s). Phía on đọc SSD chỉ 0–105 lần (nhờ pool 960 resident), expert_io_ms trung vị 13,2 ms, total latency 1,34–2,20s. Đỉnh scope 5120MiB, anon ~3,1–3,2GB, file ~2,67GB.
+- **8192MiB: `compute_faster: true` 8/8 (nhất quán trên i7).** total on/off 0,137–0,204 (nhanh hơn 4,9–7,3×), decode_ms 0,133–0,176, TTFT 0,153–0,272. Decode trung vị 50,27 (on) so với 7,85 (off) tok/s (~6,4×). Phía off đọc file 7,40–8,08 GB/s (page cache ~5,2GB), expert_io_ms trung vị 4.661,5 ms. Phía on decode 50,27 tok/s, expert_io_ms trung vị 18,4 ms. Đỉnh scope 8192MiB, anon ~3,1–3,2GB, file ~5,2GB. Không bị nhiễu tiến trình ngoài như i5.
+- Đóng gói hồ sơ `benchmarks/experiments/2026-11-16-ram-limit-i7/` (P1, 110 file trong CHECKSUMS, không gồm README). Cập nhật mục lục (34 hồ sơ).
+
+## 2026-11-17 — Tích hợp kết quả giới hạn RAM i7 vào main (owner i5)
+
+- Review nhánh `work/i7-ram-limit` (f34b3c4). `sha256sum -c` khớp 110 file. Tính lại từ `pairs`: 8192 total 0,137–0,204, decode 0,133–0,176; 5120 total 0,068–0,104, decode 0,065–0,083. `compute_faster` và `on_faster` đều true, git_dirty false. Eviction về 0 byte và `memory.max` của scope khớp ở 8/8 block mỗi mức. 0 OOM.
+- Đính chính README i7 (README không thuộc checksum, raw giữ nguyên):
+  - viết lại mục Diễn giải, bỏ từ ngữ quảng bá;
+  - bỏ so sánh khác ngày "off tụt 4,64→3,83" vì baseline off A1 14/11 yếu, bằng chứng là off ở trần 8192 còn nhanh hơn (7,85 tok/s);
+  - ghi 1/16 điểm power có `sw_power_cap` lúc GPU nhàn rỗi, nên câu "GPU không throttle" chỉ đúng với preflight;
+  - ghi rằng thời gian fill VRAM lúc khởi động không nằm trong turn được đo;
+  - ghi rằng kết quả thể hiện dung lượng VRAM chứa gần hết model (pool 93,75%), chưa phải trường hợp model lớn hơn RAM + VRAM.
+- Cập nhật SCENARIOS, EVIDENCE_MATRIX, benchmarks/README, WORKFLOWS (nhiệm vụ xong), AGENTS, PLAN. Merge `--no-ff` vào main.
+- Kết luận hai máy: ở trần 5120MiB, A1 thắng 8/8 trên cả i5 (pool 29%, total 0,389–0,616) và i7 (pool 93,75%, total 0,068–0,104). Lợi ích tăng theo độ phủ của pool VRAM. Trần 8192 chỉ nhất quán trên i7.

@@ -205,6 +205,8 @@ systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
 
 ## Nhiệm vụ i7: giới hạn RAM của engine (giao 16/11/2026)
 
+**Đã xong 16/11** ([P1](../benchmarks/experiments/2026-11-16-ram-limit-i7/README.md)): `compute_faster` 8/8 ở cả 8192 và 5120MiB. Merge vào main 17/11. i7 hiện chưa có nhiệm vụ mới.
+
 Protocol `ram-limit-chat-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#giới-hạn-ram-của-engine-ram-limit-chat-v1-1511). Engine chạy trong cgroup `memory.max` (tính cả page cache, không swap), và checkpoint bị xóa khỏi page cache trước mỗi block, nên engine phải đọc SSD thật. i5 đã có kết quả ([P1](../benchmarks/experiments/2026-11-16-ram-limit-i5/README.md)): ở trần 5120MiB, `compute_faster` 8/8, decode 2,14→4,13 tok/s; trần 8192 không nhất quán do nhiễu RAM ngoài engine. i7 chạy độc lập trên checkpoint chung; pool VRAM i7 lớn hơn (960 slot), không suy kết quả i5 sang i7. Hai mức, mỗi mức ABBA 4 process, tổng khoảng 25–40 phút. Chỉ đổi tooling Python; engine giống main 01c11d0.
 
 1. `git switch main && git pull`, `git status --short` rỗng. Build release, rồi `python3 tools/check.py` PASS (kèm `--rust --release` nếu binary chưa build từ commit này).

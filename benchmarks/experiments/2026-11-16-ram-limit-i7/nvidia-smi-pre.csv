@@ -1,0 +1,2 @@
+timestamp, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.memory [%], memory.total [MiB], memory.free [MiB], memory.used [MiB], power.draw [W], pstate
+2026/11/16 22:37:52.868, NVIDIA GeForce RTX 5060 Laptop GPU, 595.99.02, 45, 24 %, 1 %, 8151 MiB, 7696 MiB, 13 MiB, 9.58 W, P2
