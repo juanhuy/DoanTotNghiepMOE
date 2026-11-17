@@ -25,7 +25,7 @@ Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục c�
 | Mục tiêu của đồ án | Đã có | Còn phải kiểm/chốt |
 | --- | --- | --- |
 | Prototype MoE trên phần cứng hạn chế | Suy luận INT8, API/UI, streaming, session, CPU/GPU tùy cấu hình | Một cấu hình vận hành hữu hạn, nguồn truy được; không tuyên bố production-ready |
-| Phân bổ/di chuyển expert VRAM–RAM–SSD | Đọc file vào RAM, upload/download VRAM, inclusive/victim | Xác nhận đường GPU thực trên source được chọn; SSD là checkpoint gốc, không phải cache ghi trả động; expert vẫn tính CPU |
+| Phân bổ/di chuyển expert VRAM–RAM–SSD | Đọc file vào RAM, upload/download VRAM, inclusive/victim | Đường GPU thực đã kiểm (test CUDA EXECUTED). Từ 14/11, expert nằm trong pool VRAM được tính trên GPU (A1, opt-in, là cấu hình khuyến nghị); expert ngoài pool vẫn tính CPU. SSD là checkpoint gốc, không phải cache ghi trả động; tầng SSD được thử thật bằng trần cgroup 16/11 |
 | Expert cache cho expert thường dùng | Budget, heat/recency/protected/pin và eviction | Đối chứng hữu hạn cùng budget/workload; không cần tìm policy tối ưu toàn cục |
 | Prefetch dựa trên router | Prefill nạp expert đã biết; lookahead dự đoán lớp kế tiếp khi decode | Kiểm chức năng/counter/gate; chỉ kết luận speedup nếu cơ chế thực sự được gọi và có đối chứng |
 | Theo dõi/quản lý tài nguyên | RSS/HWM/swap/available, capacity, guard, I/O counters, trạng thái VRAM | Nhãn/đơn vị/coverage đúng; logical VRAM khác physical, payload file khác I/O thiết bị, guard khác hard cap |
@@ -146,7 +146,7 @@ Chỉ so hiệu năng khi có đủ cơ hội thực gọi cơ chế. Nếu gate
 ### S6. Báo cáo cuối và bàn giao hai máy
 
 - Mỗi mục tiêu có câu hỏi → cơ chế/code → protocol → bằng chứng → kết luận → giới hạn. Không dùng “có code” thay “đã chứng minh hiệu quả”.
-- Nêu rõ SSD là nơi chứa checkpoint; expert compute CPU; VRAM là tầng lưu tùy hardware; tổng RAM chưa hard-cap. Không gọi số đo GPU logical là toàn bộ cấp phát vật lý.
+- Nêu rõ SSD là nơi chứa checkpoint; expert ngoài pool VRAM tính CPU, expert trong pool tính GPU khi bật A1; VRAM là tầng lưu và tính tùy hardware; tổng RAM chưa hard-cap. Không gọi số đo GPU logical là toàn bộ cấp phát vật lý.
 - Báo cáo kỳ1 đã xong; bản cuối phải cập nhật source/feature và chọn bằng chứng phù hợp, không nhập mọi nhật ký/JSON. Chỉ xếp phạm vi hoàn tất khi có tiêu chí nội bộ đã chốt; phần trăm tiến độ không là điểm theo rubric giảng viên.
 - i7 tiếp nhận sau khi có nhiệm vụ đồng bộ nguồn và protocol riêng, cùng checkpoint nếu so sánh. Xác nhận commit/source/hash thực trên từng máy, lưu raw riêng, đọc [WORKFLOWS](WORKFLOWS.md). Không mặc định công việc local đã ở origin/main.
 - Người dùng đã yêu cầu commit vào main ngày10/11; xem Git log và PROGRESS. Push remote hoặc tích hợp nhánh khác cần nhiệm vụ tương ứng, không tự suy main local đã được publish; không force-push hoặc bỏ thay đổi mới.

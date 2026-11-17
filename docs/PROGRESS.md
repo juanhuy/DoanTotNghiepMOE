@@ -4048,3 +4048,13 @@ Kết luận và bước tiếp theo:
   - ghi rằng kết quả thể hiện dung lượng VRAM chứa gần hết model (pool 93,75%), chưa phải trường hợp model lớn hơn RAM + VRAM.
 - Cập nhật SCENARIOS, EVIDENCE_MATRIX, benchmarks/README, WORKFLOWS (nhiệm vụ xong), AGENTS, PLAN. Merge `--no-ff` vào main.
 - Kết luận hai máy: ở trần 5120MiB, A1 thắng 8/8 trên cả i5 (pool 29%, total 0,389–0,616) và i7 (pool 93,75%, total 0,068–0,104). Lợi ích tăng theo độ phủ của pool VRAM. Trần 8192 chỉ nhất quán trên i7.
+
+## 2026-11-17 — Cập nhật web UI và lệnh demo theo cấu hình khuyến nghị A1
+
+- Web (`web/index.html`):
+  - nhãn GPU hiện "GPU: dense + expert" khi `gpu_expert_compute_enabled` đúng;
+  - sơ đồ luồng giải thích A1: expert trong pool tính trên GPU, expert ngoài pool tính CPU;
+  - tên GPU lấy từ `gpu.device_name` thay cho chữ "GTX 1650" viết cứng;
+  - mỗi câu trả lời thêm dòng `GPU EXPERT` (`expert_gpu_computes`, `expert_gpu_compute_ms`), chỉ hiện khi lớn hơn 0.
+- README: lệnh demo dùng `MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on`, kèm link P1 của A1 và giới hạn RAM. PLAN: sửa câu cũ "expert vẫn tính CPU".
+- Kiểm tra: `python3 tools/check.py --web` PASS; `node --check` script inline PASS. Smoke thật trên i5 (GTX 1650 Max-Q, cấu hình khuyến nghị): `/experts` báo `gpu_expert_compute_enabled: true`; một request 24 token trả lời đúng, `expert_gpu_computes` 780, pool 299 expert sau request. Trang `/` phục vụ bản mới. Đây là smoke chức năng, không phải số đo. Chưa kiểm hiển thị bằng trình duyệt thật.

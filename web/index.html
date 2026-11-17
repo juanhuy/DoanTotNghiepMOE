@@ -1322,6 +1322,8 @@
     const flowPcieDir = document.querySelector('#flow-pcie-dir');
     const flowExplanation = document.querySelector('#flow-explanation');
     const flowGpuStat = document.querySelector('#flow-gpu-stat');
+    const flowGpuTitle = document.querySelector('#flow-gpu-title');
+    const gpuDeviceText = document.querySelector('#gpu-device-text');
     const flowRamStat = document.querySelector('#flow-ram-stat');
     const flowSsdStat = document.querySelector('#flow-ssd-stat');
 
@@ -1630,7 +1632,11 @@
       const gpu = data.gpu;
       if (gpu && gpu.enabled) {
         btnHeaderGpuToggle.classList.remove('off');
-        headerGpuLabel.textContent = 'GPU cuBLAS: ON';
+        headerGpuLabel.textContent = data.gpu_expert_compute_enabled ? 'GPU: dense + expert' : 'GPU cuBLAS: ON';
+        if (gpuDeviceText && gpu.device_name) {
+          gpuDeviceText.textContent = `${gpu.device_name} (${(gpu.total_vram_bytes / 1073741824).toFixed(1)} GB)`;
+        }
+        if (flowGpuTitle && gpu.device_name) flowGpuTitle.textContent = `⚡ ${gpu.device_name}`;
         const allocMb = Math.round(gpu.allocated_vram_bytes / 1048576);
         const allocGb = (gpu.allocated_vram_bytes / 1073741824).toFixed(2);
         const totalGb = (gpu.total_vram_bytes / 1073741824).toFixed(2);
@@ -1675,14 +1681,14 @@
       }
 
       // Update Data Flow Pipeline
-      updateDataFlowUI(gpu, telem);
+      updateDataFlowUI(gpu, telem, data.gpu_expert_compute_enabled === true);
     }
 
     // Dynamic Data Flow Architecture Renderer
-    function updateDataFlowUI(gpu, telem) {
+    function updateDataFlowUI(gpu, telem, expertCompute = false) {
       const isGpu = gpu && gpu.enabled;
       if (isGpu) {
-        if (workbenchGpuLabel) workbenchGpuLabel.textContent = 'GPU cuBLAS: ON';
+        if (workbenchGpuLabel) workbenchGpuLabel.textContent = expertCompute ? 'GPU: dense + expert' : 'GPU cuBLAS: ON';
         if (btnWorkbenchGpuToggle) btnWorkbenchGpuToggle.className = 'btn-tool btn-tool-gpu-on';
         if (nodeGpu) nodeGpu.className = 'flow-node flow-node-gpu active';
         if (linkRamGpu) {
@@ -1691,11 +1697,13 @@
           if (flowPcieDir) flowPcieDir.textContent = '▲ H2D / ▼ D2H';
         }
         if (flowExplanation) {
-          flowExplanation.innerHTML = '<span style="color:#67e8f9; font-weight:700;">Chế độ Phân tầng Lai (Hybrid GPU + CPU):</span> Trọng số Dense & Hot Experts lưu trên VRAM. cuBLAS chạy các phép chiếu dense và LM Head khi GPU khả dụng. Cold Experts đọc từ file vào RAM; cache VRAM trao đổi qua PCIe cho Rayon tính SwiGLU.';
+          flowExplanation.innerHTML = expertCompute
+            ? '<span style="color:#67e8f9; font-weight:700;">Phân tầng + tính expert trên GPU:</span> cuBLAS chạy dense và LM Head. Expert đã nằm trong pool VRAM được tính ngay trên GPU (kernel INT8 SwiGLU), không chép về RAM. Expert ngoài pool đọc từ file vào cache RAM và tính bằng CPU (Rayon).'
+            : '<span style="color:#67e8f9; font-weight:700;">Chế độ Phân tầng Lai (Hybrid GPU + CPU):</span> Trọng số Dense & Hot Experts lưu trên VRAM. cuBLAS chạy các phép chiếu dense và LM Head khi GPU khả dụng. Cold Experts đọc từ file vào RAM; cache VRAM trao đổi qua PCIe cho Rayon tính SwiGLU.';
         }
         if (flowGpuStat) {
           const allocMb = Math.round((gpu.allocated_vram_bytes || 0) / 1048576);
-          flowGpuStat.textContent = `VRAM logical: ${allocMb} MB (${gpu.vram_experts_resident || 0} L1 exp)`;
+          flowGpuStat.textContent = `VRAM logical: ${allocMb} MB (${gpu.vram_experts_resident || 0} expert${expertCompute ? ', tính trên GPU' : ''})`;
         }
       } else {
         if (workbenchGpuLabel) workbenchGpuLabel.textContent = 'GPU: OFF (CPU)';
@@ -1866,6 +1874,7 @@
           <div><span class="telem-cell-label">CACHE HIT:</span> <span class="telem-cell-val">${hitRate}%</span></div>
           <div><span class="telem-cell-label">I/O WAIT:</span> <span class="telem-cell-val">${(metrics.expert_io_ms / 1000).toFixed(2)}s</span></div>
           <div><span class="telem-cell-label">EXPERT COMPUTE:</span> <span class="telem-cell-val">${(metrics.expert_compute_ms / 1000).toFixed(2)}s</span></div>
+          ${metrics.expert_gpu_computes > 0 ? `<div><span class="telem-cell-label">GPU EXPERT:</span> <span class="telem-cell-val">${metrics.expert_gpu_computes} lần · ${((metrics.expert_gpu_compute_ms || 0) / 1000).toFixed(2)}s</span></div>` : ''}
           <div><span class="telem-cell-label">ATTENTION:</span> <span class="telem-cell-val">${(metrics.attention_ms / 1000).toFixed(2)}s</span></div>
           <div><span class="telem-cell-label">LM HEAD:</span> <span class="telem-cell-val">${(metrics.lm_head_ms / 1000).toFixed(2)}s</span></div>
         `;
