@@ -4092,3 +4092,12 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - GPU chưa dùng được trên i5 (dense FP32 4,9GB > 4GB VRAM);
   - một lượt mỗi mức, không A/B.
 - Cập nhật benchmarks/README (35 hồ sơ), EVIDENCE_MATRIX, SCENARIOS. `python3 tools/check.py` PASS.
+
+## 2026-11-18 — Merge Qwen3-MoE vào main, giao i7 qwen3-ram-cap-v1
+
+- Merge `--no-ff` nhánh `work/qwen3-moe` (engine Qwen3-MoE, dense BF16, embedding từ đĩa, chat template, converter, hồ sơ P1 `2026-11-17-qwen3-ram-cap-i5`) vào main và push.
+- Giao i7 [nhiệm vụ Qwen3](WORKFLOWS.md#nhiệm-vụ-i7-qwen3-30b-a3b-dưới-trần-ram-giao-18112026):
+  - tải đúng revision ad44e77, so SHA nguồn và so hash của 478 file checkpoint đã convert với i5;
+  - chạy cùng protocol CPU-only ở 10240 và 8192MiB;
+  - thêm một lượt GPU A1 khám phá (P3), không thuộc protocol.
+- README thêm mục "Model hỗ trợ"; cập nhật AGENTS/PLAN.
