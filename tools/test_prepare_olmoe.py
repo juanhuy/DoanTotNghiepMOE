@@ -7,13 +7,21 @@ import torch
 from safetensors.torch import load_file, save_file
 from prepare_olmoe import convert
 
+ROOT = Path(__file__).resolve().parents[1] / 'tests/fixtures'
+
 class ConverterTest(unittest.TestCase):
     def test_round_trip_and_no_overwrite(self):
-        fixture = Path(__file__).resolve().parents[1] / 'tests/fixtures/olmoe/unnormalized-mha'
+        self.round_trip(ROOT / 'olmoe/unnormalized-mha')
+
+    def test_qwen3moe_round_trip_uses_moe_intermediate_size(self):
+        self.round_trip(ROOT / 'qwen3moe/many-experts')
+
+    def round_trip(self, fixture):
         config = json.loads((fixture / 'config.json').read_text())
         tensors = load_file(str(fixture / 'model.safetensors'))
         source_weights = {k:v for k,v in tensors.items() if '.mlp.experts.' not in k}
-        d, i = config['hidden_size'], config['intermediate_size']
+        d = config['hidden_size']
+        i = config['moe_intermediate_size'] if config['model_type'] == 'qwen3_moe' else config['intermediate_size']
         for layer in range(config['num_hidden_layers']):
             for expert in range(config['num_experts']):
                 p = f'model.layers.{layer}.mlp.experts.{expert}'

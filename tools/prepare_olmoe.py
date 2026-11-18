@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone HF OLMoE -> merged row-wise INT8 Safetensors converter.
+"""Standalone HF OLMoE / Qwen3-MoE -> merged row-wise INT8 Safetensors converter.
 Reads one tensor at a time; creates a new output directory, never overwrites.
 Dependencies: torch, numpy, safetensors; huggingface_hub for --repo only.
 """
@@ -16,8 +16,16 @@ from safetensors.torch import save_file
 def convert(source, output):
     source, output = Path(source), Path(output)
     config = json.loads((source / 'config.json').read_text())
-    if config.get('model_type') != 'olmoe':
-        raise ValueError('expected OLMoE source checkpoint')
+    model_type = config.get('model_type')
+    if model_type == 'olmoe':
+        expert_width = config['intermediate_size']
+    elif model_type == 'qwen3_moe':
+        # Every layer must be sparse; the dense `intermediate_size` is unused by the engine.
+        if config.get('decoder_sparse_step', 1) != 1 or config.get('mlp_only_layers'):
+            raise ValueError('Qwen3-MoE with dense MLP layers is not supported')
+        expert_width = config['moe_intermediate_size']
+    else:
+        raise ValueError('expected OLMoE or Qwen3-MoE source checkpoint')
     paths = sorted(source.glob('*.safetensors'))
     index = {}
     for path in paths:
@@ -76,7 +84,7 @@ def convert(source, output):
             weights, scales = [], []
             for projection in ['gate_proj', 'up_proj', 'down_proj']:
                 tensor = read(f'{prefix}.{projection}.weight').float()
-                shape = (config['hidden_size'], config['intermediate_size']) if projection == 'down_proj' else (config['intermediate_size'], config['hidden_size'])
+                shape = (config['hidden_size'], expert_width) if projection == 'down_proj' else (expert_width, config['hidden_size'])
                 if tuple(tensor.shape) != shape or not torch.isfinite(tensor).all():
                     raise ValueError(f'invalid expert tensor {prefix}.{projection}')
                 scale = tensor.abs().amax(dim=1).clamp(min=1e-12) / 127.0
@@ -86,7 +94,8 @@ def convert(source, output):
             add({prefix + '.merged_weight': torch.cat(weights), prefix + '.qs': torch.cat(scales)})
         print(f'Converted layer {layer + 1}/{config["num_hidden_layers"]}', flush=True)
     flush()
-    for name in ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'generation_config.json']:
+    for name in ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'special_tokens_map.json', 'generation_config.json',
+                 'vocab.json', 'merges.txt']:
         if (source / name).exists():
             shutil.copy2(source / name, output / name)
     (output / 'INCOMPLETE').unlink()

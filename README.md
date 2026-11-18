@@ -33,6 +33,11 @@ Server mặc định cache64MiB/layer cố định, không tự tăng theo RAM t
 
 Candidate tái sử dụng buffer KV chọn bằng `MOE_KV_BUFFER_REUSE=on|off`, mặc định off. Khi cần loại session theo ngân sách, candidate có thể chuyển buffer của session LRU sang request mới sau khi xóa trạng thái KV; nếu request mới hủy, phiên cũ phải recompute từ lịch sử client gửi. Đã kiểm fixture và một cặp model thật: tránh overlap một bộKV128MiB, outputHTTP2/2khớp; lợi ích RSS chỉ là tín hiệu có giới hạn, chưa chứng minh tốc độ hoặc mức giảm tổng quát. Xem [điều kiện và đối chứng](benchmarks/SCENARIOS.md#36-candidate-tái-sử-dụng-buffer-kv-05112026).
 
+## Model hỗ trợ
+
+- **OLMoE-1B-7B** (`olmoe`): checkpoint chính của toàn bộ thí nghiệm.
+- **Qwen3-30B-A3B** (`qwen3_moe`, mọi layer đều sparse): thêm ngày 17/11. Convert bằng `tools/prepare_olmoe.py`, chạy với `MOE_DENSE_STORAGE=bf16` (giữ dense BF16 trong RAM, kết quả chính xác) và `MOE_RAM_LIMIT_BYTES` khoảng 9GiB. Embedding lớn hơn 512MiB tự được đọc từ đĩa (`MOE_EMBEDDING_STORAGE`). Chat template Qwen3 khớp Transformers; thinking tắt mặc định (`MOE_CHAT_THINKING`). Đã đo trên i5: checkpoint 30GB chạy dưới trần cgroup 8–10GB, anon ~5,7GiB, CPU-only 1,1–1,3 tok/s ([P1](benchmarks/experiments/2026-11-17-qwen3-ram-cap-i5/README.md)). Dense FP32 trên GPU (~4,9GB) chưa vừa VRAM 4GB.
+
 ## Demo và kiểm nhanh
 
 Chọn checkpoint bằng `MOE_MODEL_DIR`; đổi địa chỉ bằng `MOE_BIND`. Cấu hình vận hành khuyến nghị (chốt 15/11, [WORKFLOWS](docs/WORKFLOWS.md)): GPU auto, tầng VRAM expert bật, tính expert trên GPU (A1) bật, cache 64MiB/lớp, context 512, victim, batch off:

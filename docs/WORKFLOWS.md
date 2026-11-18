@@ -205,7 +205,7 @@ systemd-inhibit --what=idle:sleep --why="A1 benchmark" \
 
 ## Nhiệm vụ i7: giới hạn RAM của engine (giao 16/11/2026)
 
-**Đã xong 16/11** ([P1](../benchmarks/experiments/2026-11-16-ram-limit-i7/README.md)): `compute_faster` 8/8 ở cả 8192 và 5120MiB. Merge vào main 17/11. i7 hiện chưa có nhiệm vụ mới.
+**Đã xong 16/11** ([P1](../benchmarks/experiments/2026-11-16-ram-limit-i7/README.md)): `compute_faster` 8/8 ở cả 8192 và 5120MiB. Merge vào main 17/11.
 
 Protocol `ram-limit-chat-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#giới-hạn-ram-của-engine-ram-limit-chat-v1-1511). Engine chạy trong cgroup `memory.max` (tính cả page cache, không swap), và checkpoint bị xóa khỏi page cache trước mỗi block, nên engine phải đọc SSD thật. i5 đã có kết quả ([P1](../benchmarks/experiments/2026-11-16-ram-limit-i5/README.md)): ở trần 5120MiB, `compute_faster` 8/8, decode 2,14→4,13 tok/s; trần 8192 không nhất quán do nhiễu RAM ngoài engine. i7 chạy độc lập trên checkpoint chung; pool VRAM i7 lớn hơn (960 slot), không suy kết quả i5 sang i7. Hai mức, mỗi mức ABBA 4 process, tổng khoảng 25–40 phút. Chỉ đổi tooling Python; engine giống main 01c11d0.
 
@@ -261,6 +261,42 @@ Guard là kiểm hợp tác, không hard RSS cap; drop buffer không bảo đả
 
 Chỉ tái lập phase1-v1 khi được giao rõ mới dùng revision lịch sử d4adefd9e53627bdc1fd250eabab436c3ac54b0d. Không quay engine mới về revision cũ để chạy mặc định hoặc ghép các phiên bản thành chuỗi tăng tốc.
 
+
+## Nhiệm vụ i7: Qwen3-30B-A3B dưới trần RAM (giao 18/11/2026)
+
+Protocol `qwen3-ram-cap-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#qwen3-30b-a3b-dưới-trần-ram-10gb-qwen3-ram-cap-v1-1711). Kết quả i5 ([P1](../benchmarks/experiments/2026-11-17-qwen3-ram-cap-i5/README.md)): 8/8 ở cả 10240 và 8192MiB, anon ~5,7GiB, CPU-only 1,34 / 1,13 tok/s. i7 chạy độc lập; không suy kết quả i5 sang i7. Cần khoảng 120GB đĩa trống (61GB nguồn + 30GB INT8) và khoảng 1,5 giờ (tải + convert + đo).
+
+1. `git switch main && git pull`, `git status --short` rỗng. Build release, `python3 tools/check.py --rust` PASS (có `tests/qwen3moe_reference.rs`).
+2. Tạo venv riêng ngoài repo, ví dụ `python3 -m venv ../venv-qwen`, rồi `pip install torch --index-url https://download.pytorch.org/whl/cpu` và `pip install numpy safetensors huggingface_hub hf_transfer`. Ghi lại phiên bản torch; i5 dùng 2.15.0+cpu trên Python 3.14.
+3. Tải đúng revision rồi kiểm SHA256 với Hub:
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=1 ../venv-qwen/bin/python -c "
+from huggingface_hub import snapshot_download
+snapshot_download('Qwen/Qwen3-30B-A3B', revision='ad44e777bcd18fa416d9da3bd8f70d33ebb85d39', local_dir='../Models/qwen3-30b-a3b-hf', max_workers=8)"
+../venv-qwen/bin/python tools/prepare_olmoe.py --source ../Models/qwen3-30b-a3b-hf --out ../Models/qwen3-30b-a3b-int8
+```
+
+   Sau khi tải, so SHA256 các shard với [source-checkpoint-sha256.json](../benchmarks/experiments/2026-11-17-qwen3-ram-cap-i5/source-checkpoint-sha256.json).
+4. **So checkpoint đã convert với i5.** Mục đích là chứng minh hai máy chạy cùng một checkpoint. Lệnh dưới đây in số file lệch, kết quả mong đợi là 0:
+
+```bash
+python3 - <<'PY'
+import hashlib, json
+from pathlib import Path
+ref = json.load(open('benchmarks/experiments/2026-11-17-qwen3-ram-cap-i5/limit-10240/result.json'))['checkpoint']['files']
+root = Path('../Models/qwen3-30b-a3b-int8'); bad = 0
+for f in ref:
+    h = hashlib.sha256((root / f['path']).read_bytes()).hexdigest()
+    bad += h != f['sha256']
+print('mismatched files:', bad, 'of', len(ref))
+PY
+```
+
+   Nếu có file lệch, dừng lại và báo. Không đo trên checkpoint khác i5.
+5. Cắm sạc, đóng Chrome/Slack. `python3 tools/preflight_memory.py --output /tmp/i7-preflight-qwen3.json` phải `eligible: true`. Chạy đúng lệnh trong SCENARIOS, đổi sang `--testbed i7`, theo thứ tự 10240 rồi 8192. Mỗi mức một lượt, mỗi lượt khoảng 10 phút.
+6. **Tùy chọn, ghi là khám phá (P3), không thuộc protocol:** một lượt ở trần 10240 với `--gpu auto --gpu-expert-tier on --gpu-expert-compute on`. VRAM 8GB của i7 chứa được dense FP32 (~4,9GB) và một pool expert nhỏ. Ghi lại `gpu_expert_compute_enabled`, `expert_gpu_computes`, pool slot, tok/s và text. So text với lượt CPU, chưa so tốc độ theo kiểu A/B.
+7. Lưu vào `benchmarks/experiments/<ngày>-qwen3-ram-cap-i7/` (`limit-10240/`, `limit-8192/`, tùy chọn `gpu-explore/`, preflight, console, CHECKSUMS.sha256 không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng `work/i7-qwen3`. Báo 8/8, oom_kill, VmSwap, đỉnh scope current/anon/file, TTFT/decode trung vị, tốc độ đọc file, hit rate, text có khớp i5 không. Không đổi cache/threads/ngưỡng.
 
 ## Phân công sau khi nhận chung source
 
