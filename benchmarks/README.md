@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 18/11 (cache Qwen3 i5): [P2 — cache 64 so với 96MiB/layer dưới trần 10GB](experiments/2026-11-18-qwen3-cache-ab-i5/README.md). ABBA, không nhất quán (total B/A 0,79–1,04). Hit tăng 50→60% và payload đọc giảm 20%, nhưng page cache nhỏ hơn làm tốc độ đọc giảm, nên hai hiệu ứng gần như triệt tiêu. Giữ 64MiB/layer.
+
 Kết quả mới 17/11 (Qwen3-30B-A3B i5): [P1 — Qwen3-30B-A3B dưới trần RAM](experiments/2026-11-17-qwen3-ram-cap-i5/README.md). Checkpoint INT8 30GB, gấp đôi RAM máy, chạy hết 8/8 request dưới trần cgroup 10240MiB và cả 8192MiB. Không OOM, không swap, anon đỉnh khoảng 5,7GiB (dense BF16 2,29GiB + cache expert 2,96GiB). CPU-only: decode trung vị 1,34 / 1,13 tok/s, TTFT 9,8 / 11,0s. Nút thắt là I/O: hit 38–73%, mỗi request đọc 60–91GB payload expert, 58–76% thời gian là chờ đọc. Một lượt mỗi mức, không phải A/B; parity logits chỉ chứng minh trên fixture nhỏ.
 
 Kết quả mới 16/11 (giới hạn RAM i7): [P1 — trần RAM của engine trên i7](experiments/2026-11-16-ram-limit-i7/README.md). Engine chạy trong cgroup `memory.max`, checkpoint bị xóa khỏi page cache trước mỗi block (xác nhận 0 byte qua fincore), ép đọc SSD thật. Bật tầng VRAM kèm tính expert trên GPU (pool 960/1024 expert = 93,75%) nhanh hơn tier off ở 8/8 so sánh (`compute_faster: true`) ở cả hai mức: ở 5120MiB, total on/off 0,068–0,104 (nhanh hơn 9,6–14,7×), decode trung vị 3,83→50,56 tok/s (~13,2×), off đọc SSD thật 2,50–2,95 GB/s và chờ I/O 13,2s/req; ở 8192MiB, total on/off 0,137–0,204, decode trung vị 7,85→50,27 tok/s (~6,4×), không bị nhiễu app ngoài như i5. 0 OOM, 0 swap. Phía on gần như không đổi theo trần vì 93,75% expert đã nằm trong VRAM: đây là kết quả về dung lượng VRAM, không phải model lớn hơn RAM + VRAM (ghi chú tích hợp trong hồ sơ).
@@ -57,7 +59,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 35 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 36 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -91,6 +93,7 @@ Khi viết báo cáo, thường chỉ cần kết luận ngắn và liên kết 
 
 | Hồ sơ | Vì sao giữ? |
 | --- | --- |
+| [Cache Qwen3 64 so với 96MiB/layer i5 18/11](experiments/2026-11-18-qwen3-cache-ab-i5/README.md) | Quyết định giữ 64MiB/layer cho Qwen3 dưới trần 10GB: ABBA không nhất quán (total 0,79–1,04). Cache engine lớn hơn tăng hit nhưng lấy chỗ của page cache, nên tốc độ đọc giảm theo |
 | [Số thread CPU A3 i7 13/11](experiments/2026-11-13-threads-i7/README.md) | Chọn cấu hình vận hành i7: 8/16/24 thread không hơn 4 thread nhất quán (tok/s trung vị giảm từ 7,72 xuống 7,21, 7,03, 7,02); thống nhất 4 thread cho cả hai máy |
 | [Số thread CPU A3 i5 12/11](experiments/2026-11-12-threads-i5/README.md) | Chọn cấu hình vận hành: 6/8/12 thread không hơn 4 thread nhất quán; expert_compute không tăng theo số thread |
 | [Expert INT8 nhiều token](experiments/2026-11-09-expert-batch-int8-i5/README.md) | Compute có lợi ở kernel và các so sánh model; TTFT chưa ổn định, opt-in/off mặc định |

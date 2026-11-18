@@ -669,3 +669,23 @@ done
 ```
 
 **Kết quả i5 17/11:** [hồ sơ P1](experiments/2026-11-17-qwen3-ram-cap-i5/README.md). 10240MiB và 8192MiB đều 8/8, `oom_kill` 0, VmSwap 0, anon đỉnh 5756 / 5740MiB, decode trung vị 1,34 / 1,13 tok/s, TTFT 9,8 / 11,0s. Text giống hệt nhau giữa hai mức.
+
+## Cache expert lớn hơn cho Qwen3 dưới trần 10GB (qwen3-cache-ab-v1, 18/11)
+
+Câu hỏi: dưới cùng trần cgroup 10240MiB, tăng cache expert của engine từ 64 lên 96MiB/layer (từ 14 lên 21 trên 128 expert mỗi layer, +1,5GiB anon, page cache bớt lại tương ứng) có làm Qwen3 nhanh hơn không? Đây là đánh đổi giữa cache có cấu trúc theo expert trong engine và page cache của OS trong cùng một ngân sách RAM.
+
+- Giữ nguyên cấu hình `qwen3-ram-cap-v1` (i5, CPU-only, dense BF16, mixed × 8, keep-cache, max64, trần 10240, guard 9216/stop 9728/headroom 512). Chỉ đổi `--cache`: A = 64, B = 96. Mức 128 bị loại trước khi đo vì guard dự tính khoảng 9,9GB > 9216MiB.
+- Thứ tự A B B A, mỗi block một process mới, checkpoint bị xóa khỏi page cache trước mỗi block. Ghép turn t của A0 với B1 và của A3 với B2, được 16 so sánh.
+- Rule: tỉ số B/A của total_ms và decode_ms ≤ 1/1.05 ở cả 16 so sánh thì kết luận B nhanh hơn; ≥ 1,05 ở cả 16 thì B chậm hơn; còn lại là không nhất quán. Text phải khớp. OOM ở B được ghi là kết quả. Phân tích bằng `tools/compare_ram_runs.py`. Mỗi block một lượt, không chạy lại.
+
+```bash
+for cache in 64 96 96 64; do
+  systemd-inhibit --what=idle:sleep --why="qwen3 cache ab" \
+    python3 tools/check_ram_stability.py --testbed i5 --gpu cpu --workload mixed --cycles 8 --keep-cache \
+    --cache $cache --context 512 --max-tokens 64 --threads 4 --lookahead off --dense-storage bf16 \
+    --model-dir ../Models/qwen3-30b-a3b-int8 --memory-max-mib 10240 \
+    --ram-limit-mib 9216 --stop-rss-mib 9728 --headroom-mib 512
+done
+```
+
+**Kết quả i5 18/11:** [hồ sơ P2](experiments/2026-11-18-qwen3-cache-ab-i5/README.md). `b_faster: false`, `b_slower: false`. Total B/A 0,787–1,045, decode 0,748–1,080, text khớp 16/16, 4/4 block 8/8 không OOM. Giữ 64MiB/layer.
