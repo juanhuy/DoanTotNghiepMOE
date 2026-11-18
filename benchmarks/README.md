@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 18/11 (Qwen3-30B-A3B i7): [P1 — Qwen3-30B-A3B dưới trần RAM trên i7](experiments/2026-11-18-qwen3-ram-cap-i7/README.md). Chạy độc lập trên i7 cùng checkpoint INT8 30GB khớp hash 478/478 file với i5: 8/8 request hoàn thành ở cả 10240 và 8192MiB cgroup, 0 OOM, 0 swap, anon ~5,7GiB. Văn bản sinh ra khớp 8/8 turn bit-exact với i5. CPU-only: decode trung vị 1,60 / 1,79 tok/s, TTFT 10,2 / 10,9s, I/O chiếm 55–65% thời gian, đọc file 2,09 / 2,53 GB/s. Lượt khám phá GPU (P3, 10240MiB): dense BF16 + L1 pool 565 expert trên RTX 5060 Laptop 8GB, 31.469 compute expert GPU (1,5s), decode 2,30 tok/s, text vẫn khớp tuyệt đối.
+
 Kết quả mới 18/11 (cache Qwen3 i5): [P2 — cache 64 so với 96MiB/layer dưới trần 10GB](experiments/2026-11-18-qwen3-cache-ab-i5/README.md). ABBA, không nhất quán (total B/A 0,79–1,04). Hit tăng 50→60% và payload đọc giảm 20%, nhưng page cache nhỏ hơn làm tốc độ đọc giảm, nên hai hiệu ứng gần như triệt tiêu. Giữ 64MiB/layer.
 
 Kết quả mới 17/11 (Qwen3-30B-A3B i5): [P1 — Qwen3-30B-A3B dưới trần RAM](experiments/2026-11-17-qwen3-ram-cap-i5/README.md). Checkpoint INT8 30GB, gấp đôi RAM máy, chạy hết 8/8 request dưới trần cgroup 10240MiB và cả 8192MiB. Không OOM, không swap, anon đỉnh khoảng 5,7GiB (dense BF16 2,29GiB + cache expert 2,96GiB). CPU-only: decode trung vị 1,34 / 1,13 tok/s, TTFT 9,8 / 11,0s. Nút thắt là I/O: hit 38–73%, mỗi request đọc 60–91GB payload expert, 58–76% thời gian là chờ đọc. Một lượt mỗi mức, không phải A/B; parity logits chỉ chứng minh trên fixture nhỏ.
@@ -59,7 +61,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 36 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 37 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -69,6 +71,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 
 | Hồ sơ | Dùng cho câu hỏi nào? |
 | --- | --- |
+| [Qwen3-30B-A3B dưới trần RAM i7 18/11](experiments/2026-11-18-qwen3-ram-cap-i7/README.md) | Model INT8 30GB: 8/8 request dưới trần 10240 và 8192MiB cgroup, anon ~5,7GiB, 0 OOM, 0 swap; text khớp 8/8 bit-exact với i5; CPU-only decode 1,60 / 1,79 tok/s; kèm lượt khám phá GPU (dense BF16 + pool 565 expert, decode 2,30 tok/s) |
 | [Qwen3-30B-A3B dưới trần RAM i5 17/11](experiments/2026-11-17-qwen3-ram-cap-i5/README.md) | Model lớn gấp đôi RAM (INT8 30GB): 8/8 request dưới trần 10240 và 8192MiB, anon ~5,7GiB, 0 OOM, 0 swap; CPU-only, decode 1,34 / 1,13 tok/s; I/O chiếm 58–76% thời gian |
 | [Trần RAM engine trên i7 16/11](experiments/2026-11-16-ram-limit-i7/README.md) | RTX 5060 Laptop (pool 960/1024 = 93,75%): cgroup memory.max + fincore evict; GPU compute nhanh hơn tier off 8/8 (`compute_faster: true`) ở cả hai mức; ở 5120MiB total on/off 0,068–0,104, decode 3,83→50,56 tok/s (~13,2×) khi off đọc SSD thật 2,5–3,0 GB/s; ở 8192MiB decode 7,85→50,27 tok/s; 0 OOM, 0 swap |
 | [Giới hạn RAM engine i5 16/11](experiments/2026-11-16-ram-limit-i5/README.md) | Checkpoint không vừa RAM được cấp (cgroup, đọc SSD thật): trần 5120 `compute_faster` 8/8, total 0,389–0,616, decode 2,14→4,13 tok/s; trần 8192 không nhất quán (nhiễu block0). Bằng chứng cho tầng SSD và lợi ích tầng VRAM khi RAM thiếu |
