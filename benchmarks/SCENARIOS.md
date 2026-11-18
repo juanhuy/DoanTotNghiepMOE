@@ -687,3 +687,5 @@ for cache in 64 96 96 64; do
     --ram-limit-mib 9216 --stop-rss-mib 9728 --headroom-mib 512
 done
 ```
+
+**Kết quả i5 18/11:** [hồ sơ P2](experiments/2026-11-18-qwen3-cache-ab-i5/README.md). `b_faster: false`, `b_slower: false`. Total B/A 0,787–1,045, decode 0,748–1,080, text khớp 16/16, 4/4 block 8/8 không OOM. Giữ 64MiB/layer.

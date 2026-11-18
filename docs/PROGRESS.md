@@ -4101,3 +4101,14 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - chạy cùng protocol CPU-only ở 10240 và 8192MiB;
   - thêm một lượt GPU A1 khám phá (P3), không thuộc protocol.
 - README thêm mục "Model hỗ trợ"; cập nhật AGENTS/PLAN.
+
+## 2026-11-18 — Qwen3: cache 96MiB/layer không nhanh hơn 64 một cách nhất quán (qwen3-cache-ab-v1)
+
+- Chốt protocol và `tools/compare_ram_runs.py` (fba1931) trước khi đo. Chạy ABBA 64/96/96/64 trên i5, trần 10240MiB, các cấu hình khác như `qwen3-ram-cap-v1`. Mức 128 bị loại từ trước vì guard dự tính khoảng 9,9GB.
+- Hồ sơ P2 `benchmarks/experiments/2026-11-18-qwen3-cache-ab-i5/` (55 file trong CHECKSUMS):
+  - `b_faster`/`b_slower` đều false; total B/A 0,787–1,045, decode 0,748–1,080;
+  - text khớp 16/16, 4/4 block 8/8 request, oom 0, swap 0;
+  - hit trung vị 50→60%, payload đọc 74,6→59,6GB/request, nhưng tốc độ đọc file của B thấp hơn (0,95–1,08 so với 0,95–1,38 GB/s) vì page cache trong cùng trần nhỏ đi;
+  - decode trung vị 0,96 (A) so với 1,03–1,05 (B) tok/s.
+- Quyết định: Qwen3 giữ cache 64MiB/layer. Chuyển RAM từ page cache sang cache engine dưới cùng trần không đủ để tăng tốc; muốn nhanh hơn phải giảm khối lượng đọc (INT4) hoặc thêm VRAM.
+- Lưu ý: lúc đo có Chrome/Slack/VS Code mở (available 8276MiB so với 9736MiB ngày 17/11), nên tốc độ tuyệt đối thấp hơn hồ sơ 17/11 và không so khác ngày.

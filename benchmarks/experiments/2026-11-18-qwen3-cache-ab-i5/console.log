@@ -1,0 +1,48 @@
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T025152.863142Z-ram-07ed77a9805c4a589c3811b68b6ffa9c
+turn=0 RSS=5695128KiB swap=0KiB
+turn=1 RSS=5721388KiB swap=0KiB
+turn=2 RSS=5767264KiB swap=0KiB
+turn=3 RSS=5815120KiB swap=0KiB
+turn=4 RSS=5841628KiB swap=0KiB
+turn=5 RSS=5850432KiB swap=0KiB
+turn=6 RSS=5867108KiB swap=0KiB
+turn=7 RSS=5899104KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T025152.863142Z-ram-07ed77a9805c4a589c3811b68b6ffa9c/result.json
+EXIT cache=64 0
+Mem:           15803        3728        6204         362        6550       12075
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T030414.485195Z-ram-0f1ec8c4b9574cc3b335e241f606a706
+turn=0 RSS=7243744KiB swap=0KiB
+turn=1 RSS=7270240KiB swap=0KiB
+turn=2 RSS=7315868KiB swap=0KiB
+turn=3 RSS=7363696KiB swap=0KiB
+turn=4 RSS=7390228KiB swap=0KiB
+turn=5 RSS=7390856KiB swap=0KiB
+turn=6 RSS=7414780KiB swap=0KiB
+turn=7 RSS=7442784KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T030414.485195Z-ram-0f1ec8c4b9574cc3b335e241f606a706/result.json
+EXIT cache=96 0
+Mem:           15803        3304        8049         313        5079       12499
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T031625.331194Z-ram-54b0f1d110a947b194b93d03afe5ebb8
+turn=0 RSS=7244492KiB swap=0KiB
+turn=1 RSS=7270824KiB swap=0KiB
+turn=2 RSS=7316488KiB swap=0KiB
+turn=3 RSS=7364308KiB swap=0KiB
+turn=4 RSS=7390816KiB swap=0KiB
+turn=5 RSS=7399980KiB swap=0KiB
+turn=6 RSS=7420680KiB swap=0KiB
+turn=7 RSS=7452720KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T031625.331194Z-ram-54b0f1d110a947b194b93d03afe5ebb8/result.json
+EXIT cache=96 0
+Mem:           15803        3195        8636         315        4619       12608
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T032822.908924Z-ram-1cfcca1aaffd4b2eafa5b2597d11051b
+turn=0 RSS=5695144KiB swap=0KiB
+turn=1 RSS=5716996KiB swap=0KiB
+turn=2 RSS=5763468KiB swap=0KiB
+turn=3 RSS=5811332KiB swap=0KiB
+turn=4 RSS=5837852KiB swap=0KiB
+turn=5 RSS=5846348KiB swap=0KiB
+turn=6 RSS=5871388KiB swap=0KiB
+turn=7 RSS=5904648KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261118T032822.908924Z-ram-1cfcca1aaffd4b2eafa5b2597d11051b/result.json
+EXIT cache=64 0
+Mem:           15803        3347        7362         327        5770       12456

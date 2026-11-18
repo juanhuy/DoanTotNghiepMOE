@@ -1,0 +1,228 @@
+{
+ "protocol": "qwen3-cache-ab-v1",
+ "blocks": [
+  "benchmarks/experiments/2026-11-18-qwen3-cache-ab-i5/block0-cache64",
+  "benchmarks/experiments/2026-11-18-qwen3-cache-ab-i5/block1-cache96",
+  "benchmarks/experiments/2026-11-18-qwen3-cache-ab-i5/block2-cache96",
+  "benchmarks/experiments/2026-11-18-qwen3-cache-ab-i5/block3-cache64"
+ ],
+ "cache_mib": [
+  64,
+  96,
+  96,
+  64
+ ],
+ "b_faster": false,
+ "b_slower": false,
+ "text_match_all": true,
+ "total_ratio_range": [
+  0.7868241929626331,
+  1.0447543693468568
+ ],
+ "decode_ratio_range": [
+  0.7480497857644489,
+  1.0801373922699378
+ ],
+ "median": {
+  "A": {
+   "decode_tps": 0.958942646382094,
+   "ttft_ms": 12141.037077,
+   "total_ms": 82129.966665,
+   "file_gb": 74.6027776,
+   "io_ms": 63803.500113
+  },
+  "B": {
+   "decode_tps": 1.0466791588148572,
+   "ttft_ms": 11446.583241,
+   "total_ms": 79812.51097100001,
+   "file_gb": 59.563898879999996,
+   "io_ms": 59516.575652
+  }
+ },
+ "hit_rate": {
+  "A": [
+   0.5245392628205128,
+   0.7225950782997763,
+   0.382105195473251,
+   0.46001450421940926,
+   0.5727831196581197,
+   0.7285374720357942,
+   0.39644418724279834,
+   0.4840123945147679,
+   0.5245392628205128,
+   0.7225950782997763,
+   0.382105195473251,
+   0.46001450421940926,
+   0.5727831196581197,
+   0.7285374720357942,
+   0.39644418724279834,
+   0.4840123945147679
+  ],
+  "B": [
+   0.6124465811965812,
+   0.7775272651006712,
+   0.47260802469135804,
+   0.5611814345991561,
+   0.6619591346153846,
+   0.782560822147651,
+   0.506397890946502,
+   0.5915414029535865,
+   0.6124465811965812,
+   0.7775272651006712,
+   0.47260802469135804,
+   0.5611814345991561,
+   0.6619591346153846,
+   0.782560822147651,
+   0.506397890946502,
+   0.5915414029535865
+  ]
+ },
+ "memory_limit": [
+  {
+   "memory_max_mib": 10240,
+   "peak_current_mib": 10240.1,
+   "peak_anon_mib": 5751.5,
+   "peak_file_mib": 4639.7,
+   "oom_kill_events": 0,
+   "checkpoint_resident_bytes_after_evict": 0
+  },
+  {
+   "memory_max_mib": 10240,
+   "peak_current_mib": 10240.0,
+   "peak_anon_mib": 7259.1,
+   "peak_file_mib": 5561.5,
+   "oom_kill_events": 0,
+   "checkpoint_resident_bytes_after_evict": 0
+  },
+  {
+   "memory_max_mib": 10240,
+   "peak_current_mib": 10240.1,
+   "peak_anon_mib": 7268.8,
+   "peak_file_mib": 5599.5,
+   "oom_kill_events": 0,
+   "checkpoint_resident_bytes_after_evict": 0
+  },
+  {
+   "memory_max_mib": 10240,
+   "peak_current_mib": 10240.0,
+   "peak_anon_mib": 5757.1,
+   "peak_file_mib": 6101.6,
+   "oom_kill_events": 0,
+   "checkpoint_resident_bytes_after_evict": 0
+  }
+ ],
+ "comparisons": [
+  {
+   "pair": "A0-B1",
+   "turn": 0,
+   "total_ratio": 0.7868241929626331,
+   "decode_ratio": 0.7480497857644489,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 1,
+   "total_ratio": 1.0447543693468568,
+   "decode_ratio": 1.0801373922699378,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 2,
+   "total_ratio": 1.003733998167221,
+   "decode_ratio": 1.0118678554752505,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 3,
+   "total_ratio": 1.0215688508497789,
+   "decode_ratio": 1.0480323750998222,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 4,
+   "total_ratio": 0.9549854589125335,
+   "decode_ratio": 0.98028745752451,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 5,
+   "total_ratio": 1.0200543640853141,
+   "decode_ratio": 1.0690023215052709,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 6,
+   "total_ratio": 1.0136217398972445,
+   "decode_ratio": 1.0272683654297157,
+   "text_match": true
+  },
+  {
+   "pair": "A0-B1",
+   "turn": 7,
+   "total_ratio": 0.9810564191591855,
+   "decode_ratio": 0.9959427231547782,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 0,
+   "total_ratio": 0.9374673662166308,
+   "decode_ratio": 0.9415987299006668,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 1,
+   "total_ratio": 0.9281296115985621,
+   "decode_ratio": 0.9408399597754604,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 2,
+   "total_ratio": 0.9147634952389426,
+   "decode_ratio": 0.9128565102851076,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 3,
+   "total_ratio": 0.9277552505063158,
+   "decode_ratio": 0.9210048518472785,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 4,
+   "total_ratio": 0.8554902793014451,
+   "decode_ratio": 0.8432201784611789,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 5,
+   "total_ratio": 0.9440794087227187,
+   "decode_ratio": 0.935277671923793,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 6,
+   "total_ratio": 0.8823225659407032,
+   "decode_ratio": 0.8649229571617341,
+   "text_match": true
+  },
+  {
+   "pair": "A3-B2",
+   "turn": 7,
+   "total_ratio": 0.9158727887085047,
+   "decode_ratio": 0.8920134165673976,
+   "text_match": true
+  }
+ ]
+}
