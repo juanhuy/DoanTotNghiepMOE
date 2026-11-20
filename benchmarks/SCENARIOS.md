@@ -689,3 +689,28 @@ done
 ```
 
 **Kết quả i5 18/11:** [hồ sơ P2](experiments/2026-11-18-qwen3-cache-ab-i5/README.md). `b_faster: false`, `b_slower: false`. Total B/A 0,787–1,045, decode 0,748–1,080, text khớp 16/16, 4/4 block 8/8 không OOM. Giữ 64MiB/layer.
+
+## Parity logits trên model thật (real-model-parity-v1, 20/11)
+
+Câu hỏi: trên checkpoint thật (Qwen3-30B-A3B, OLMoE-1B-7B), engine có tính đúng như Transformers không, và lượng tử hóa expert INT8 làm lệch đầu ra bao nhiêu? Máy không nạp nổi model BF16 (57GB / 14GB), nên bản tham chiếu chạy **từng decoder layer một** (`tools/stream_reference.py`): mỗi layer dựng bằng class Transformers (eager, F32), nạp trọng số riêng layer đó, chạy hết các chuỗi rồi giải phóng. Công cụ được kiểm trước khi đo: ra đúng logits của Transformers chạy cả model trên 5 fixture và trên model ngẫu nhiên nhỏ OLMoE/Qwen3 với expert BF16 lẫn INT8 (`tools/test_stream_reference.py`).
+
+- **Đầu vào:** 6 chuỗi cố định (`tools/make_parity_ids.py`): 4 prompt chat theo template của checkpoint (Qwen3 thinking off) và 2 đoạn plain (tiếng Anh, code). Lấy logits ở mọi vị trí.
+- **Ba bộ logits:**
+  - `engine`: `examples/dump_logits` (`model.logits`, CPU, cache 64MiB/layer; Qwen3 dense BF16 và embedding từ đĩa như benchmark);
+  - `ref-int8`: Transformers với expert giải nén từ đúng checkpoint INT8 engine dùng, dense từ BF16 gốc;
+  - `ref-bf16`: Transformers với toàn bộ trọng số BF16 gốc.
+- **Phép so 1: engine với ref-int8 (engine tính đúng không).** Đạt nếu (a) top-1 trùng ở mọi vị trí có biên top-1 của tham chiếu ≥ 0,01 và (b) KL trung bình ≤ 1e-4. Ghi thêm max/mean |Δlogit|; vị trí nào |Δ| > 0,1 thì điều tra (ví dụ router gần hòa đổi expert).
+- **Phép so 2: ref-bf16 với engine (ảnh hưởng của INT8).** Chỉ mô tả, không đặt ngưỡng: tỉ lệ top-1 trùng, top-5 overlap, KL trung bình/max.
+- **Checkpoint:**
+  - Qwen3 revision `ad44e777…` như `qwen3-ram-cap-v1`.
+  - OLMoE `allenai/OLMoE-1B-7B-0924-Instruct` revision `7f1c97f440f06ce36705e4f2b843edb5925f4498` (revision trong metadata của checkpoint i5). Trước khi so, kiểm từng tensor của `olmoe_merged` bằng bản convert lại từ nguồn này. Nếu không khớp thì ghi lại, và ref-int8 vẫn dùng expert của `olmoe_merged`.
+- Không chạy song song benchmark khác. Mỗi model chạy một lượt; logits thô không commit (khoảng 100MB), chỉ commit `sha256` và tóm tắt `compare_logits.py`.
+
+```bash
+python tools/make_parity_ids.py HF_DIR ids.json
+python tools/stream_reference.py --source HF_DIR --converted INT8_DIR --experts int8 --ids ids.json --out ref-int8
+python tools/stream_reference.py --source HF_DIR --experts bf16 --ids ids.json --out ref-bf16
+MOE_GPU_MODE=cpu [MOE_DENSE_STORAGE=bf16] cargo run --release --example dump_logits -- INT8_DIR ids.json engine
+python tools/compare_logits.py ref-int8 engine --vocab V --json engine-vs-ref-int8.json
+python tools/compare_logits.py ref-bf16 engine --vocab V --json engine-vs-ref-bf16.json
+```
