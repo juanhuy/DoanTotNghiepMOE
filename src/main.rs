@@ -830,6 +830,14 @@ mod tests {
             status["expert_payload_bytes"],
             16 * 8 * 3 + (8 * 2 + 16) * 4
         );
+        // Web matrix uses real VRAM placement (empty without a GPU tier) and machine RAM.
+        assert_eq!(status["layers"][0]["vram_experts"], serde_json::json!([]));
+        assert!(
+            status["system_telemetry"]["mem_total_kib"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
 
         for (model, expected) in [
             (Some("qwen3-moe"), StatusCode::OK),
