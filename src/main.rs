@@ -101,7 +101,7 @@ async fn get_models(State(state): State<AppState>) -> Json<ModelListResponse> {
     Json(ModelListResponse {
         object: "list",
         data: vec![ModelInfo {
-            id: state.engine.model_name().to_string(),
+            id: state.engine.model_id().to_string(),
             object: "model",
             created: 1700000000,
             owned_by: "moe-tier-engine",
@@ -330,11 +330,11 @@ async fn chat(
     if request
         .model
         .as_deref()
-        .is_some_and(|name| name != engine.model_name())
+        .is_some_and(|name| !engine.accepts_model(name))
     {
         return Err((
             StatusCode::BAD_REQUEST,
-            format!("loaded model is {}", engine.model_name()),
+            format!("loaded model is {}", engine.model_id()),
         ));
     }
     let sampling = if request.temperature.is_some()
@@ -368,6 +368,7 @@ async fn chat(
             .map_err(api_error)?;
         return Ok(Sse::new(SseEvents {
             stream,
+            model: engine.model_id(),
             start: true,
             done: false,
             ended: false,
@@ -386,7 +387,7 @@ async fn chat(
         .map_err(api_error)?;
     let completion_tokens = result.token_ids.len();
     Ok(Json(ChatResponse {
-        model: engine.model_name(),
+        model: engine.model_id(),
         choices: vec![Choice {
             index: 0,
             message: MessageResponse {
@@ -417,6 +418,7 @@ fn api_error(error: io::Error) -> ApiError {
 
 struct SseEvents {
     stream: moe_tier_engine::engine::ChatStream,
+    model: &'static str,
     start: bool,
     done: bool,
     ended: bool,
@@ -433,22 +435,23 @@ impl futures_core::Stream for SseEvents {
         if self.ended {
             return Poll::Ready(None);
         }
+        let model = self.model;
         if self.done {
             self.ended = true;
             return Poll::Ready(Some(Ok(Event::default().data("[DONE]"))));
         }
         let value = if self.start {
             self.start = false;
-            json!({"object":"chat.completion.chunk", "model":"olmoe", "choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]})
+            json!({"object":"chat.completion.chunk", "model":model, "choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]})
         } else {
             match std::pin::Pin::new(&mut self.stream).poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Ok(ChatEvent::Delta(text)))) => {
-                    json!({"object":"chat.completion.chunk", "model":"olmoe", "choices":[{"index":0,"delta":{"content":text},"finish_reason":null}]})
+                    json!({"object":"chat.completion.chunk", "model":model, "choices":[{"index":0,"delta":{"content":text},"finish_reason":null}]})
                 }
                 Poll::Ready(Some(Ok(ChatEvent::Finished(result)))) => {
                     self.done = true;
-                    json!({"object":"chat.completion.chunk", "model":"olmoe", "choices":[{"index":0,"delta":{},"finish_reason":result.finish_reason}],
+                    json!({"object":"chat.completion.chunk", "model":model, "choices":[{"index":0,"delta":{},"finish_reason":result.finish_reason}],
                         "usage":{"prompt_tokens":result.prompt_tokens,"completion_tokens":result.token_ids.len(),"total_tokens":result.prompt_tokens+result.token_ids.len()},"metrics":result.metrics})
                 }
                 Poll::Ready(Some(Err(error))) => {
@@ -793,5 +796,70 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn http_reports_qwen3_model_id_and_accepts_legacy_alias() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/qwen3moe/gqa-headdim");
+        let engine = Arc::new(
+            InferenceEngine::load_with_limits(directory, 10_000, 64, 10_000_000)
+                .await
+                .unwrap(),
+        );
+        let app = app(AppState {
+            engine: Arc::clone(&engine),
+            stream_send_timeout: Duration::from_secs(1),
+        });
+        let get = |path: &str| Request::get(path).body(Body::empty()).unwrap();
+        let response = app.clone().oneshot(get("/v1/models")).await.unwrap();
+        let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["data"][0]["id"], "qwen3-moe");
+
+        let response = app.clone().oneshot(get("/experts")).await.unwrap();
+        let bytes = to_bytes(response.into_body(), 10_000_000).await.unwrap();
+        let status: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status["model_type"], "qwen3_moe");
+        assert_eq!(status["num_layers"], 2);
+        assert_eq!(status["num_experts"], 8);
+        assert_eq!(status["num_experts_per_tok"], 2);
+        assert_eq!(status["kv_dim"], 12);
+        assert_eq!(status["context_limit"], 64);
+        assert_eq!(
+            status["expert_payload_bytes"],
+            16 * 8 * 3 + (8 * 2 + 16) * 4
+        );
+
+        for (model, expected) in [
+            (Some("qwen3-moe"), StatusCode::OK),
+            (Some("olmoe"), StatusCode::OK),
+            (None, StatusCode::OK),
+            (Some("gpt-4"), StatusCode::BAD_REQUEST),
+        ] {
+            let mut chat = serde_json::json!({
+                "messages": [{"role": "user", "content": "token3"}],
+                "max_tokens": 2,
+            });
+            if let Some(model) = model {
+                chat["model"] = model.into();
+            }
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/v1/chat/completions")
+                        .header("content-type", "application/json")
+                        .body(Body::from(chat.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "model {model:?}");
+            if expected == StatusCode::OK {
+                let bytes = to_bytes(response.into_body(), 100_000).await.unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(body["model"], "qwen3-moe");
+            }
+        }
     }
 }

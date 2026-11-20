@@ -126,11 +126,34 @@ impl InferenceEngine {
             cached_status: Arc::new(std::sync::RwLock::new(initial_status)),
         })
     }
+    /// Engine family: `tiny-moe`, or `olmoe` for every checkpoint served by `OlmoeModel`
+    /// (OLMoE and Qwen3-MoE). Harnesses use it to require the INT8 checkpoint path.
     pub fn model_name(&self) -> &'static str {
         match self.model {
             Model::Tiny(_) => "tiny-moe",
             Model::Olmoe(_) => "olmoe",
         }
+    }
+
+    /// API model id of the loaded checkpoint: `olmoe`, `qwen3-moe` or `tiny-moe`.
+    pub fn model_id(&self) -> &'static str {
+        let qwen3 = self
+            .cached_status
+            .read()
+            .ok()
+            .and_then(|status| status.as_ref().map(|s| s.model_type == "qwen3_moe"))
+            .unwrap_or(false);
+        if qwen3 {
+            "qwen3-moe"
+        } else {
+            self.model_name()
+        }
+    }
+
+    /// Requested `model` accepted by the chat API: the loaded id, or the historical `olmoe`
+    /// alias that existing clients send for any checkpoint served by `OlmoeModel`.
+    pub fn accepts_model(&self, requested: &str) -> bool {
+        requested == self.model_id() || requested == self.model_name()
     }
     pub fn expert_status(&self) -> Option<crate::olmoe::ExpertStatusReport> {
         match &self.model {
