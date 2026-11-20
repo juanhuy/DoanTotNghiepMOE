@@ -1,0 +1,37 @@
+{
+  "cache_mib_per_layer": 64,
+  "context": 44,
+  "dense_storage": "bf16",
+  "embedding_on_disk": true,
+  "gpu_dense_offloaded": false,
+  "gpu_expert_compute_enabled": false,
+  "load_seconds": 3.9178537159999998,
+  "model_dir": "../Models/qwen3-30b-a3b-int8",
+  "model_type": "qwen3_moe",
+  "shapes": [
+    {
+      "positions": 15,
+      "vocab": 151936
+    },
+    {
+      "positions": 16,
+      "vocab": 151936
+    },
+    {
+      "positions": 18,
+      "vocab": 151936
+    },
+    {
+      "positions": 27,
+      "vocab": 151936
+    },
+    {
+      "positions": 39,
+      "vocab": 151936
+    },
+    {
+      "positions": 44,
+      "vocab": 151936
+    }
+  ]
+}

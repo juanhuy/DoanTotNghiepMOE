@@ -1,0 +1,102 @@
+{
+  "reference": "../parity-logits/qwen3/ref-bf16",
+  "candidate": "../parity-logits/qwen3/ref-int8",
+  "overall": {
+    "sequences": 6,
+    "positions": 159,
+    "max_abs_delta": 4.497110843658447,
+    "mean_abs_delta": 0.14875042517455467,
+    "top1_agree": 157,
+    "top5_overlap_mean": 0.9446540880503144,
+    "kl_mean": 0.008852193355448403,
+    "kl_max": 0.38088948345154056
+  },
+  "per_sequence": [
+    {
+      "positions": 15,
+      "max_abs_delta": 2.078585624694824,
+      "mean_abs_delta": 0.17631778454148464,
+      "max_abs_delta_per_position_median": 1.2466440200805664,
+      "reference_logit_abs_max": 42.30543518066406,
+      "top1_agree": 15,
+      "top5_overlap_mean": 0.8666666666666668,
+      "kl_mean": 0.015884042525669793,
+      "kl_max": 0.09030079373624572,
+      "top1_differs_at": []
+    },
+    {
+      "positions": 16,
+      "max_abs_delta": 4.497110843658447,
+      "mean_abs_delta": 0.23028856333040248,
+      "max_abs_delta_per_position_median": 1.3486779034137726,
+      "reference_logit_abs_max": 44.70439910888672,
+      "top1_agree": 15,
+      "top5_overlap_mean": 0.8875,
+      "kl_mean": 0.031136049940802834,
+      "kl_max": 0.38088948345154056,
+      "top1_differs_at": [
+        {
+          "position": 15,
+          "reference_top1": 28251,
+          "candidate_top1": 785,
+          "reference_margin": 0.1898956298828125
+        }
+      ]
+    },
+    {
+      "positions": 18,
+      "max_abs_delta": 3.0769373178482056,
+      "mean_abs_delta": 0.14985376833632708,
+      "max_abs_delta_per_position_median": 0.5967631340026855,
+      "reference_logit_abs_max": 47.08821105957031,
+      "top1_agree": 18,
+      "top5_overlap_mean": 0.9444444444444444,
+      "kl_mean": 0.007101188133528147,
+      "kl_max": 0.05119666708397948,
+      "top1_differs_at": []
+    },
+    {
+      "positions": 27,
+      "max_abs_delta": 1.9691014289855957,
+      "mean_abs_delta": 0.1132447699321925,
+      "max_abs_delta_per_position_median": 0.6493539810180664,
+      "reference_logit_abs_max": 46.53313064575195,
+      "top1_agree": 27,
+      "top5_overlap_mean": 0.9407407407407408,
+      "kl_mean": 0.009523037485236962,
+      "kl_max": 0.1480879241400702,
+      "top1_differs_at": []
+    },
+    {
+      "positions": 39,
+      "max_abs_delta": 2.663132667541504,
+      "mean_abs_delta": 0.15542711823420927,
+      "max_abs_delta_per_position_median": 0.5691838264465332,
+      "reference_logit_abs_max": 29.289409637451172,
+      "top1_agree": 38,
+      "top5_overlap_mean": 0.964102564102564,
+      "kl_mean": 0.005568202743775085,
+      "kl_max": 0.08811068036800682,
+      "top1_differs_at": [
+        {
+          "position": 14,
+          "reference_top1": 24,
+          "candidate_top1": 18,
+          "reference_margin": 0.14826583862304688
+        }
+      ]
+    },
+    {
+      "positions": 44,
+      "max_abs_delta": 2.582461953163147,
+      "mean_abs_delta": 0.12512044527245994,
+      "max_abs_delta_per_position_median": 0.40634655952453613,
+      "reference_logit_abs_max": 40.8072395324707,
+      "top1_agree": 44,
+      "top5_overlap_mean": 0.9772727272727273,
+      "kl_mean": 0.0015672272969606993,
+      "kl_max": 0.05926024768594257,
+      "top1_differs_at": []
+    }
+  ]
+}

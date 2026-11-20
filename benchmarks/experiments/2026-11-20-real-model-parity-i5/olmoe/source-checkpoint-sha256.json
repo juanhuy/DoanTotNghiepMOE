@@ -1,0 +1,66 @@
+{
+ "repo": "allenai/OLMoE-1B-7B-0924-Instruct",
+ "revision": "7f1c97f440f06ce36705e4f2b843edb5925f4498",
+ "files": {
+  ".gitattributes": {
+   "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "README.md": {
+   "sha256": "06977ee73bcc71eaa8c6c2cf6a01f6f0b1a10aa8ed2777cc4c275b24215df696",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "config.json": {
+   "sha256": "42ea6f5fe31e9243290ba3c348a4ad615b88a6fbc6e10544e21a87b6dff5da6c",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "generation_config.json": {
+   "sha256": "77cf3f0caaa5e6d6972d910c70ca03f64fc47eccb4374082bdc8fc7b2c524a45",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "model-00001-of-00003.safetensors": {
+   "sha256": "6c79ac0487c3f23e8ee3d38752197d1e4a1a39d6c1438ec5fd7862874bb19321",
+   "hub_lfs_sha256": "6c79ac0487c3f23e8ee3d38752197d1e4a1a39d6c1438ec5fd7862874bb19321",
+   "match": true
+  },
+  "model-00002-of-00003.safetensors": {
+   "sha256": "b58ca7a9f28f35d76b56b0ec40fc46c356fd84ccf078083b251a3ad6a2da9a35",
+   "hub_lfs_sha256": "b58ca7a9f28f35d76b56b0ec40fc46c356fd84ccf078083b251a3ad6a2da9a35",
+   "match": true
+  },
+  "model-00003-of-00003.safetensors": {
+   "sha256": "e93653ed509223e63eabae6f72ac8ea5a41115c5c7785574b9b2068ca0961c45",
+   "hub_lfs_sha256": "e93653ed509223e63eabae6f72ac8ea5a41115c5c7785574b9b2068ca0961c45",
+   "match": true
+  },
+  "model.safetensors.index.json": {
+   "sha256": "0e2e1e0d8d357ac7af817cff28410c3dbad398f060c517a433e4076b2aae5579",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "olmoe-logo.png": {
+   "sha256": "482000c8d723923ba1c2fd39c4334fcf95c9d88102576a3f956fa264172626de",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "special_tokens_map.json": {
+   "sha256": "cf22141a130514760f6280166b8d1c9a56610578188aad0790eb6eaf6ea1eb08",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "tokenizer.json": {
+   "sha256": "b1fb1517c84c6d516ff43adcebe7a1986ce7ed3e2533dc2c22b40337d2d24167",
+   "hub_lfs_sha256": null,
+   "match": null
+  },
+  "tokenizer_config.json": {
+   "sha256": "d3079f9c26a02fd28ee8d9bdfea4e96da7f5e803e06707ec8d1511acaaac7864",
+   "hub_lfs_sha256": null,
+   "match": null
+  }
+ }
+}

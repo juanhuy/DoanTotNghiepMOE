@@ -714,3 +714,5 @@ MOE_GPU_MODE=cpu [MOE_DENSE_STORAGE=bf16] cargo run --release --example dump_log
 python tools/compare_logits.py ref-int8 engine --vocab V --json engine-vs-ref-int8.json
 python tools/compare_logits.py ref-bf16 engine --vocab V --json engine-vs-ref-bf16.json
 ```
+
+**Kết quả i5 20/11:** [hồ sơ P1](experiments/2026-11-20-real-model-parity-i5/README.md). Phép so 1 đạt cả hai model: Qwen3 top-1 159/159, max |Δ| 3,0e-4, KL 1,2e-11; OLMoE 186/186, 3,5e-5, 3,7e-12. Phép so 2: top-1 157/159 và 184/186, KL trung bình 0,0089 và 0,0077. Checkpoint OLMoE trùng 2195/2195 tensor. Script tham chiếu được sửa lỗi giữ bộ nhớ sau khi commit protocol (2a50149), không đổi phép tính.

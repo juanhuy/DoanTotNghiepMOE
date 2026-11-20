@@ -4150,3 +4150,29 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - Giữ nhãn P1 cho phần CPU (bằng chứng lặp lại độc lập trên máy thứ hai). Không so tốc độ i5/i7.
 - Nhiệm vụ i7 Qwen3 đóng. i7 chưa có nhiệm vụ mới.
 
+## 2026-11-20 — Parity logits trên model thật Qwen3-30B-A3B và OLMoE-1B-7B (real-model-parity-v1, branch work/real-model-parity)
+
+- **Vấn đề:** parity với Transformers mới chứng minh trên fixture nhỏ ngẫu nhiên, vì máy không nạp nổi model BF16 (57GB / 14GB).
+- **Công cụ mới:**
+  - `tools/stream_reference.py`: Transformers chạy từng decoder layer (dựng trên meta, nạp trọng số một layer, F32 eager). Expert lấy từ BF16 gốc hoặc giải nén từ checkpoint INT8.
+  - `examples/dump_logits.rs`: engine xuất logits.
+  - `tools/compare_logits.py`: top-1, top-5, KL, |Δ|.
+  - `tools/make_parity_ids.py`: 6 chuỗi cố định.
+  - `tools/compare_checkpoint_tensors.py`: so hai checkpoint theo từng tensor.
+- **Kiểm tra công cụ:** `tools/test_stream_reference.py` (đã thêm vào `check.py --converter`) chạy OLMoE/Qwen3 nhỏ với expert BF16 và INT8, khớp model đầy đủ trong 1e-5; 5 fixture khớp từng bit; `python3 tools/check.py` đạt.
+- Protocol commit trước khi đo (b6f6263).
+- **Sự cố:** lượt Qwen3 đầu tiên bị OOM killer dừng (anon 11,8GB) vì handle `safe_open` giữ lại tensor đã đọc, +614MiB/layer. Sửa ở 2a50149 bằng cách mở shard theo từng lần đọc; RSS giữ ~400MiB/layer, peak 2,8GB.
+- **Nguồn OLMoE:**
+  - tải `allenai/OLMoE-1B-7B-0924-Instruct@7f1c97f`, SHA 3 shard khớp Hub;
+  - convert lại (59s) trùng 2195/2195 tensor với `olmoe_merged`, nên mọi hồ sơ OLMoE dùng đúng checkpoint này (đóng điểm mở từ 24/10).
+- **Kết quả** ([hồ sơ P1](../benchmarks/experiments/2026-11-20-real-model-parity-i5/README.md)):
+  - Engine với ref-INT8, rule đạt:
+    - Qwen3: top-1 159/159, max |Δ| 3,0e-4, KL 1,2e-11;
+    - OLMoE: 186/186, 3,5e-5, 3,7e-12.
+  - Engine tất định: chạy lại cho logits giống từng byte.
+  - INT8 với BF16 gốc: top-1 157/159 và 184/186 (các vị trí đổi đều gần hòa, biên 0,004–0,19), top-5 0,945 / 0,972, KL trung bình 0,0089 / 0,0077.
+- Thời gian: engine 3,5 phút (Qwen3) / 1 phút (OLMoE); tham chiếu 1,6–2,6 phút (Qwen3).
+- Logits thô ~480MB để ngoài repo (`../parity-logits/`), commit sha256.
+- **Giới hạn:** 6 chuỗi ngắn, CPU, đường `model.logits`; không phải perplexity hay chất lượng tác vụ.
+- Cập nhật mục lục (38 hồ sơ), SCENARIOS, EVIDENCE_MATRIX; ghi chú bổ sung ở README Qwen3 i5.
+
