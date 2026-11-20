@@ -4212,3 +4212,12 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - ảnh chụp Chrome headless xác nhận dòng CONFIG và các khung trống trước request;
   - `python3 tools/check.py --web` đạt.
 
+## 2026-11-20 — Bản thảo "Giới hạn và hướng phát triển" cho báo cáo lần 2
+
+- Tạo `baocao/lan2/GIOI_HAN_VA_HUONG_PHAT_TRIEN.md`: vì sao Qwen3 chưa dùng GPU trên i5, các giới hạn khác của bằng chứng, hướng phát triển và câu trả lời mẫu. Mỗi ý ghi rõ đo hay suy ra.
+  - Lý do Qwen3 không lên GPU: dense F32 khoảng 4,9GB lớn hơn 4GB VRAM.
+  - Bằng chứng nút thắt là I/O: chờ đọc 58–76%, dense 12–23% mỗi request theo hồ sơ P1 17/11.
+  - Giới hạn Amdahl suy ra: khoảng 1,13–1,30 lần.
+- Đính chính so với trao đổi trước: con số "dense khoảng 14%, tối đa 1,16 lần" lấy từ một lượt demo; hồ sơ P1 cho 12–23%, tức 1,13–1,30 lần, và tài liệu dùng số P1.
+- Hồ sơ INT4 03/11 thiếu provenance nên chỉ nêu INT4 là hướng phát triển, không trích số.
+
