@@ -1,0 +1,30 @@
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261118T140240.463725Z-ram-3c8f65ec77fe46098c4c2abf6a47b127
+turn=0 RSS=5689564KiB swap=0KiB
+turn=1 RSS=5712528KiB swap=0KiB
+turn=2 RSS=5758888KiB swap=0KiB
+turn=3 RSS=5806748KiB swap=0KiB
+turn=4 RSS=5833924KiB swap=0KiB
+turn=5 RSS=5834504KiB swap=0KiB
+turn=6 RSS=5854628KiB swap=0KiB
+turn=7 RSS=5887356KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261118T140240.463725Z-ram-3c8f65ec77fe46098c4c2abf6a47b127/result.json
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261118T141033.921460Z-ram-491506c9ec78413885a0ab06605f437f
+turn=0 RSS=5689312KiB swap=0KiB
+turn=1 RSS=5713040KiB swap=0KiB
+turn=2 RSS=5759448KiB swap=0KiB
+turn=3 RSS=5807268KiB swap=0KiB
+turn=4 RSS=5833812KiB swap=0KiB
+turn=5 RSS=5842628KiB swap=0KiB
+turn=6 RSS=5859836KiB swap=0KiB
+turn=7 RSS=5892456KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261118T141033.921460Z-ram-491506c9ec78413885a0ab06605f437f/result.json
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261118T141808.082331Z-ram-a05ba73d6f684320b5f2a0ec78058e24
+turn=0 RSS=6017148KiB swap=0KiB
+turn=1 RSS=6044592KiB swap=0KiB
+turn=2 RSS=6090836KiB swap=0KiB
+turn=3 RSS=6138620KiB swap=0KiB
+turn=4 RSS=6165684KiB swap=0KiB
+turn=5 RSS=6165740KiB swap=0KiB
+turn=6 RSS=6191108KiB swap=0KiB
+turn=7 RSS=6220168KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261118T141808.082331Z-ram-a05ba73d6f684320b5f2a0ec78058e24/result.json

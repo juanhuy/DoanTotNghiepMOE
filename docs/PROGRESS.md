@@ -4112,3 +4112,41 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - decode trung vị 0,96 (A) so với 1,03–1,05 (B) tok/s.
 - Quyết định: Qwen3 giữ cache 64MiB/layer. Chuyển RAM từ page cache sang cache engine dưới cùng trần không đủ để tăng tốc; muốn nhanh hơn phải giảm khối lượng đọc (INT4) hoặc thêm VRAM.
 - Lưu ý: lúc đo có Chrome/Slack/VS Code mở (available 8276MiB so với 9736MiB ngày 17/11), nên tốc độ tuyệt đối thấp hơn hồ sơ 17/11 và không so khác ngày.
+
+## 2026-11-18 — Qwen3-30B-A3B trên i7: hoàn tất dưới trần RAM 10GB và 8GB, text khớp tuyệt đối i5, khám phá GPU (work/i7-qwen3)
+
+- Tiếp nhận nhiệm vụ giao ngày 18/11 trên testbed i7 (`i7-14650HX`, RTX 5060 Laptop GPU 8GB, 16GB RAM / 15,2GiB khả dụng).
+- Kiểm tra tính toàn vẹn checkpoint trước khi đo:
+  - Tải revision `ad44e777bcd18fa416d9da3bd8f70d33ebb85d39` vào `../Models/qwen3-30b-a3b-hf`. So SHA256 16 shard và tokenizer khớp Hub 17/17 file.
+  - Convert INT8 bằng `tools/prepare_olmoe.py` trong 2 phút 37 giây trên i7 ra 30GB.
+  - So sánh SHA256 của toàn bộ 478 file checkpoint đã convert với bản của i5 (`2026-11-17-qwen3-ram-cap-i5/limit-10240/result.json`): **mismatched files: 0 of 478**. Xác nhận độc lập hai máy chạy cùng bit-exact checkpoint.
+- Đo protocol `qwen3-ram-cap-v1` (CPU-only, 4 threads, dense BF16, cache 64MiB/layer × 48, context 512, max64, keep-cache, mixed × 8) dưới cgroup trần 10240MiB rồi 8192MiB (`systemd-inhibit`, page cache bị evict về 0 byte trước mỗi lượt):
+  - Cả 2 mức đều hoàn thành 8/8 turn, oom_kill = 0, VmSwap = 0.
+  - Trần 10240MiB: Scope peak current 7758,6 / anon 5739,9 / file 4409,7 MiB; RSS peak 5749,3 MiB; TTFT trung vị 9,9s (8,3–18,9s); decode trung vị 1,53 tok/s (1,24–1,86); tốc độ đọc file 2,24 GB/s; chờ I/O chiếm 59–65% thời gian; hit rate 38–73%.
+  - Trần 8192MiB: Scope peak current 8192,1 / anon 5745,0 / file 4929,8 MiB; RSS peak 5754,3 MiB; TTFT trung vị 10,9s (9,1–20,2s); decode trung vị 1,78 tok/s (1,51–1,97); tốc độ đọc file 2,57 GB/s; chờ I/O chiếm 55–62% thời gian; hit rate 38–73%.
+  - **Text khớp 8/8 turn bit-exact** giữa cả hai mức và khớp từng ký tự với kết quả của i5!
+- Lượt khám phá GPU (P3, trần 10240MiB, `--gpu auto --gpu-expert-tier on --gpu-expert-compute on`):
+  - RTX 5060 Laptop 8GB nạp toàn bộ dense lên VRAM dạng F32 nới từ BF16 (4643MiB) và cấp phát pool L1 VRAM Expert gồm **565 slots** resident.
+  - `gpu_expert_compute_enabled: true`, `expert_gpu_computes`: 31.469 lượt (tổng thời gian tính toán expert GPU: 1,5 giây trên NVRTC SwiGLU INT8 kernel).
+  - TTFT trung vị 6,9s (5,6–12,4s); decode trung vị 2,22 tok/s (1,73–2,68), một lượt khám phá, không phải A/B; cache hit tăng lên 46–77%; text vẫn khớp bit-exact 8/8 turn.
+  - Scope peak: current 10240,0 / anon 5836,0 / file 6517,6 MiB; VmSwap = 0 KiB; oom_kill = 0.
+- Đóng gói hồ sơ P1 `benchmarks/experiments/2026-11-18-qwen3-ram-cap-i7/` (43 file được khóa bằng `CHECKSUMS.sha256`, gồm limit-10240, limit-8192, gpu-explore, preflight, console.log, convert.log, source-checkpoint-sha256.json).
+- Cập nhật mục lục `benchmarks/README.md` (37 hồ sơ).
+
+## 2026-11-20 — Review và merge `work/i7-qwen3` (owner)
+
+- Kiểm lại trên raw:
+  - `sha256sum -c` 43/43 OK;
+  - `checkpoint` trong cả 3 `result.json` của i7 trùng hoàn toàn với i5 (478 file);
+  - text 8/8 turn khớp i5 ở cả 3 lượt;
+  - `git_commit` 82a4b8d, `git_dirty` false, testbed i7, `memory.max` khớp, `oom_kill` 0;
+  - guard 9216 / 7168MiB đúng protocol.
+- Đính chính số liệu trong README hồ sơ, mục lục và mục 18/11 ở trên (raw không đổi):
+  - trung vị cao → trung vị chuẩn như i5: decode 1,53 / 1,78 / 2,22 tok/s, TTFT 9,9 / 10,9 / 6,9s, total 55,7 / 49,8 / 37,4s;
+  - tốc độ đọc GiB/s → GB/s: 2,24 / 2,57 / 2,75 GB/s;
+  - dense trên VRAM là F32 nới từ BF16, không phải BF16;
+  - driver 595.99.02 theo raw.
+- 8192 nhanh hơn 10240 là dao động giữa hai lượt đơn (ở 10240 scope chỉ đạt 7758,6MiB, trần không chạm). Lượt GPU là P3 khám phá, đổi nhiều yếu tố cùng lúc, không quy nhân quả.
+- Giữ nhãn P1 cho phần CPU (bằng chứng lặp lại độc lập trên máy thứ hai). Không so tốc độ i5/i7.
+- Nhiệm vụ i7 Qwen3 đóng. i7 chưa có nhiệm vụ mới.
+

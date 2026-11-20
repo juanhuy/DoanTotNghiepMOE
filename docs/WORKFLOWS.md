@@ -264,6 +264,8 @@ Chỉ tái lập phase1-v1 khi được giao rõ mới dùng revision lịch s�
 
 ## Nhiệm vụ i7: Qwen3-30B-A3B dưới trần RAM (giao 18/11/2026)
 
+**Trạng thái: xong 18/11, review và merge 20/11** ([P1 i7](../benchmarks/experiments/2026-11-18-qwen3-ram-cap-i7/README.md)): hash 478/478 khớp i5, 8/8 ở cả hai trần, 0 OOM, 0 swap, text khớp i5 8/8; CPU-only decode 1,53 / 1,78 tok/s.
+
 Protocol `qwen3-ram-cap-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#qwen3-30b-a3b-dưới-trần-ram-10gb-qwen3-ram-cap-v1-1711). Kết quả i5 ([P1](../benchmarks/experiments/2026-11-17-qwen3-ram-cap-i5/README.md)): 8/8 ở cả 10240 và 8192MiB, anon ~5,7GiB, CPU-only 1,34 / 1,13 tok/s. i7 chạy độc lập; không suy kết quả i5 sang i7. Cần khoảng 120GB đĩa trống (61GB nguồn + 30GB INT8) và khoảng 1,5 giờ (tải + convert + đo).
 
 1. `git switch main && git pull`, `git status --short` rỗng. Build release, `python3 tools/check.py --rust` PASS (có `tests/qwen3moe_reference.rs`).

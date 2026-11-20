@@ -1,0 +1,70 @@
+{
+  "samples": [
+    {
+      "utc": "2026-11-18T14:02:05.290317+00:00",
+      "available_kib": 11979756,
+      "swap_used_kib": 2096840,
+      "pswpout": 724531,
+      "psi_memory": [
+        "some avg10=0.17 avg60=0.27 avg300=0.27 total=3520177",
+        "full avg10=0.17 avg60=0.26 avg300=0.25 total=3362518"
+      ]
+    },
+    {
+      "utc": "2026-11-18T14:02:10.291361+00:00",
+      "available_kib": 12400128,
+      "swap_used_kib": 2096832,
+      "pswpout": 724531,
+      "psi_memory": [
+        "some avg10=0.09 avg60=0.25 avg300=0.27 total=3522172",
+        "full avg10=0.09 avg60=0.23 avg300=0.25 total=3364455"
+      ]
+    },
+    {
+      "utc": "2026-11-18T14:02:15.291725+00:00",
+      "available_kib": 12398528,
+      "swap_used_kib": 2096828,
+      "pswpout": 724531,
+      "psi_memory": [
+        "some avg10=0.06 avg60=0.23 avg300=0.27 total=3523423",
+        "full avg10=0.06 avg60=0.21 avg300=0.24 total=3365548"
+      ]
+    }
+  ],
+  "active_engine_build_processes": [],
+  "power": {
+    "supplies": {
+      "ADP1": {
+        "type": "Mains",
+        "online": "1",
+        "status": null,
+        "capacity": null
+      },
+      "BAT1": {
+        "type": "Battery",
+        "online": null,
+        "status": "Not charging",
+        "capacity": "94"
+      }
+    },
+    "on_ac": true
+  },
+  "gpu": {
+    "status": "observed",
+    "pstate": "P2",
+    "clock_gr": "1680 MHz",
+    "temperature": "53",
+    "power_draw": "10.30 W",
+    "reasons": {
+      "clocks_event_reasons.hw_slowdown": "Not Active",
+      "clocks_event_reasons.hw_thermal_slowdown": "Not Active",
+      "clocks_event_reasons.sw_thermal_slowdown": "Not Active",
+      "clocks_event_reasons.hw_power_brake_slowdown": "Not Active",
+      "clocks_event_reasons.sw_power_cap": "Not Active"
+    },
+    "active_throttle": [],
+    "throttled": false
+  },
+  "min_available_required_mib": 5120,
+  "eligible": true
+}
