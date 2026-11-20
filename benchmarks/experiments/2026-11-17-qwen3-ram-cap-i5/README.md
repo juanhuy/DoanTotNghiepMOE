@@ -62,7 +62,7 @@ HEAD f695629, git_dirty false, binary 9fedf60d57ca9fa0…, i5-10500H, 15,4GiB RA
 ## Giới hạn
 
 - Một lượt mỗi mức, một máy, CPU-only, 8 request × 64 token. Không có đối chứng tier on/off và không so tốc độ với OLMoE.
-- Chưa đánh giá chất lượng ngoài việc đọc câu trả lời. Chưa so logits với Transformers trên model 30B thật, vì máy không đủ RAM để chạy bản tham chiếu. Parity chỉ chứng minh trên fixture nhỏ ngẫu nhiên (`tests/qwen3moe_reference.rs`).
+- Chưa đánh giá chất lượng ngoài việc đọc câu trả lời. Chưa so logits với Transformers trên model 30B thật, vì máy không đủ RAM để chạy bản tham chiếu. Parity chỉ chứng minh trên fixture nhỏ ngẫu nhiên (`tests/qwen3moe_reference.rs`). *Bổ sung 20/11: đã có parity trên model 30B thật bằng tham chiếu chạy từng layer, xem [hồ sơ parity](../2026-11-20-real-model-parity-i5/README.md).*
 - Tốc độ đọc là payload engine chia cho thời gian đọc của engine, không phải I/O thiết bị. Trần là cgroup của riêng engine, không phải RAM vật lý của máy.
 - Thinking tắt. Bật thinking sẽ sinh nhiều token hơn trước khi ra câu trả lời.
 

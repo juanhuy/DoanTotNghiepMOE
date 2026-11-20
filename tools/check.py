@@ -103,7 +103,8 @@ def main(argv=None):
         commands.append(["cargo", "test", "--release", "--all-targets", "--locked"])
     if args.converter:
         commands += [[sys.executable, "tools/test_prepare_olmoe.py"],
-                     [sys.executable, "tools/test_prepare_olmoe_int4.py"]]
+                     [sys.executable, "tools/test_prepare_olmoe_int4.py"],
+                     [sys.executable, "tools/test_stream_reference.py"]]
     if args.web:
         commands.append(["node", "tools/test_chat_stream.cjs"])
     if not all(run(command) for command in commands):
