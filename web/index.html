@@ -924,7 +924,7 @@
       <button class="kv-toggle-btn" id="btn-header-kv-toggle" title="A/B Toggle FP8 E4M3 KV Cache Quantization (-75% RAM savings)">
         <span id="header-kv-label">KV FP8: ON</span>
       </button>
-      <span class="tech-pill tech-pill-cyan" id="header-persist-badge" title="Optional KV session persistence (.moekv); use a dedicated directory per checkpoint">SSD L3: ON</span>
+      <span class="tech-pill tech-pill-cyan" id="header-persist-badge" title="Lưu KV session xuống đĩa (.moekv) — tính năng tùy chọn, không phải tầng SSD của expert">KV PERSIST: —</span>
       <div class="badge-status ready" id="header-status-badge">Engine Ready</div>
     </div>
   </header>
@@ -1026,7 +1026,7 @@
 
               <!-- Link 2: RAM <-> GPU (PCIe DMA) -->
               <div class="flow-link active" id="link-ram-gpu">
-                <div class="flow-link-label" id="flow-pcie-label">PCIe 3.0 DMA</div>
+                <div class="flow-link-label" id="flow-pcie-label">PCIe</div>
                 <div class="flow-link-line"></div>
                 <div class="flow-link-dir" id="flow-pcie-dir">▲ H2D / ▼ D2H</div>
               </div>
@@ -1048,7 +1048,7 @@
           <div class="tech-card">
             <div class="tech-card-header">
               <span>EXPERT TIMERS & THROUGHPUT</span>
-              <span id="telemetry-source-badge" style="color:var(--accent-cyan);">HISTORICAL SAMPLE — UNVERIFIED</span>
+              <span id="telemetry-source-badge" style="color:var(--accent-cyan);">CHƯA CÓ REQUEST</span>
             </div>
 
             <div class="kpi-row">
@@ -1084,7 +1084,7 @@
                   <td id="val-io">-- s</td>
                 </tr>
                 <tr>
-                  <td><span style="color:#34d399;">■</span> Expert MLP Compute (Zero-Alloc SIMD)</td>
+                  <td><span style="color:#34d399;">■</span> Expert compute (CPU SIMD / GPU kernel)</td>
                   <td id="val-expert">-- s</td>
                 </tr>
                 <tr>
@@ -1154,22 +1154,22 @@
           <!-- Tier 1: L1 VRAM -->
           <div class="tier-spec-card">
             <div class="tier-spec-header">
-              <span class="tier-spec-title" style="color:var(--accent-cyan);">TIER 1: GPU VRAM (GDDR5/GDDR6)</span>
+              <span class="tier-spec-title" style="color:var(--accent-cyan);">TIER 1: GPU VRAM</span>
               <span id="vram-pct-badge">--%</span>
             </div>
-            <div class="tier-spec-val" id="topo-vram-text">-- GB / 4.00 GB</div>
+            <div class="tier-spec-val" id="topo-vram-text">--</div>
             <div class="tier-progress-track">
               <div class="tier-progress-fill" id="topo-vram-bar" style="width: 0%; background: var(--accent-cyan);"></div>
             </div>
             <div style="font-size:0.68rem; color:var(--text-faint);">
-              Bandwidth: ~128 GB/s · Latency: ~0.4ms DMA · Dense offloaded + L1 Expert Cache
+              <span id="topo-vram-detail">Dense + pool expert INT8 (khi bật GPU)</span>
             </div>
           </div>
 
           <!-- Tier 2: L2 RAM -->
           <div class="tier-spec-card">
             <div class="tier-spec-header">
-              <span class="tier-spec-title" style="color:var(--accent-blue);">TIER 2: HOST RAM (DDR4/DDR5)</span>
+              <span class="tier-spec-title" style="color:var(--accent-blue);">TIER 2: HOST RAM</span>
               <span id="ram-pct-badge">--%</span>
             </div>
             <div class="tier-spec-val" id="topo-ram-text">-- GB (RSS)</div>
@@ -1177,14 +1177,14 @@
               <div class="tier-progress-fill" id="topo-ram-bar" style="width: 0%; background: var(--accent-blue);"></div>
             </div>
             <div style="font-size:0.68rem; color:var(--text-faint);">
-              Bandwidth: ~25.6 GB/s · Latency: ~0.05ms Bus · <span id="topo-ram-detail">INT8 L2 Cache</span>
+              <span id="topo-ram-detail">INT8 L2 Cache</span>
             </div>
           </div>
 
           <!-- Tier 3: L3 SSD -->
           <div class="tier-spec-card">
             <div class="tier-spec-header">
-              <span class="tier-spec-title" style="color:var(--accent-amber);">TIER 3: NVMe SSD (PCIe M.2)</span>
+              <span class="tier-spec-title" style="color:var(--accent-amber);">TIER 3: SSD (checkpoint)</span>
               <span>COLD STORE</span>
             </div>
             <div class="tier-spec-val" id="topo-ssd-text">— On-Disk</div>
@@ -1192,7 +1192,7 @@
               <div class="tier-progress-fill" style="width: 100%; background: var(--border-strong);"></div>
             </div>
             <div style="font-size:0.68rem; color:var(--text-faint);">
-              <span id="topo-ssd-detail">INT8 expert safetensors</span>
+              <span id="topo-ssd-detail">INT8 expert safetensors</span><br><span id="topo-ssd-speed">Tốc độ đọc expert: chưa có request</span>
             </div>
           </div>
         </div>
@@ -1201,13 +1201,13 @@
         <div class="matrix-workspace">
           <div class="matrix-toolbar">
             <div class="matrix-title-group">
-              <span>EXPERT CACHE: RAM STATUS / ROUTING & VRAM PLACEMENT MINH HỌA</span>
-              <span class="tech-pill" id="matrix-active-mode">Routing minh họa — không phải trace token</span>
+              <span>EXPERT: VỊ TRÍ (VRAM / RAM / SSD) VÀ ROUTING</span>
+              <span class="tech-pill" id="matrix-active-mode">Vị trí thật: pool VRAM / cache RAM / SSD</span>
             </div>
             <div style="display:flex; gap:6px;">
-              <button class="nav-tab-btn active" id="btn-topo-sparse">Routing minh họa</button>
-              <button class="nav-tab-btn" id="btn-topo-physical">Physical Tier (VRAM/RAM/SSD)</button>
-              <button class="nav-tab-btn" id="btn-topo-cumulative">Cumulative Heatmap</button>
+              <button class="nav-tab-btn" id="btn-topo-sparse">Routing request gần nhất</button>
+              <button class="nav-tab-btn active" id="btn-topo-physical">Vị trí expert (VRAM/RAM/SSD)</button>
+              <button class="nav-tab-btn" id="btn-topo-cumulative">Tần suất tích lũy</button>
             </div>
           </div>
 
@@ -1222,12 +1222,12 @@
               <span style="color:var(--text-faint);">Hover Inspector: </span>
               <span class="inspector-badge" id="insp-coord">Layer 0 · Expert 0 (#0)</span>
               <span style="margin: 0 6px; color:var(--border-strong);">|</span>
-              <span id="insp-role">Early Representation (Syntax / Lexical Embedding)</span>
+              <span id="insp-role">Request gần nhất: —</span>
             </div>
             <div>
               <span id="insp-tier" style="color:var(--accent-blue); font-weight:600;">L2 RAM Cache (INT8)</span>
               <span style="margin: 0 6px; color:var(--border-strong);">|</span>
-              <span id="insp-heat">Call Frequency: 0 accesses</span>
+              <span id="insp-heat">Tích lũy: 0 lần</span>
               <span style="margin: 0 6px; color:var(--border-strong);">|</span>
               <span id="insp-expert-size">— MB / expert</span>
             </div>
@@ -1237,19 +1237,19 @@
           <div style="display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-family:var(--font-mono); font-size:0.68rem; color:var(--text-faint);">
             <div style="display:flex; align-items:center; gap:5px;">
               <span style="width:10px; height:10px; background:var(--tier-vram); border-radius:2px;"></span>
-              <span>L1 VRAM Resident (~0.4ms)</span>
+              <span>Đang ở VRAM (pool GPU)</span>
             </div>
             <div style="display:flex; align-items:center; gap:5px;">
               <span style="width:10px; height:10px; background:var(--tier-ram); border-radius:2px;"></span>
-              <span>L2 Host RAM Resident (~0.05ms)</span>
+              <span>Đang ở cache RAM</span>
             </div>
             <div style="display:flex; align-items:center; gap:5px;">
               <span style="width:10px; height:10px; background:var(--tier-ssd); border:1px solid var(--border-strong); border-radius:2px;"></span>
-              <span>L3 NVMe SSD Cold (~3.5ms)</span>
+              <span>Chỉ trên SSD</span>
             </div>
             <div style="display:flex; align-items:center; gap:5px;">
               <span style="width:10px; height:10px; background:var(--accent-emerald); border-radius:2px;"></span>
-              <span>Top-8 Active Router Step</span>
+              <span>Router chọn trong request gần nhất</span>
             </div>
           </div>
 
@@ -1376,10 +1376,13 @@
     const btnTopoCumulative = document.querySelector('#btn-topo-cumulative');
 
     let history = [];
+    // Server-counted tokens of the conversation (usage.total_tokens of the last reply).
+    let lastUsageTokens = null;
+    try { const v = Number(localStorage.getItem('moe-usage-tokens')); if (v > 0) lastUsageTokens = v; } catch (_) {}
     let controller = null;
     let liveTimerInterval = null;
     let expertData = null;
-    let matrixViewMode = 'sparse'; // 'sparse' | 'physical' | 'cumulative'
+    let matrixViewMode = 'physical'; // 'physical' (placement) | 'sparse' (last request routing) | 'cumulative'
 
     // Session Management
     const genSessionId = () => 'sess-' + Math.random().toString(36).slice(2, 10);
@@ -1397,8 +1400,8 @@
     const OFFSET_Y = 18;
     let ROWS = 16, COLS = 64;
     let CELL_W = 9, CELL_H = 11, GAP_X = 1, GAP_Y = 2;
-    let pulseGrid = new Float32Array(ROWS * COLS);
-    let activeResidue = new Float32Array(ROWS * COLS);
+    let lastRouted = new Uint32Array(ROWS * COLS);
+    let heatBefore = null;
     let CONTEXT_LIMIT = 512;
     let modelLabel = 'MoE';
 
@@ -1410,8 +1413,7 @@
       CELL_H = rows > 24 ? 4 : 11;
       canvas.width = OFFSET_X + COLS * (CELL_W + GAP_X);
       canvas.height = OFFSET_Y + ROWS * (CELL_H + GAP_Y);
-      pulseGrid = new Float32Array(ROWS * COLS);
-      activeResidue = new Float32Array(ROWS * COLS);
+      lastRouted = new Uint32Array(ROWS * COLS);
     }
     setGeometry(ROWS, COLS);
 
@@ -1460,11 +1462,32 @@
       if (detail) detail.textContent = `${data.num_layers} layer × ${data.num_experts} expert = ${total.toLocaleString('en-US')} INT8 expert, top-${data.num_experts_per_tok || '?'} mỗi token`;
     }
 
+    // Row colour marks position only (first/middle/last quarter); no functional role is claimed.
     function getLayerRole(r) {
-      if (r < ROWS / 4) return { role: 'Early Representation', desc: 'Syntax / Lexical Embedding', color: '#a78bfa' };
-      if (r < (ROWS * 3) / 4) return { role: 'Middle Reasoning', desc: 'Core Semantics & Multi-hop Reasoning', color: '#38bdf8' };
-      return { role: 'Late Convergence', desc: 'Vocabulary Convergence & Logits Output', color: '#fbbf24' };
+      if (r < ROWS / 4) return { color: '#a78bfa' };
+      if (r < (ROWS * 3) / 4) return { color: '#38bdf8' };
+      return { color: '#fbbf24' };
     }
+
+    // Experts routed in the last request = heat counter after minus before (heat counts router
+    // selections; it is halved every 65,536 accesses of a layer, so negatives are clamped to 0).
+    function snapshotHeat(data) {
+      return (data?.layers || []).map(l => (l.heat || []).slice());
+    }
+    function computeLastRouted(before, after) {
+      lastRouted = new Uint32Array(ROWS * COLS);
+      if (!before || !after) return 0;
+      let total = 0;
+      for (let r = 0; r < Math.min(ROWS, after.length); r++) {
+        for (let c = 0; c < COLS; c++) {
+          const d = Math.max(0, (after[r][c] || 0) - ((before[r] || [])[c] || 0));
+          lastRouted[r * COLS + c] = d;
+          total += d;
+        }
+      }
+      return total;
+    }
+    function vramSet(layerInfo) { return new Set(layerInfo?.vram_experts || []); }
 
     // View Mode Handlers
     function setMatrixMode(mode) {
@@ -1474,13 +1497,13 @@
       btnTopoCumulative.className = 'nav-tab-btn' + (mode === 'cumulative' ? ' active' : '');
 
       if (mode === 'sparse') {
-        matrixActiveMode.textContent = 'Routing minh họa — không phải trace token';
+        matrixActiveMode.textContent = 'Routing của request gần nhất (bộ đếm heat)';
         matrixActiveMode.style.color = '#34d399';
       } else if (mode === 'physical') {
-        matrixActiveMode.textContent = 'RAM residency thật; VRAM placement minh họa';
+        matrixActiveMode.textContent = 'Vị trí thật: pool VRAM / cache RAM / SSD';
         matrixActiveMode.style.color = '#06b6d4';
       } else {
-        matrixActiveMode.textContent = 'Cumulative Heatmap Across Session';
+        matrixActiveMode.textContent = 'Số lần router chọn từ lúc nạp (bộ đếm heat, giảm nửa định kỳ)';
         matrixActiveMode.style.color = '#38bdf8';
       }
     }
@@ -1531,51 +1554,50 @@
 
         const layerInfo = expertData?.layers?.[r];
         const residentSet = new Set(layerInfo?.resident_experts || []);
+        const inVram = vramSet(layerInfo);
         const heatArr = layerInfo?.heat || [];
+        let maxRouted = 1;
+        if (matrixViewMode === 'sparse') {
+          for (let i = 0; i < lastRouted.length; i++) if (lastRouted[i] > maxRouted) maxRouted = lastRouted[i];
+        }
 
         for (let c = 0; c < COLS; c++) {
           const idx = r * COLS + c;
           const x = OFFSET_X + c * (CELL_W + GAP_X);
-
           const isResident = residentSet.has(c);
+          const isVram = inVram.has(c);
           const heat = heatArr[c] || 0;
-          const pulse = pulseGrid[idx];
-          const active = activeResidue[idx];
+          const routed = lastRouted[idx] || 0;
 
           if (matrixViewMode === 'sparse') {
-            if (pulse > 0.05) {
-              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.5 + pulse * 0.7)})`;
-            } else if (isResident) {
-              ctx.fillStyle = '#1e3a8a';
+            // Real routing of the last request: brighter = selected more often.
+            if (routed > 0) {
+              ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, 0.08 + 0.92 * Math.pow(routed / maxRouted, 0.7))})`;
             } else {
-              ctx.fillStyle = '#1e293b';
+              ctx.fillStyle = '#141c2b';
             }
           } else if (matrixViewMode === 'physical') {
-            if (pulse > 0.05) {
-              ctx.fillStyle = '#10b981';
+            // Real placement: VRAM pool entry, RAM cache entry, or only on SSD.
+            if (isVram) {
+              ctx.fillStyle = '#06b6d4';
             } else if (isResident) {
-              // Mark whether resident in VRAM or RAM
-              ctx.fillStyle = (expertData?.gpu?.enabled && r < ROWS / 4) ? '#06b6d4' : '#3b82f6';
+              ctx.fillStyle = '#3b82f6';
             } else {
               ctx.fillStyle = '#141c2b';
             }
           } else {
-            // Cumulative Heatmap: Real gradient showing activation skewness
-            if (pulse > 0.05) {
-              ctx.fillStyle = '#34d399';
-            } else if (heat > 0) {
+            // Cumulative heat (router selections since load, halved periodically).
+            if (heat > 0) {
               const ratio = Math.min(1.0, heat / maxHeat);
               if (ratio > 0.7) {
-                ctx.fillStyle = '#f43f5e'; // Ultra hot: Crimson / Rose
+                ctx.fillStyle = '#f43f5e';
               } else if (ratio > 0.4) {
-                ctx.fillStyle = '#f59e0b'; // Hot: Amber
+                ctx.fillStyle = '#f59e0b';
               } else if (ratio > 0.15) {
-                ctx.fillStyle = '#10b981'; // Warm: Emerald
+                ctx.fillStyle = '#10b981';
               } else {
-                ctx.fillStyle = '#0284c7'; // Cool: Sky Blue
+                ctx.fillStyle = '#0284c7';
               }
-            } else if (isResident) {
-              ctx.fillStyle = '#1e3a8a';
             } else {
               ctx.fillStyle = '#0f172a';
             }
@@ -1585,9 +1607,6 @@
           ctx.strokeStyle = '#090d16';
           ctx.lineWidth = 0.5;
           ctx.strokeRect(x, y, CELL_W, CELL_H);
-
-          if (pulse > 0) pulseGrid[idx] = Math.max(0, pulse - 0.03);
-          if (active > 0) activeResidue[idx] = Math.max(0, active - 0.002);
         }
       }
 
@@ -1608,16 +1627,20 @@
 
       if (row >= 0 && row < ROWS && col >= 0 && col < COLS) {
         const idx = row * COLS + col;
-        const role = getLayerRole(row);
         const layerInfo = expertData?.layers?.[row];
         const isResident = layerInfo?.resident_experts?.includes(col);
+        const isVram = (layerInfo?.vram_experts || []).includes(col);
         const heat = layerInfo?.heat?.[col] || 0;
+        const routed = lastRouted[idx] || 0;
 
-        let statusText = isResident ? 'L2 RAM Resident (INT8)' : 'L3 NVMe SSD (Cold Safetensors)';
-        let statusColor = isResident ? '#60a5fa' : '#94a3b8';
-        if (expertData?.gpu?.enabled && isResident && row < ROWS / 4) {
-          statusText = 'L1 GPU VRAM Resident (INT8 DMA)';
+        let statusText = 'Chỉ trên SSD (đọc khi cần)';
+        let statusColor = '#94a3b8';
+        if (isVram) {
+          statusText = 'Pool VRAM (INT8)';
           statusColor = '#06b6d4';
+        } else if (isResident) {
+          statusText = 'Cache RAM (INT8)';
+          statusColor = '#60a5fa';
         }
 
         tooltip.style.display = 'block';
@@ -1625,16 +1648,16 @@
         tooltip.style.top = (e.offsetY - 20) + 'px';
         tooltip.innerHTML = `
           <strong>Layer ${row} · Expert ${col} (#${idx})</strong><br>
-          <span style="color:${role.color}">${role.role}</span><br>
-          Storage Tier: <span style="color:${statusColor}">${statusText}</span><br>
-          Historical Calls: ${heat} accesses · ${((expertData?.expert_payload_bytes || 0) / 1e6).toFixed(2)} MB
+          Vị trí: <span style="color:${statusColor}">${statusText}</span><br>
+          Request gần nhất: ${routed} lần · Tích lũy: ${heat} lần<br>
+          ${((expertData?.expert_payload_bytes || 0) / 1e6).toFixed(2)} MB / expert
         `;
 
         inspCoord.textContent = `Layer ${row} · Expert ${col} (#${idx})`;
-        inspRole.textContent = `${role.role} (${role.desc})`;
+        inspRole.textContent = `Request gần nhất: ${routed} lần`;
         inspTier.textContent = statusText;
         inspTier.style.color = statusColor;
-        inspHeat.textContent = `Call Frequency: ${heat} accesses`;
+        inspHeat.textContent = `Tích lũy: ${heat} lần`;
       } else {
         tooltip.style.display = 'none';
       }
@@ -1663,8 +1686,9 @@
         headerRamVal.textContent = `${rssGb} GB`;
         ramValPrimary.textContent = `${rssGb} GB`;
         topoRamText.textContent = `${rssGb} GB (RSS)`;
-        const ramPct = Math.round((telem.vm_rss_kib / (16 * 1048576)) * 100);
-        ramPctBadge.textContent = `${ramPct}% of 16GB`;
+        const totalKib = telem.mem_total_kib || 16 * 1048576;
+        const ramPct = Math.round((telem.vm_rss_kib / totalKib) * 100);
+        ramPctBadge.textContent = `${ramPct}% of ${(totalKib / 1048576).toFixed(1)} GiB`;
         topoRamBar.style.width = `${Math.min(100, ramPct)}%`;
       }
 
@@ -1694,12 +1718,14 @@
         vramPctBadge.textContent = `${pct}% of ${totalGb}GB`;
         topoVramBar.style.width = `${Math.min(100, Math.max(4, pct))}%`;
         topoVramBar.style.background = 'var(--accent-cyan)';
+        const vramDetail = document.querySelector('#topo-vram-detail');
+        if (vramDetail) vramDetail.textContent = `Dense ${gpu.dense_offloaded ? 'trên GPU' : 'ở CPU'} · ${gpu.vram_experts_resident || 0} expert trong pool VRAM`;
       } else {
         btnHeaderGpuToggle.classList.add('off');
         headerGpuLabel.textContent = 'GPU cuBLAS: OFF';
         headerVramVal.textContent = 'CPU ONLY';
         vramValPrimary.textContent = '0 MB';
-        topoVramText.textContent = '0.00 GB (CPU Pure)';
+        topoVramText.textContent = '0.00 GB (không dùng GPU)';
         vramPctBadge.textContent = '0%';
         topoVramBar.style.width = '0%';
       }
@@ -1716,13 +1742,13 @@
       }
       if (headerPersistBadge) {
         if (data.session_dir) {
-          headerPersistBadge.textContent = 'SSD L3: ON';
+          headerPersistBadge.textContent = 'KV PERSIST: ON';
           headerPersistBadge.className = 'tech-pill tech-pill-cyan';
-          headerPersistBadge.title = `Crash-Safe NVMe Persistence Active at ${data.session_dir}`;
+          headerPersistBadge.title = `KV session được lưu tại ${data.session_dir}`;
         } else {
-          headerPersistBadge.textContent = 'SSD L3: OFF';
+          headerPersistBadge.textContent = 'KV PERSIST: OFF';
           headerPersistBadge.className = 'tech-pill';
-          headerPersistBadge.title = 'In-Memory Only (No SSD persistence configured)';
+          headerPersistBadge.title = 'KV session chỉ nằm trong RAM (không cấu hình thư mục lưu)';
         }
       }
 
@@ -1739,13 +1765,13 @@
         if (nodeGpu) nodeGpu.className = 'flow-node flow-node-gpu active';
         if (linkRamGpu) {
           linkRamGpu.className = 'flow-link active';
-          if (flowPcieLabel) flowPcieLabel.textContent = 'PCIe 3.0 DMA';
+          if (flowPcieLabel) flowPcieLabel.textContent = 'PCIe';
           if (flowPcieDir) flowPcieDir.textContent = '▲ H2D / ▼ D2H';
         }
         if (flowExplanation) {
           flowExplanation.innerHTML = expertCompute
             ? '<span style="color:#67e8f9; font-weight:700;">Phân tầng + tính expert trên GPU:</span> cuBLAS chạy dense và LM Head. Expert đã nằm trong pool VRAM được tính ngay trên GPU (kernel INT8 SwiGLU), không chép về RAM. Expert ngoài pool đọc từ file vào cache RAM và tính bằng CPU (Rayon).'
-            : '<span style="color:#67e8f9; font-weight:700;">Chế độ Phân tầng Lai (Hybrid GPU + CPU):</span> Trọng số Dense & Hot Experts lưu trên VRAM. cuBLAS chạy các phép chiếu dense và LM Head khi GPU khả dụng. Cold Experts đọc từ file vào RAM; cache VRAM trao đổi qua PCIe cho Rayon tính SwiGLU.';
+            : '<span style="color:#67e8f9; font-weight:700;">GPU cho dense:</span> cuBLAS chạy attention và LM head trên VRAM. Expert đọc từ file vào cache RAM và tính bằng CPU (Rayon); pool VRAM (nếu bật) giữ bản sao expert và trao đổi qua PCIe.';
         }
         if (flowGpuStat) {
           const allocMb = Math.round((gpu.allocated_vram_bytes || 0) / 1048576);
@@ -1761,7 +1787,7 @@
           if (flowPcieDir) flowPcieDir.textContent = '--- 0 DMA ---';
         }
         if (flowExplanation) {
-          flowExplanation.innerHTML = '<span style="color:#34d399; font-weight:700;">Chế độ CPU Thuần (Zero-Transfer Mode):</span> Bỏ qua bus PCIe, triệt tiêu thuế độ trễ truyền dữ liệu liên bus. Toàn bộ trọng số đọc trực tiếp từ DRAM DDR4 nội bộ qua Rayon đa luồng.';
+          flowExplanation.innerHTML = '<span style="color:#34d399; font-weight:700;">Chỉ CPU:</span> dense và expert đều tính bằng CPU (Rayon). Expert chưa có trong cache RAM được đọc từ file checkpoint trên SSD.';
         }
         if (flowGpuStat) {
           flowGpuStat.textContent = 'VRAM: Inactive';
@@ -1850,20 +1876,29 @@
     // Context Window Meter Handler
     function updateContextMeter() {
       if (!contextUsedVal || !contextBarFill) return;
-      let totalChars = history.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
-      totalChars += (chatInput.value ? chatInput.value.length : 0);
-      const estTokens = history.length > 0 ? Math.max(12, Math.round(totalChars / 3.6)) : Math.round(totalChars / 3.6);
-      contextUsedVal.textContent = estTokens;
+      // History: exact count from the server when known; only the unsent draft is estimated.
+      const draft = chatInput.value ? Math.round(chatInput.value.length / 3.6) : 0;
+      let known = 0, approx = false;
+      if (history.length > 0) {
+        if (lastUsageTokens) {
+          known = lastUsageTokens;
+        } else {
+          known = Math.round(history.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0) / 3.6);
+          approx = true;
+        }
+      }
+      const estTokens = known + draft;
+      contextUsedVal.textContent = `${approx ? '≈' : ''}${known}${draft ? ` + ≈${draft}` : ''}`;
 
       // KV estimate: layers * 2 (K+V) * kv_dim * 4 bytes (FP32) or 1 byte + per-row scale (FP8)
       if (kvCacheMemVal) {
-        const isFp8 = expertData?.kv_fp8 !== undefined ? expertData.kv_fp8 : true;
+        const isFp8 = expertData?.kv_fp8 === true;
         const kvRow = 2 * (expertData?.num_layers || 16) * (expertData?.kv_dim || 2048);
         const bytesPerToken = isFp8 ? kvRow + 2 * (expertData?.num_layers || 16) * 4 : kvRow * 4;
         const totalKvBytes = estTokens * bytesPerToken;
         const kvMb = (totalKvBytes / (1024 * 1024)).toFixed(2);
         const formatLabel = isFp8 ? 'FP8 E4M3 (-75%)' : 'FP32 Full';
-        kvCacheMemVal.textContent = `${kvMb} MB (${formatLabel})`;
+        kvCacheMemVal.textContent = `KV ≈${kvMb} MB (${formatLabel})`;
       }
 
       const maxTok = Number(selectMaxTokens?.value || 128);
@@ -1873,7 +1908,7 @@
       if (totalEstimated > CONTEXT_LIMIT) {
         contextBarFill.className = 'context-bar-fill danger';
         contextUsedVal.style.color = '#ef4444';
-      } else if (totalEstimated > 400) {
+      } else if (totalEstimated > CONTEXT_LIMIT * 0.8) {
         contextBarFill.className = 'context-bar-fill warn';
         contextUsedVal.style.color = '#f59e0b';
       } else {
@@ -1918,6 +1953,7 @@
           <div><span class="telem-cell-label">WALL:</span> <span class="telem-cell-val">${total}s</span></div>
           <div><span class="telem-cell-label">CACHE HIT:</span> <span class="telem-cell-val">${hitRate}%</span></div>
           <div><span class="telem-cell-label">I/O WAIT:</span> <span class="telem-cell-val">${(metrics.expert_io_ms / 1000).toFixed(2)}s</span></div>
+          <div><span class="telem-cell-label" title="Payload engine đọc từ file checkpoint; một phần do page cache của OS phục vụ">ĐỌC FILE EXPERT:</span> <span class="telem-cell-val">${((metrics.expert_file_bytes_read || 0) / 1e9).toFixed(2)} GB${metrics.expert_file_read_ms > 0 ? ` · ${(metrics.expert_file_bytes_read / 1e6 / metrics.expert_file_read_ms).toFixed(2)} GB/s` : ''}</span></div>
           <div><span class="telem-cell-label">EXPERT COMPUTE:</span> <span class="telem-cell-val">${(metrics.expert_compute_ms / 1000).toFixed(2)}s</span></div>
           ${metrics.expert_gpu_computes > 0 ? `<div><span class="telem-cell-label">GPU EXPERT:</span> <span class="telem-cell-val">${metrics.expert_gpu_computes} lần · ${((metrics.expert_gpu_compute_ms || 0) / 1000).toFixed(2)}s</span></div>` : ''}
           <div><span class="telem-cell-label">ATTENTION:</span> <span class="telem-cell-val">${(metrics.attention_ms / 1000).toFixed(2)}s</span></div>
@@ -2013,6 +2049,7 @@
 
       controller = new AbortController();
       setEngineBusy(true);
+      try { heatBefore = snapshotHeat(await (await fetch('/experts')).json()); } catch (_) { heatBefore = null; }
 
       const startTime = performance.now();
       let firstTokenTime = null;
@@ -2064,8 +2101,20 @@
         appendMessageCard('assistant', result.text, result.metrics);
         history = [...requestHistory, { role: 'assistant', content: result.text }];
         localStorage.setItem('moe-history', JSON.stringify(history));
+        if (result.usage?.total_tokens) {
+          lastUsageTokens = result.usage.total_tokens;
+          try { localStorage.setItem('moe-usage-tokens', String(lastUsageTokens)); } catch (_) {}
+        }
         updateContextMeter();
-        fetchTelemetry();
+        await fetchTelemetry();
+        const routedTotal = computeLastRouted(heatBefore, snapshotHeat(expertData));
+        const m = result.metrics || {};
+        const speed = m.expert_file_read_ms > 0 ? (m.expert_file_bytes_read / 1e6 / m.expert_file_read_ms) : null;
+        const ssdSpeed = document.querySelector('#topo-ssd-speed');
+        if (ssdSpeed) ssdSpeed.textContent = speed
+          ? `Request gần nhất: engine đọc ${(m.expert_file_bytes_read / 1e9).toFixed(2)} GB từ file expert, ${speed.toFixed(2)} GB/s (gồm phần OS phục vụ từ page cache, không phải riêng SSD)`
+          : 'Request gần nhất: không đọc expert từ file';
+        if (inspRole && routedTotal) inspRole.textContent = `Request gần nhất: ${routedTotal} lượt router chọn`;
       } catch (err) {
         if (err.name === 'AbortError') {
           bodyEl.textContent = (assistantMsg.content || '') + '\n[Đã dừng — phản hồi chưa hoàn tất, không lưu vào lịch sử.]';
@@ -2091,6 +2140,8 @@
     btnStop.addEventListener('click', () => controller?.abort());
     btnClearSession.addEventListener('click', () => {
       history = [];
+      lastUsageTokens = null;
+      try { localStorage.removeItem('moe-usage-tokens'); } catch (_) {}
       sessionId = genSessionId();
       localStorage.setItem('moe-session-id', sessionId);
       localStorage.removeItem('moe-history');

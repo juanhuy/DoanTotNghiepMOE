@@ -278,6 +278,8 @@ pub struct SystemTelemetry {
     pub vm_hwm_kib: Option<u64>,
     pub vm_swap_kib: Option<u64>,
     pub mem_available_kib: Option<u64>,
+    /// Physical RAM of the machine (MemTotal).
+    pub mem_total_kib: Option<u64>,
     pub io_read_bytes: Option<u64>,
     pub io_rchar: Option<u64>,
     pub gpu_vram_used_mib: Option<u64>,
@@ -286,6 +288,8 @@ pub struct SystemTelemetry {
 #[derive(Serialize, Clone, Debug)]
 pub struct LayerExpertStatus {
     pub resident_experts: Vec<usize>,
+    /// Experts whose INT8 weights are in the VRAM pool now (empty without a GPU expert tier).
+    pub vram_experts: Vec<usize>,
     pub heat: Vec<u32>,
     pub cache_bytes: usize,
     pub recycled_bytes: usize,
@@ -1467,10 +1471,23 @@ impl OlmoeModel {
     }
 
     pub fn expert_status(&self) -> ExpertStatusReport {
+        let mut vram: Vec<Vec<usize>> = vec![Vec::new(); self.layers.len()];
+        if let Some(storage) = &self.gpu_dense {
+            for &(layer_id, expert_id) in storage.expert_cache.entries.keys() {
+                if let Some(list) = vram.get_mut(layer_id) {
+                    list.push(expert_id);
+                }
+            }
+        }
         let layers = self
             .layers
             .iter()
-            .map(|layer| LayerExpertStatus {
+            .zip(vram)
+            .map(|(layer, mut vram_experts)| LayerExpertStatus {
+                vram_experts: {
+                    vram_experts.sort_unstable();
+                    vram_experts
+                },
                 resident_experts: layer.cache.iter().map(|entry| entry.id).collect(),
                 heat: layer.heat.clone(),
                 cache_bytes: layer.bytes,
@@ -1691,10 +1708,14 @@ impl OlmoeModel {
             }
         }
         if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
-            telem.mem_available_kib = info.lines().find_map(|line| {
-                line.strip_prefix("MemAvailable:")
-                    .and_then(|value| value.split_whitespace().next()?.parse().ok())
-            });
+            let field = |name: &str| {
+                info.lines().find_map(|line| {
+                    line.strip_prefix(name)
+                        .and_then(|value| value.split_whitespace().next()?.parse().ok())
+                })
+            };
+            telem.mem_available_kib = field("MemAvailable:");
+            telem.mem_total_kib = field("MemTotal:");
         }
         if let Ok(io) = std::fs::read_to_string("/proc/self/io") {
             for line in io.lines() {
@@ -5741,6 +5762,7 @@ mod cancellation_tests {
         assert!(status.gpu.enabled && status.gpu.dense_offloaded);
         assert!(!status.gpu_expert_tier_enabled);
         assert_eq!(status.gpu.vram_experts_resident, 0);
+        assert!(status.layers.iter().all(|l| l.vram_experts.is_empty()));
         let storage = model.gpu_dense.as_ref().unwrap();
         assert!(storage.engine.is_healthy() && storage.expert_cache.is_empty());
         eprintln!(
@@ -5818,6 +5840,14 @@ mod cancellation_tests {
         );
         let status = model.expert_status();
         assert!(status.gpu_expert_compute_enabled && status.gpu.vram_experts_resident > 0);
+        // Per-layer VRAM lists (web matrix) cover exactly the pool entries.
+        let listed: usize = status.layers.iter().map(|l| l.vram_experts.len()).sum();
+        assert_eq!(listed, status.gpu.vram_experts_resident);
+        assert!(status
+            .layers
+            .iter()
+            .flat_map(|l| &l.vram_experts)
+            .all(|&e| e < status.num_experts));
         // Fill-only: a full pool never evicts, so uploads stop once every slot is used.
         let storage = model.gpu_dense.as_mut().unwrap();
         assert!(storage.engine.is_healthy());

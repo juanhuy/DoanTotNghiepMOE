@@ -4221,3 +4221,23 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - Đính chính so với trao đổi trước: con số "dense khoảng 14%, tối đa 1,16 lần" lấy từ một lượt demo; hồ sơ P1 cho 12–23%, tức 1,13–1,30 lần, và tài liệu dùng số P1.
 - Hồ sơ INT4 03/11 thiếu provenance nên chỉ nêu INT4 là hướng phát triển, không trích số.
 
+## 2026-11-20 — Web: bỏ mọi số minh họa, hiển thị vị trí expert và routing thật (branch work/web-honest)
+
+- Rà web theo góc nhìn phản biện; các chỗ đã sửa:
+  - **Ma trận expert:**
+    - Ô "VRAM" trước đây được tô theo vị trí layer (1/4 layer đầu), không theo dữ liệu thật. Backend giờ trả `layers[i].vram_experts` (đúng các expert trong pool VRAM).
+    - Chế độ "Routing minh họa" trước đây không bao giờ vẽ gì (biến hiệu ứng không được gán). Giờ là routing thật của request gần nhất, tính bằng heat sau trừ heat trước.
+    - Bỏ việc gán vai trò cho layer ("Syntax", "Multi-hop Reasoning"…), vì không có bằng chứng.
+  - **Thông số viết cứng đã bỏ:** băng thông/độ trễ các tầng (SSD "250 MB/s, 3,5ms" mâu thuẫn số đo 1,6–2,6 GB/s), "PCIe 3.0", "16GB", "GDDR5/DDR4". Thay bằng số đo của request gần nhất: payload engine đọc từ file và tốc độ, có ghi chú gồm cả phần page cache phục vụ. `system_telemetry.mem_total_kib` mới cho % RAM.
+  - **Ngữ cảnh:** số token lấy từ `usage.total_tokens` của server; chỉ phần đang gõ là ước lượng (≈).
+  - **Đổi nhãn:** "SSD L3" thành "KV PERSIST" (lưu KV session, không phải tầng SSD của expert). Bỏ văn phong quảng cáo ("Zero-Transfer", "triệt tiêu thuế độ trễ", "Zero-Alloc").
+  - Mỗi câu trả lời hiện thêm "ĐỌC FILE EXPERT: GB · GB/s".
+- **Kiểm tra:**
+  - `cargo test --release` các test GPU expert chạy CUDA thật trên GTX 1650 (EXECUTED), thêm assert danh sách VRAM khớp `vram_experts_resident`.
+  - Test HTTP Qwen3 thêm `vram_experts` rỗng và `mem_total_kib`.
+  - `check.py --rust --web` đạt.
+  - Chrome headless (CDP, có bắt lỗi JS) với server thật:
+    - OLMoE GPU: 299 expert VRAM dồn ở layer 0–7, đúng với pool fill-only; 18.688 lượt router chọn;
+    - Qwen3 CPU, 32 token: 17.664 lượt = 46 token × 48 × 8, khớp chính xác; context 47 token, KV ≈8,81MB.
+- **Lỗi bắt được khi kiểm:** khai báo `lastRouted` sau lần gọi `setGeometry` làm trang ném lỗi lúc tải; đã sửa trước khi merge.
+
