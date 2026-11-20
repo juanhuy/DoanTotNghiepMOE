@@ -898,14 +898,14 @@
         <span class="brand-dot" id="header-status-dot"></span>
         <span>MoE-TierEngine</span>
       </div>
-      <span class="tech-pill">OLMoE-1B-7B INT8</span>
+      <span class="tech-pill" id="header-model-pill">MoE INT8</span>
       <span class="tech-pill tech-pill-cyan">3-Tier Memory</span>
     </div>
 
     <!-- Navigation Tabs -->
     <nav class="nav-tabs" role="tablist">
       <button class="nav-tab-btn active" data-tab="tab-workbench">1. Console & Data Flow</button>
-      <button class="nav-tab-btn" data-tab="tab-topology">2. Memory & 1,024 Expert Matrix</button>
+      <button class="nav-tab-btn" data-tab="tab-topology" id="tab-topology-btn">2. Memory & Expert Matrix</button>
     </nav>
 
     <!-- Header Telemetry Snippet -->
@@ -944,8 +944,8 @@
             <div class="terminal-header-left">
               <span>SESSION: <span id="session-display" style="color:var(--text-main);">local-session</span></span>
               <span class="header-divider">|</span>
-              <div class="context-meter" title="Dung lượng Context Window (tối đa 512 tokens)">
-                <span>CONTEXT: <strong id="context-used-val">0</strong>/512 tokens (<span id="kv-cache-mem-val" style="color:var(--accent-cyan); font-weight:700;">0.00 MB</span>)</span>
+              <div class="context-meter" title="Dung lượng Context Window của server">
+                <span>CONTEXT: <strong id="context-used-val">0</strong>/<span id="context-limit-val">512</span> tokens (<span id="kv-cache-mem-val" style="color:var(--accent-cyan); font-weight:700;">0.00 MB</span>)</span>
                 <div class="context-bar-track">
                   <div class="context-bar-fill" id="context-bar-fill" style="width: 0%;"></div>
                 </div>
@@ -1018,7 +1018,7 @@
               <!-- Node 2: Host RAM -->
               <div class="flow-node flow-node-ram" id="node-ram">
                 <div class="flow-node-title">🧠 Host RAM</div>
-                <div class="flow-node-sub">L2 Cache (128MB/L)</div>
+                <div class="flow-node-sub" id="flow-ram-sub">L2 Expert Cache</div>
                 <div class="flow-node-stat" id="flow-ram-stat">RSS: -- GB</div>
               </div>
 
@@ -1031,7 +1031,7 @@
 
               <!-- Node 3: GPU VRAM -->
               <div class="flow-node flow-node-gpu active" id="node-gpu">
-                <div class="flow-node-title" id="flow-gpu-title">⚡ GTX 1650</div>
+                <div class="flow-node-title" id="flow-gpu-title">⚡ GPU</div>
                 <div class="flow-node-sub" id="flow-gpu-sub">L1 VRAM Pool</div>
                 <div class="flow-node-stat" id="flow-gpu-stat">VRAM: -- GB</div>
               </div>
@@ -1101,7 +1101,7 @@
           <div class="tech-card">
             <div class="tech-card-header">
               <span>PHYSICAL STORAGE TOPOLOGY ALLOCATION</span>
-              <span id="gpu-device-text" style="color:var(--text-muted);">GTX 1650 (4 GB GDDR5)</span>
+              <span id="gpu-device-text" style="color:var(--text-muted);">GPU: không dùng</span>
             </div>
 
             <div class="kpi-row">
@@ -1113,7 +1113,7 @@
               <div class="kpi-box">
                 <div class="kpi-box-label">L2: Host RAM (RSS)</div>
                 <div class="kpi-box-val" id="ram-val-primary">-- GB</div>
-                <div class="kpi-box-sub" id="ram-sub-primary">Zero-OOM Cap</div>
+                <div class="kpi-box-sub" id="ram-sub-primary">Process RSS</div>
               </div>
               <div class="kpi-box">
                 <div class="kpi-box-label">Process read_bytes (OS counter)</div>
@@ -1175,7 +1175,7 @@
               <div class="tier-progress-fill" id="topo-ram-bar" style="width: 0%; background: var(--accent-blue);"></div>
             </div>
             <div style="font-size:0.68rem; color:var(--text-faint);">
-              Bandwidth: ~25.6 GB/s · Latency: ~0.05ms Bus · INT8 L2 Cache (Hard Cap 2.0 GB)
+              Bandwidth: ~25.6 GB/s · Latency: ~0.05ms Bus · <span id="topo-ram-detail">INT8 L2 Cache</span>
             </div>
           </div>
 
@@ -1185,17 +1185,17 @@
               <span class="tier-spec-title" style="color:var(--accent-amber);">TIER 3: NVMe SSD (PCIe M.2)</span>
               <span>COLD STORE</span>
             </div>
-            <div class="tier-spec-val" id="topo-ssd-text">7.04 GB On-Disk</div>
+            <div class="tier-spec-val" id="topo-ssd-text">— On-Disk</div>
             <div class="tier-progress-track">
               <div class="tier-progress-fill" style="width: 100%; background: var(--border-strong);"></div>
             </div>
             <div style="font-size:0.68rem; color:var(--text-faint);">
-              Bandwidth: ~250 MB/s (Random 4K) · Latency: ~3.5ms · 1,024 INT8 safetensors
+              <span id="topo-ssd-detail">INT8 expert safetensors</span>
             </div>
           </div>
         </div>
 
-        <!-- 16 x 64 = 1,024 Expert Matrix Canvas -->
+        <!-- layers x experts matrix; geometry follows /experts num_layers/num_experts -->
         <div class="matrix-workspace">
           <div class="matrix-toolbar">
             <div class="matrix-title-group">
@@ -1227,7 +1227,7 @@
               <span style="margin: 0 6px; color:var(--border-strong);">|</span>
               <span id="insp-heat">Call Frequency: 0 accesses</span>
               <span style="margin: 0 6px; color:var(--border-strong);">|</span>
-              <span>6.31 MB / expert</span>
+              <span id="insp-expert-size">— MB / expert</span>
             </div>
           </div>
 
@@ -1405,20 +1405,69 @@
       if (Array.isArray(savedHist)) history = savedHist.slice(-40);
     } catch (_) {}
 
-    // Matrix Geometry: 16 layers x 64 experts
-    const ROWS = 16, COLS = 64;
+    // Matrix geometry follows the loaded checkpoint (OLMoE 16x64, Qwen3-30B-A3B 48x128).
     const OFFSET_X = 36;
     const OFFSET_Y = 18;
-    const CELL_W = 9, CELL_H = 11, GAP_X = 1, GAP_Y = 2;
-    canvas.width = OFFSET_X + COLS * (CELL_W + GAP_X); // 676
-    canvas.height = OFFSET_Y + ROWS * (CELL_H + GAP_Y); // 226
-
+    let ROWS = 16, COLS = 64;
+    let CELL_W = 9, CELL_H = 11, GAP_X = 1, GAP_Y = 2;
     let pulseGrid = new Float32Array(ROWS * COLS);
     let activeResidue = new Float32Array(ROWS * COLS);
+    let CONTEXT_LIMIT = 512;
+    let modelLabel = 'MoE';
+
+    function setGeometry(rows, cols) {
+      ROWS = rows; COLS = cols;
+      GAP_X = 1;
+      CELL_W = Math.max(2, Math.floor(640 / cols) - GAP_X); // ~676px wide for 64 or 128 experts
+      GAP_Y = rows > 24 ? 1 : 2;
+      CELL_H = rows > 24 ? 4 : 11;
+      canvas.width = OFFSET_X + COLS * (CELL_W + GAP_X);
+      canvas.height = OFFSET_Y + ROWS * (CELL_H + GAP_Y);
+      pulseGrid = new Float32Array(ROWS * COLS);
+      activeResidue = new Float32Array(ROWS * COLS);
+    }
+    setGeometry(ROWS, COLS);
+
+    function labelFor(data) {
+      if (data.model_type === 'qwen3_moe') {
+        return data.num_layers === 48 && data.num_experts === 128 ? 'Qwen3-30B-A3B' : 'Qwen3-MoE';
+      }
+      return data.num_layers === 16 && data.num_experts === 64 ? 'OLMoE-1B-7B' : 'OLMoE';
+    }
+
+    function applyModelInfo(data) {
+      if (!data || !data.num_layers || !data.num_experts) return;
+      if (data.num_layers !== ROWS || data.num_experts !== COLS) setGeometry(data.num_layers, data.num_experts);
+      if (data.context_limit) {
+        CONTEXT_LIMIT = data.context_limit;
+        const limitEl = document.querySelector('#context-limit-val');
+        if (limitEl) limitEl.textContent = String(CONTEXT_LIMIT);
+      }
+      modelLabel = labelFor(data);
+      const total = data.num_layers * data.num_experts;
+      const pill = document.querySelector('#header-model-pill');
+      if (pill) pill.textContent = `${modelLabel} INT8`;
+      const tab = document.querySelector('#tab-topology-btn');
+      if (tab) tab.textContent = `2. Memory & ${total.toLocaleString('en-US')} Expert Matrix`;
+      const mb = (data.expert_payload_bytes || 0) / 1e6;
+      const size = document.querySelector('#insp-expert-size');
+      if (size && mb) size.textContent = `${mb.toFixed(2)} MB / expert`;
+      const ssd = document.querySelector('#topo-ssd-text');
+      if (ssd && mb) ssd.textContent = `${(mb * total / 1000).toFixed(2)} GB expert On-Disk`;
+      const ramSub = document.querySelector('#flow-ram-sub');
+      if (ramSub && data.cache_bytes_per_layer) ramSub.textContent = `L2 Cache (${Math.round(data.cache_bytes_per_layer / 1048576)}MB/L)`;
+      const ramDetail = document.querySelector('#topo-ram-detail');
+      if (ramDetail && data.cache_bytes_per_layer) {
+        const cacheGb = (data.cache_bytes_per_layer * data.num_layers) / 1073741824;
+        ramDetail.textContent = `INT8 L2 Cache (tối đa ${cacheGb.toFixed(2)} GiB = ${Math.round(data.cache_bytes_per_layer / 1048576)}MiB × ${data.num_layers} layer)`;
+      }
+      const detail = document.querySelector('#topo-ssd-detail');
+      if (detail) detail.textContent = `${data.num_layers} layer × ${data.num_experts} expert = ${total.toLocaleString('en-US')} INT8 expert, top-${data.num_experts_per_tok || '?'} mỗi token`;
+    }
 
     function getLayerRole(r) {
-      if (r < 4) return { role: 'Early Representation', desc: 'Syntax / Lexical Embedding', color: '#a78bfa' };
-      if (r < 12) return { role: 'Middle Reasoning', desc: 'Core Semantics & Multi-hop Reasoning', color: '#38bdf8' };
+      if (r < ROWS / 4) return { role: 'Early Representation', desc: 'Syntax / Lexical Embedding', color: '#a78bfa' };
+      if (r < (ROWS * 3) / 4) return { role: 'Middle Reasoning', desc: 'Core Semantics & Multi-hop Reasoning', color: '#38bdf8' };
       return { role: 'Late Convergence', desc: 'Vocabulary Convergence & Logits Output', color: '#fbbf24' };
     }
 
@@ -1452,10 +1501,11 @@
       ctx.font = '9px monospace';
       ctx.fillStyle = '#64748b';
       ctx.textAlign = 'center';
-      const colMarkers = [0, 16, 32, 48, 63];
+      const colMarkers = [0, COLS / 4, COLS / 2, (COLS * 3) / 4, COLS - 1];
       for (const c of colMarkers) {
         const x = OFFSET_X + c * (CELL_W + GAP_X) + (CELL_W / 2);
-        ctx.fillText(`E${c}`, x, 12);
+        ctx.textAlign = c === COLS - 1 ? 'right' : 'center';
+        ctx.fillText(`E${c}`, c === COLS - 1 ? x + CELL_W / 2 : x, 12);
       }
 
       // 1.5 Find max heat for adaptive color mapping in cumulative view
@@ -1474,15 +1524,15 @@
         const role = getLayerRole(r);
         const y = OFFSET_Y + r * (CELL_H + GAP_Y);
 
-        // Layer ID
+        // Layer ID (every 4th row when rows are too thin for a label)
         ctx.font = '9px monospace';
         ctx.fillStyle = role.color;
         ctx.textAlign = 'right';
-        ctx.fillText(`L${r < 10 ? '0' + r : r}`, OFFSET_X - 10, y + 9);
+        if (CELL_H >= 9 || r % 4 === 0) ctx.fillText(`L${r < 10 ? '0' + r : r}`, OFFSET_X - 10, y + Math.min(9, CELL_H + 4));
 
         // Layer Role Accent Bar
         ctx.fillStyle = role.color;
-        ctx.fillRect(OFFSET_X - 6, y + 1, 2, CELL_H - 2);
+        ctx.fillRect(OFFSET_X - 6, y, 2, CELL_H);
 
         const layerInfo = expertData?.layers?.[r];
         const residentSet = new Set(layerInfo?.resident_experts || []);
@@ -1510,7 +1560,7 @@
               ctx.fillStyle = '#10b981';
             } else if (isResident) {
               // Mark whether resident in VRAM or RAM
-              ctx.fillStyle = (expertData?.gpu?.enabled && r < 4) ? '#06b6d4' : '#3b82f6';
+              ctx.fillStyle = (expertData?.gpu?.enabled && r < ROWS / 4) ? '#06b6d4' : '#3b82f6';
             } else {
               ctx.fillStyle = '#141c2b';
             }
@@ -1570,7 +1620,7 @@
 
         let statusText = isResident ? 'L2 RAM Resident (INT8)' : 'L3 NVMe SSD (Cold Safetensors)';
         let statusColor = isResident ? '#60a5fa' : '#94a3b8';
-        if (expertData?.gpu?.enabled && isResident && row < 4) {
+        if (expertData?.gpu?.enabled && isResident && row < ROWS / 4) {
           statusText = 'L1 GPU VRAM Resident (INT8 DMA)';
           statusColor = '#06b6d4';
         }
@@ -1582,7 +1632,7 @@
           <strong>Layer ${row} · Expert ${col} (#${idx})</strong><br>
           <span style="color:${role.color}">${role.role}</span><br>
           Storage Tier: <span style="color:${statusColor}">${statusText}</span><br>
-          Historical Calls: ${heat} accesses · 6.31 MB
+          Historical Calls: ${heat} accesses · ${((expertData?.expert_payload_bytes || 0) / 1e6).toFixed(2)} MB
         `;
 
         inspCoord.textContent = `Layer ${row} · Expert ${col} (#${idx})`;
@@ -1602,6 +1652,7 @@
         const res = await fetch('/experts');
         if (res.ok) {
           expertData = await res.json();
+          applyModelInfo(expertData);
           renderTelemetry(expertData);
         }
       } catch (_) {}
@@ -1809,12 +1860,11 @@
       const estTokens = history.length > 0 ? Math.max(12, Math.round(totalChars / 3.6)) : Math.round(totalChars / 3.6);
       contextUsedVal.textContent = estTokens;
 
-      // KV Cache Memory estimation (16 layers * 2(K+V) * 1024 dim * 4 bytes for FP32, or 1 byte + scales for FP8)
+      // KV estimate: layers * 2 (K+V) * kv_dim * 4 bytes (FP32) or 1 byte + per-row scale (FP8)
       if (kvCacheMemVal) {
         const isFp8 = expertData?.kv_fp8 !== undefined ? expertData.kv_fp8 : true;
-        // FP32: 16 * 2 * 1024 * 4 = 131,072 bytes per token
-        // FP8:  16 * 2 * 1024 * 1 + scale headers = ~33,000 bytes per token (~75% saving)
-        const bytesPerToken = isFp8 ? 33024 : 131072;
+        const kvRow = 2 * (expertData?.num_layers || 16) * (expertData?.kv_dim || 2048);
+        const bytesPerToken = isFp8 ? kvRow + 2 * (expertData?.num_layers || 16) * 4 : kvRow * 4;
         const totalKvBytes = estTokens * bytesPerToken;
         const kvMb = (totalKvBytes / (1024 * 1024)).toFixed(2);
         const formatLabel = isFp8 ? 'FP8 E4M3 (-75%)' : 'FP32 Full';
@@ -1823,9 +1873,9 @@
 
       const maxTok = Number(selectMaxTokens?.value || 128);
       const totalEstimated = estTokens + maxTok;
-      const pct = Math.min(100, Math.round((totalEstimated / 512) * 100));
+      const pct = Math.min(100, Math.round((totalEstimated / CONTEXT_LIMIT) * 100));
       contextBarFill.style.width = `${pct}%`;
-      if (totalEstimated > 512) {
+      if (totalEstimated > CONTEXT_LIMIT) {
         contextBarFill.className = 'context-bar-fill danger';
         contextUsedVal.style.color = '#ef4444';
       } else if (totalEstimated > 400) {
@@ -1848,7 +1898,7 @@
 
       const header = document.createElement('div');
       header.className = 'msg-header';
-      header.innerHTML = `<span>${role === 'user' ? 'USER PROMPT' : 'OLMoE-1B-7B INFERENCE'}</span><span>${new Date().toLocaleTimeString()}</span>`;
+      header.innerHTML = `<span>${role === 'user' ? 'USER PROMPT' : `${modelLabel} INFERENCE`}</span><span>${new Date().toLocaleTimeString()}</span>`;
       card.appendChild(header);
 
       const body = document.createElement('div');
@@ -1983,7 +2033,6 @@
           headers: { 'content-type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            model: 'olmoe',
             session_id: sessionId,
             messages: requestHistory,
             max_tokens: Number(selectMaxTokens.value),
@@ -2018,8 +2067,8 @@
         } else {
           let errText = err.message || '';
           if (errText.includes('exceeds context limit') || errText.includes('context limit')) {
-            errText = '⚠️ [Vượt quá Context Window] Lịch sử hội thoại + Max Tokens vượt quá trần 512 tokens của model! Hãy bấm nút "CLEAR CHAT" trên thanh công cụ hoặc giảm "Max New Tokens" xuống 32/64 để tiếp tục.';
-            showToast('Lỗi: Vượt quá Context Window (512 tokens)!', 'warn');
+            errText = `⚠️ [Vượt quá Context Window] Lịch sử hội thoại + Max Tokens vượt quá trần ${CONTEXT_LIMIT} tokens của server! Hãy bấm nút "CLEAR CHAT" trên thanh công cụ hoặc giảm "Max New Tokens" xuống 32/64 để tiếp tục.`;
+            showToast(`Lỗi: Vượt quá Context Window (${CONTEXT_LIMIT} tokens)!`, 'warn');
           }
           bodyEl.textContent = (assistantMsg.content || '') + '\n[Lỗi — không lưu vào lịch sử] ' + errText;
           bodyEl.style.color = '#ef4444';

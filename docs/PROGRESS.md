@@ -4176,3 +4176,20 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - **Giới hạn:** 6 chuỗi ngắn, CPU, đường `model.logits`; không phải perplexity hay chất lượng tác vụ.
 - Cập nhật mục lục (38 hồ sơ), SCENARIOS, EVIDENCE_MATRIX; ghi chú bổ sung ở README Qwen3 i5.
 
+## 2026-11-20 — Web/API nhận đúng model Qwen3 (branch work/web-model-name)
+
+- **Vấn đề:**
+  - Khi chạy Qwen3, `/v1/models`, response và stream vẫn báo `olmoe`.
+  - Web ghi cứng "OLMoE-1B-7B", ma trận 16 × 64, 6,31MB/expert, 7,04GB trên đĩa, KV theo OLMoE, context 512, "GTX 1650" và "L2 Cache 128MB/L" (cấu hình thật là 64).
+- **Thay đổi:**
+  - `InferenceEngine::model_id()` trả `qwen3-moe` hoặc `olmoe`. Chat nhận id đó, alias cũ `olmoe` (tool cũ vẫn chạy), hoặc không có `model`; tên khác trả 400.
+  - `/experts` thêm `num_experts_per_tok`, `expert_payload_bytes`, `kv_dim`, `context_limit`.
+  - Web lấy tên model, kích thước ma trận, dung lượng expert, cache/layer và context từ `/experts`; KV ước tính theo `layers × 2 × kv_dim`; request không gửi `model` cố định.
+- **Kiểm tra:**
+  - Test HTTP mới `http_reports_qwen3_model_id_and_accepts_legacy_alias` (fixture Qwen3);
+  - `python3 tools/check.py --rust --web` đạt.
+  - Chạy server thật rồi chụp bằng Chrome headless (CDP), mỗi model một câu "Where is Mars" qua web:
+    - Qwen3 (CPU): header "Qwen3-30B-A3B INT8", ma trận 6.144 expert (48 × 128), 4,73MB/expert, 29,08GB trên đĩa, 1,07 tok/s;
+    - OLMoE (GPU dense + expert, GTX 1650): 1.024 expert, 6,31MB, 5,76 tok/s.
+- **Giới hạn:** tok/s trong các ảnh chụp là demo một lượt, không phải số đo.
+

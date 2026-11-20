@@ -321,6 +321,14 @@ pub struct ExpertStatusReport {
     pub expert_cache_policy: &'static str,
     pub num_layers: usize,
     pub num_experts: usize,
+    /// Experts routed per token (top-k).
+    pub num_experts_per_tok: usize,
+    /// INT8 payload of one expert (gate/up/down rows plus F32 row scales).
+    pub expert_payload_bytes: usize,
+    /// K (or V) width per token per layer; KV bytes/token = layers * 2 * kv_dim * element size.
+    pub kv_dim: usize,
+    /// Maximum prompt + completion tokens per request.
+    pub context_limit: usize,
     pub cache_bytes_per_layer: usize,
     /// Separate upper bound for active expert payloads/prefetch, not total RSS.
     pub expert_request_payload_limit_bytes: usize,
@@ -1522,6 +1530,11 @@ impl OlmoeModel {
             },
             num_layers: self.layers.len(),
             num_experts: self.config.num_experts,
+            num_experts_per_tok: self.config.num_experts_per_tok,
+            expert_payload_bytes: self.config.hidden_size * self.config.intermediate_size * 3
+                + (self.config.intermediate_size * 2 + self.config.hidden_size) * 4,
+            kv_dim: self.config.kv_dim(),
+            context_limit: self.context_limit,
             cache_bytes_per_layer: self.cache_bytes_per_layer,
             expert_request_payload_limit_bytes: (self.config.num_experts_per_tok + 2)
                 * (self.config.hidden_size * self.config.intermediate_size * 3

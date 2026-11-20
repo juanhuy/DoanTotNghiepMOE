@@ -49,6 +49,17 @@ MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on \
 MOE_CACHE_BYTES_PER_LAYER=67108864 target/release/moe-tier-engine
 ```
 
+Demo Qwen3-30B-A3B trên web (CPU-only trên i5; web tự nhận model, ma trận 48 × 128 expert, context theo server):
+
+```bash
+MOE_MODEL_DIR=../Models/qwen3-30b-a3b-int8 \
+MOE_BIND=127.0.0.1:8080 MOE_CONTEXT=512 MOE_GPU_MODE=cpu \
+MOE_DENSE_STORAGE=bf16 MOE_RAM_LIMIT_BYTES=9663676416 \
+MOE_CACHE_BYTES_PER_LAYER=67108864 target/release/moe-tier-engine
+```
+
+`/v1/models` trả `olmoe` hoặc `qwen3-moe` theo checkpoint; API vẫn nhận `model: "olmoe"` như tên cũ cho mọi checkpoint.
+
 Mặc định trong code vẫn là `MOE_GPU_EXPERT_COMPUTE=off`. Khi GPU compute thật sự chạy, web hiện "GPU: dense + expert" và mỗi câu trả lời có dòng `GPU EXPERT` (số lần tính expert trên GPU). Nếu không có CUDA/NVRTC, engine tự chạy CPU cho expert. Bằng chứng: [A1 i5](benchmarks/experiments/2026-11-14-gpu-compute-i5/README.md), [A1 i7](benchmarks/experiments/2026-11-14-gpu-compute-i7/README.md), [giới hạn RAM i5](benchmarks/experiments/2026-11-16-ram-limit-i5/README.md), [giới hạn RAM i7](benchmarks/experiments/2026-11-16-ram-limit-i7/README.md).
 
 Thử hỏi ngắn, bấm Stop giữa câu trả lời rồi gửi lại. Phản hồi lỗi/hủy không được lưu vào lịch sử hoàn tất. Xóa chat phía client khác reset cache server; reset server không xóa OS page cache hoặc bảo đảm trả hết RAM/VRAM vật lý. Hình routing và VRAM logical trên web không thay thế profiler.
