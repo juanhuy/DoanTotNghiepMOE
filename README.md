@@ -49,7 +49,19 @@ MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on \
 MOE_CACHE_BYTES_PER_LAYER=67108864 target/release/moe-tier-engine
 ```
 
-Demo Qwen3-30B-A3B trên web (CPU-only trên i5; web tự nhận model, ma trận 48 × 128 expert, context theo server):
+Cách ổn định nhất là dùng script có sẵn cấu hình. Đổi model hoặc cache thì Ctrl+C rồi chạy lại với preset khác; web tự nhận model và hiển thị dòng CONFIG (cache MiB/layer, GPU, dense):
+
+```bash
+tools/demo.sh olmoe-gpu            # OLMoE, GPU dense + expert (cấu hình khuyến nghị)
+tools/demo.sh olmoe-cpu            # OLMoE, CPU-only
+tools/demo.sh qwen3                # Qwen3-30B-A3B, CPU-only, dense BF16, guard 9GiB
+tools/demo.sh qwen3-gpu            # Qwen3 có GPU (cần ~5GB VRAM trống, ví dụ i7; GPU 4GB tự quay về CPU)
+tools/demo.sh qwen3 --cache 96     # đổi cache MiB/layer; guard từ chối nạp nếu không vừa RAM
+```
+
+Trên web còn bật/tắt được GPU (khi server chạy GPU auto), RESET CACHE (cold start) và KV FP8. Cache và model chỉ đổi được bằng cách khởi động lại.
+
+Lệnh tương đương khi chạy tay cho Qwen3 (CPU-only trên i5; web tự nhận model, ma trận 48 × 128 expert, context theo server):
 
 ```bash
 MOE_MODEL_DIR=../Models/qwen3-30b-a3b-int8 \

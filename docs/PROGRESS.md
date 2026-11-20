@@ -4193,3 +4193,22 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
     - OLMoE (GPU dense + expert, GTX 1650): 1.024 expert, 6,31MB, 5,76 tok/s.
 - **Giới hạn:** tok/s trong các ảnh chụp là demo một lượt, không phải số đo.
 
+## 2026-11-20 — Script demo theo preset và web không còn số mẫu (branch work/demo-launcher)
+
+- **Yêu cầu:** thử trực tiếp nhiều cấu hình (model, cache, GPU) cho demo. Chọn cách ổn định: script preset, không đổi cache/model khi server đang chạy (sửa vùng cache/guard của engine trước báo cáo là rủi ro).
+- **`tools/demo.sh`:**
+  - preset `olmoe-gpu`, `olmoe-cpu`, `qwen3`, `qwen3-gpu`;
+  - tùy chọn `--cache`, `--port`, `--context`, `--model-dir`, `--ram-limit-mib`;
+  - luôn `cargo build --release` vì web được nhúng vào binary.
+- **Web:**
+  - thêm dòng CONFIG (cache MiB/layer với số expert ước tính, chế độ GPU, dense dtype);
+  - bỏ số mẫu viết cứng hiển thị trước request đầu tiên. Trước đây hiện TTFT 2,70s, 4,11 tok/s và cache hit 81,8% với nhãn "HISTORICAL SAMPLE — UNVERIFIED", dễ bị hiểu là số đo của model đang chạy; giờ hiện "—" và "CHƯA CÓ REQUEST".
+- **Kiểm tra trên i5, server thật, khởi động rồi đọc `/experts`:**
+  - `olmoe-gpu`: dense và expert trên GPU, VRAM 1417MiB, nạp 2s;
+  - `olmoe-cpu`: CPU, nạp 1s;
+  - `qwen3`: CPU, id `qwen3-moe`, nạp 4s;
+  - `qwen3-gpu`: GTX 1650 4GB không chứa nổi dense nên tự chạy CPU;
+  - `qwen3 --cache 128`: guard từ chối nạp với thông báo rõ (reserve 9,94GB > limit 9GiB), không OOM;
+  - ảnh chụp Chrome headless xác nhận dòng CONFIG và các khung trống trước request;
+  - `python3 tools/check.py --web` đạt.
+

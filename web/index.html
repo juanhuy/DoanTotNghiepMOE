@@ -950,6 +950,8 @@
                   <div class="context-bar-fill" id="context-bar-fill" style="width: 0%;"></div>
                 </div>
               </div>
+              <span class="header-divider">|</span>
+              <span id="config-display" title="Cấu hình server đang chạy (đặt lúc khởi động, xem tools/demo.sh)">CONFIG: —</span>
             </div>
             <div class="terminal-header-actions">
               <button class="btn-tool btn-tool-warn" id="btn-reset-cache" title="Xóa toàn bộ L1 VRAM, L2 RAM & KV Cache để test Cold Start 0 cache ngay trên web">
@@ -1373,21 +1375,6 @@
     const btnTopoPhysical = document.querySelector('#btn-topo-physical');
     const btnTopoCumulative = document.querySelector('#btn-topo-cumulative');
 
-    // Default Baseline Benchmark Metrics (Measured on Testbed B Warm Run)
-    const BASELINE_METRICS = {
-      total_ms: 6390.18,
-      time_to_first_token_ms: 2699.90,
-      decode_tokens_per_second: 4.11,
-      expert_io_ms: 1209.38,
-      expert_compute_ms: 2353.98,
-      attention_ms: 361.93,
-      lm_head_ms: 44.82,
-      expert_cache_hits: 3873,
-      expert_cache_misses: 863,
-      expert_cache_evictions: 180,
-      expert_bytes_read: 6869237760,
-    };
-
     let history = [];
     let controller = null;
     let liveTimerInterval = null;
@@ -1456,6 +1443,14 @@
       if (ssd && mb) ssd.textContent = `${(mb * total / 1000).toFixed(2)} GB expert On-Disk`;
       const ramSub = document.querySelector('#flow-ram-sub');
       if (ramSub && data.cache_bytes_per_layer) ramSub.textContent = `L2 Cache (${Math.round(data.cache_bytes_per_layer / 1048576)}MB/L)`;
+      const config = document.querySelector('#config-display');
+      if (config && data.cache_bytes_per_layer) {
+        const cacheMib = Math.round(data.cache_bytes_per_layer / 1048576);
+        const perLayer = data.expert_payload_bytes ? Math.floor(data.cache_bytes_per_layer / data.expert_payload_bytes) : '?';
+        const gpu = data.gpu_mode_at_load === 'cpu' ? 'CPU only'
+          : (data.gpu_expert_compute_enabled ? 'GPU dense + expert' : (data.gpu?.enabled ? 'GPU dense' : 'GPU off'));
+        config.textContent = `CONFIG: cache ${cacheMib}MiB/layer (~${perLayer}/${data.num_experts} expert) · ${gpu} · dense ${(data.dense_storage || 'f32').toUpperCase()}`;
+      }
       const ramDetail = document.querySelector('#topo-ram-detail');
       if (ramDetail && data.cache_bytes_per_layer) {
         const cacheGb = (data.cache_bytes_per_layer * data.num_layers) / 1073741824;
@@ -1990,7 +1985,17 @@
       cacheEvictionsCount.textContent = `${evicts} evictions`;
     }
 
-    updateMetrics(BASELINE_METRICS, 'HISTORICAL SAMPLE — UNVERIFIED');
+    // No numbers before the first request on this page: every panel shows measured values only.
+    function clearMetrics() {
+      if (telemetrySourceBadge) telemetrySourceBadge.textContent = 'CHƯA CÓ REQUEST';
+      for (const el of [metricTtft, metricToks, metricTotal, valIo, valExpert, valAttn, valHead]) el.textContent = '—';
+      for (const seg of [segIo, segExpert, segAttn, segHead]) seg.style.width = '25%';
+      cacheHitPct.textContent = '— %';
+      cacheHitsCount.textContent = '— hits';
+      cacheMissesCount.textContent = '— misses';
+      cacheEvictionsCount.textContent = '— evictions';
+    }
+    clearMetrics();
 
     // Chat Submission Handler
     chatForm.addEventListener('submit', async (e) => {
