@@ -15,8 +15,11 @@ usage:
 Writes seq-<i>.f32 (little-endian F32, positions x vocab) and reference.json.
 """
 import argparse
+import ctypes
+import gc
 import json
 import platform
+import resource
 import time
 from pathlib import Path
 
@@ -25,6 +28,25 @@ import transformers
 import transformers.utils.import_utils as iu
 iu._torchvision_available = False
 from safetensors import safe_open
+
+
+def release_freed_memory_to_os():
+    """glibc keeps freed per-expert tensors (~6MB) in its heap and RSS grows layer after layer;
+    a fixed mmap threshold makes every large tensor its own mapping, returned on free."""
+    try:
+        libc = ctypes.CDLL('libc.so.6')
+        libc.mallopt(-3, 1 << 20)  # M_MMAP_THRESHOLD = 1MiB (also disables the dynamic threshold)
+        return libc
+    except OSError:
+        return None
+
+
+def rss_mib():
+    with open('/proc/self/status') as status:
+        for line in status:
+            if line.startswith('VmRSS:'):
+                return int(line.split()[1]) / 1024
+    return 0.0
 
 
 def tensor_index(directory):
@@ -39,25 +61,22 @@ def tensor_index(directory):
 
 
 class Reader:
+    """Opens the shard per read: a long-lived safe_open handle keeps every tensor read through it
+    resident (RSS grew by one layer of weights per layer), which would exceed RAM on 30B models."""
     def __init__(self, directory):
         self.index = tensor_index(directory)
-        self.handles = {}
 
     def __contains__(self, name):
         return name in self.index
 
     def get(self, name):
-        path = self.index[name]
-        if path not in self.handles:
-            self.handles[path] = safe_open(str(path), framework='pt', device='cpu')
-        return self.handles[path].get_tensor(name)
+        with safe_open(str(self.index[name]), framework='pt', device='cpu') as handle:
+            return handle.get_tensor(name).clone()
 
     def rows(self, name, ids):
-        path = self.index[name]
-        if path not in self.handles:
-            self.handles[path] = safe_open(str(path), framework='pt', device='cpu')
-        sliced = self.handles[path].get_slice(name)
-        return torch.stack([sliced[i:i + 1][0] for i in ids])
+        with safe_open(str(self.index[name]), framework='pt', device='cpu') as handle:
+            sliced = handle.get_slice(name)
+            return torch.stack([sliced[i:i + 1][0].clone() for i in ids])
 
 
 def classes(model_type):
@@ -102,6 +121,7 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--threads', type=int, default=4)
     args = parser.parse_args()
+    libc = release_freed_memory_to_os()
     torch.set_num_threads(args.threads)
     raw_config = json.loads((args.source / 'config.json').read_text())
     Config, Layer, Norm, Rotary = classes(raw_config['model_type'])
@@ -140,8 +160,12 @@ def main():
                 hidden[i] = module(hidden[i], attention_mask=masks[i], position_ids=positions[i],
                                    position_embeddings=rope[i])[0]
             del module
+            gc.collect()
+            if libc is not None:
+                libc.malloc_trim(0)
             layer_seconds.append(time.time() - t)
-            print(f'layer {layer + 1}/{config.num_hidden_layers} {layer_seconds[-1]:.1f}s', flush=True)
+            print(f'layer {layer + 1}/{config.num_hidden_layers} {layer_seconds[-1]:.1f}s rss {rss_mib():.0f}MiB',
+                  flush=True)
         norm = Norm(config.hidden_size, eps=config.rms_norm_eps)
         norm.weight.data = source.get('model.norm.weight').float()
         head_name = 'lm_head.weight' if 'lm_head.weight' in source else 'model.embed_tokens.weight'
@@ -158,6 +182,7 @@ def main():
         'experts': args.experts, 'compute_dtype': 'float32', 'attention': 'eager',
         'model_type': config.model_type, 'layers': config.num_hidden_layers, 'shapes': shapes,
         'seconds': time.time() - started, 'layer_seconds': layer_seconds, 'threads': args.threads,
+        'peak_rss_mib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
         'torch': torch.__version__, 'transformers': transformers.__version__,
         'python': platform.python_version(),
     }
