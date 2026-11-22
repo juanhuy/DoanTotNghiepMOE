@@ -556,7 +556,9 @@ impl InferenceEngine {
         let panic_tx = tx.clone();
         let runtime = tokio::runtime::Handle::current();
         let worker = tokio::task::spawn_blocking(move || {
-            let _permit = permit;
+            // Released explicitly below, before the terminal event: a client that sends its next
+            // request as soon as it sees `Finished` or a validation error must not get "busy".
+            let permit = permit;
             let mut ready_tx = Some(ready_tx);
             let cancelled = || io::Error::new(io::ErrorKind::Interrupted, "client disconnected");
             let overall_deadline = Instant::now() + DEFAULT_MAX_STREAM_DURATION;
@@ -608,6 +610,8 @@ impl InferenceEngine {
                     sampling,
                 )
             })();
+            // The model lock was dropped with the closure above; the model is free from here on.
+            drop(permit);
             match result {
                 Ok(result) => {
                     let now = Instant::now();
