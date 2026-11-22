@@ -242,3 +242,43 @@ async fn test_compute_perplexity_and_token_codec() {
         "perplexity must equal exp(loss)"
     );
 }
+
+// Regression: the permit must be free once the client has the terminal event, so a client that
+// sends the next request right after `Finished` (or after a validation error) is never told busy.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn permit_is_released_before_terminal_stream_event() {
+    use moe_tier_engine::engine::ChatEvent;
+    let engine =
+        InferenceEngine::load_with_limits(path("unnormalized-mha"), 10_000, 64, 10_000_000)
+            .await
+            .unwrap();
+    let messages = || {
+        vec![ChatMessage {
+            role: "user".into(),
+            content: "token3 token4".into(),
+        }]
+    };
+    for round in 0..200 {
+        let mut stream = engine.chat_stream(messages(), 2).await.unwrap();
+        // Stop at `Finished` itself, without waiting for the channel to close.
+        while let ChatEvent::Delta(_) = stream.recv().await.unwrap().unwrap() {}
+        // Validation error after the permit was taken (limit exceeds the 64-token context).
+        let error = engine.chat_stream(messages(), 100).await.err().unwrap();
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::InvalidInput,
+            "round {round}"
+        );
+        let next = engine.chat_stream(messages(), 2).await;
+        assert!(next.is_ok(), "round {round}: {:?}", next.err());
+        drop(next);
+        // Let the dropped stream's worker observe the disconnect before the next round.
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while engine.chat(messages(), 1).await.is_err() {
+                tokio::task::yield_now().await
+            }
+        })
+        .await
+        .unwrap();
+    }
+}

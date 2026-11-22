@@ -4298,3 +4298,16 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - **Lỗi:** CI job `converter` báo `ModuleNotFoundError: transformers` khi chạy `tools/test_stream_reference.py`. Test này được thêm vào `check.py --converter` ở commit b6f6263, nhưng `tools/requirements-converter.txt` chưa có dependency tương ứng.
 - **Sửa:** pin `transformers==4.51.3`, đúng phiên bản protocol `real-model-parity-v1` đã dùng.
 - **Kiểm tra:** dựng venv Python 3.12 với torch 2.6.0 CPU và requirements mới (như CI), chạy `python tools/check.py --converter`: đạt, gồm cả `test_stream_reference.py`.
+
+## 2026-11-22 — Sửa race: giấy phép stream trả sau sự kiện cuối, gây 429 ở CI
+
+- **Lỗi:** CI `cpu-fixtures` đỏ không đều với cùng một triệu chứng:
+  - `http_stream_and_validation` nhận 429 thay vì 200 (`src/main.rs:734`, lặp lại ở nhiều lượt trên main);
+  - `stream_matches_complete_generation_and_validates_before_start` lỗi `unwrap` ở `tests/olmoe_reference.rs:137`.
+- **Nguyên nhân:** trong `chat_stream_with_session_and_sampling` (`src/engine.rs`), Semaphore permit sống đến hết closure của worker, tức sau khi đã gửi `Finished` (hoặc lỗi kiểm đầu vào qua `ready_tx`). Client gửi request kế tiếp ngay khi nhận sự kiện cuối có thể thấy mô hình vẫn bận. Các đường không stream không bị, vì kết quả đi qua `JoinHandle` sau khi closure kết thúc.
+- **Sửa:** `drop(permit)` ngay sau khi suy luận xong (khóa mô hình đã nhả cùng closure bên trong), trước khi gửi sự kiện cuối.
+- **Hồi quy:** thêm `permit_is_released_before_terminal_stream_event` trong `tests/olmoe_reference.rs`, chạy 200 vòng: nhận `Finished`, gửi ngay một request lỗi kiểm đầu vào, rồi gửi ngay một request hợp lệ.
+  - Trước khi sửa, chạy với `taskset -c 0` (1 nhân, mô phỏng runner CI chậm): đỏ 3/3 lần ở vòng 0–5; `http_stream_and_validation` cũng đỏ 2/2 với 429.
+  - Sau khi sửa: `olmoe_reference` xanh 5/5 lần và `--bin` xanh 3/3 lần trên 1 nhân.
+  - Bộ kiểm tra như CI đạt: `check.py --rust --release` và `--http` (20 completed, 10 cancelled).
+- Thay đổi chỉ ở điều phối HTTP/stream, không ảnh hưởng số đo hiệu năng đã có.
