@@ -4259,3 +4259,18 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - Ghi rõ các dòng lịch sử của EVIDENCE_MATRIX không được trích số vì thiếu hồ sơ đủ provenance: INT4, Gini/hot pinning, KV FP8, `.moekv`, routing EMA.
 - Chương 4 phải sửa mô tả eviction: bỏ expert heat thấp nhất, không phải LRU.
 - Đây là việc tài liệu: không có số đo mới, chưa chuyển sang LaTeX.
+
+## 2026-11-22 — Quyển LaTeX báo cáo lần 2 (`baocao/lan2/latex/`)
+
+- Bản sao của quyển lần 1, viết lại theo dạng quyển đồ án hoàn chỉnh, giọng văn khẳng định. Phần giới hạn được gom vào mục 5.9 và phần kết luận, thay vì rải lời rào đón trong từng đoạn.
+- **Chương 1–4:** bổ sung các nội dung sau:
+  - Qwen3-30B-A3B: bảng cấu hình so với OLMoE và bảng dung lượng cho cả hai model;
+  - logits, KL và định luật Amdahl;
+  - ba chế độ GPU, dense BF16 và embedding đọc từ tệp, cgroup, giao diện giám sát (hai ảnh chụp web);
+  - kernel INT8 SwiGLU trên GPU, kernel expert nhiều token, eviction theo heat (không phải LRU), tham chiếu chạy từng layer;
+  - bảng tổng hợp các giải pháp và quyết định giữ hay bỏ.
+- **Chương 5:** viết mới, gồm phương pháp ABBA, parity, tầng VRAM khi expert tính trên CPU, A1, trần RAM, Qwen3, kết quả âm, tóm tắt các khảo sát kỳ 1, nút thắt I/O và Amdahl. Có một biểu đồ pgfplots.
+- **Nguồn số liệu:** mọi số lấy từ README hồ sơ P1/P2. Các dòng lịch sử thiếu provenance trong EVIDENCE_MATRIX (INT4, KV FP8, `.moekv`, Gini, EMA) không được trích.
+- **Bìa:** dùng macro `\reportkind` ("BÁO CÁO ĐỊNH KỲ LẦN 2"); để trống khi nộp bản cuối.
+- **Kiểm tra:** `compile.sh` đạt, 61 trang, 0 lỗi, 0 overfull. Đã kiểm trực quan biểu đồ, bảng Qwen3 và bảng chương 3.
+- **Ảnh chụp web:** lấy từ lượt kiểm giao diện 22/11 với OLMoE GPU trên i5, không phải số đo.

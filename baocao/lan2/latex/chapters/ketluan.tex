@@ -1,0 +1,29 @@
+\chapter*{KẾT LUẬN VÀ KIẾN NGHỊ}
+\addcontentsline{toc}{chapter}{KẾT LUẬN VÀ KIẾN NGHỊ}
+\markboth{KẾT LUẬN VÀ KIẾN NGHỊ}{KẾT LUẬN VÀ KIẾN NGHỊ}
+
+\section*{Kết quả đạt được}
+
+Đề tài đã xây dựng MoE-TierEngine, engine suy luận MoE viết bằng Rust, chạy hai kiến trúc OLMoE-1B-7B và Qwen3-30B-A3B với expert INT8 phân tầng trên VRAM, RAM và SSD. Engine có kernel tính expert INT8 trên GPU, cơ chế kiểm soát RAM trước và trong khi suy luận, giao diện web hiển thị trạng thái thực của các tầng nhớ, cùng bộ công cụ đo có đối chứng và công cụ so logits cho mô hình lớn hơn RAM.
+
+Về tính đúng, engine cho logits trùng với Transformers trên cả hai checkpoint thật: top-1 trùng ở mọi vị trí và KL ở mức $10^{-11}$. Lượng tử hóa INT8 theo hàng chỉ đổi top-1 ở khoảng 1,2\% vị trí, đều là các vị trí mà hai token đứng đầu gần như bằng điểm.
+
+Về hiệu năng, kết quả chính của đề tài là cách dùng VRAM. Khi expert vẫn tính trên CPU, dùng VRAM làm kho expert làm hệ thống chậm hơn trên cả hai máy, vì mỗi request phải chép 33--41 GiB qua PCIe. Khi expert được tính ngay tại VRAM, tầng VRAM trở thành có lợi trên cả hai máy, và lợi ích càng lớn khi RAM bị giới hạn: trên i5, tổng thời gian còn 0,39--0,62 lần dưới trần 5120 MiB. Kết quả này cho thấy với GPU tầm trung, nơi tính expert quan trọng hơn nơi chứa expert.
+
+Về mục tiêu chạy mô hình lớn trên phần cứng hạn chế, Qwen3-30B-A3B với checkpoint 30GB chạy hết workload dưới trần RAM 8GB trên máy 16GB, chỉ dùng khoảng 5,7 GiB bộ nhớ ẩn danh, không dừng do thiếu bộ nhớ và không dùng swap. Kết quả lặp lại trên máy thứ hai với văn bản sinh ra giống hệt.
+
+Các đối chứng cũng chỉ ra những hướng không có lợi: nạp trước expert, lọc expert khi nạp vào cache, tăng số luồng CPU và chia lại cùng một trần RAM cho cache expert. Điểm chung của các kết quả dương là giảm số byte trọng số phải di chuyển; các thay đổi chỉ tăng song song hoặc đổi thứ tự nạp không mang lại lợi ích rõ ràng.
+
+\section*{Hạn chế}
+
+Tốc độ sinh của Qwen3 trên CPU còn thấp, khoảng 1,1--1,8 tok/s, vì 58--76\% thời gian là chờ đọc expert từ SSD. Trên máy có GPU 4GB, Qwen3 chưa dùng được GPU vì phần dense ở FP32 không vừa VRAM. Tính đúng mới được kiểm ở mức logits trên tập chuỗi ngắn; đề tài chưa đánh giá chất lượng trên benchmark tác vụ chuẩn. Mỗi đối chứng hiệu năng là một lượt ABBA trên một workload, và RAM guard là kiểm tra chủ động của engine chứ không phải giới hạn cứng của hệ điều hành; giới hạn cứng trong thực nghiệm do cgroup đảm nhận.
+
+\section*{Hướng phát triển}
+
+\begin{enumerate}
+\item \textbf{Dùng VRAM làm kho expert khi dense không vừa.} Kernel GPU nhận đầu vào và trả kết quả qua RAM, nên có thể tách pool expert khỏi khối dense trên GPU. Với Qwen3 trên GPU 4GB, pool chứa được khoảng 11\% số expert, là bộ nhớ cộng thêm chứ không lấy chỗ của page cache.
+\item \textbf{Dense 16-bit trên GPU.} Giữ dense ở BF16 hoặc FP16 trên VRAM (khoảng 2,5GB thay vì 4,9GB) bằng phép nhân nửa độ chính xác, để cả dense và một phần expert của Qwen3 vừa 4GB.
+\item \textbf{Expert INT4.} Giảm một nửa số byte mỗi lần đọc expert, tác động trực tiếp vào nút thắt I/O. Cần đánh giá độ lệch logits theo cùng phương pháp ở mục 5.2 trước khi đo tốc độ.
+\item \textbf{Định tuyến có tính đến cache.} Khi Router gần hòa giữa expert đã có trong bộ nhớ và expert phải đọc từ SSD, ưu tiên expert đã có. Hướng này thay đổi đầu ra của mô hình, nên phải đánh giá chất lượng cùng với tốc độ.
+\item \textbf{Đánh giá chất lượng có hệ thống} trên benchmark tác vụ chuẩn và perplexity, để định lượng ảnh hưởng của INT8 và các hướng trên.
+\end{enumerate}

@@ -1,0 +1,78 @@
+\documentclass[12pt,a4paper,oneside]{report}
+\input{preamble}
+\input{metadata}
+\hypersetup{pdftitle={\reporttitle},pdfauthor={\reportstudentone; \reportstudenttwo}}
+
+\begin{document}
+
+% ==================== TRANG BÌA ====================
+\pagestyle{empty}
+\input{frontmatter/bia_ngoai}
+\cleardoublepage
+
+% ==================== PHẦN ĐẦU (ĐÁNH SỐ LA MÃ: i, ii, iii...) ====================
+\pagestyle{plain}
+\pagenumbering{roman}
+
+\input{frontmatter/loicamdon}
+\cleardoublepage
+
+\input{frontmatter/loicamdoan}
+\cleardoublepage
+
+% Mục lục tự động
+\markboth{MỤC LỤC}{MỤC LỤC}
+\tableofcontents
+\cleardoublepage
+
+\input{frontmatter/viettat}
+\cleardoublepage
+
+\markboth{DANH MỤC CÁC BẢNG}{DANH MỤC CÁC BẢNG}
+\listoftables
+\addcontentsline{toc}{chapter}{DANH MỤC CÁC BẢNG}
+\cleardoublepage
+
+\markboth{DANH MỤC CÁC HÌNH VẼ}{DANH MỤC CÁC HÌNH VẼ}
+\listoffigures
+\addcontentsline{toc}{chapter}{DANH MỤC CÁC HÌNH VẼ}
+\cleardoublepage
+
+% ==================== NỘI DUNG CHÍNH (ĐÁNH SỐ Ả RẬP: 1, 2, 3...) ====================
+\pagestyle{reportbody}
+\pagenumbering{arabic}
+
+\input{chapters/modau}
+\cleardoublepage
+
+\input{frontmatter/phancong}
+\cleardoublepage
+
+\input{chapters/ch1_tongquan}
+\cleardoublepage
+
+\input{chapters/ch2_lythuyet}
+\cleardoublepage
+
+\input{chapters/ch3_thietke}
+\cleardoublepage
+
+\input{chapters/ch4_thuattoan}
+\cleardoublepage
+
+\input{chapters/ch5_thucnghiem}
+\cleardoublepage
+
+\input{chapters/ketluan}
+\cleardoublepage
+
+% ==================== TÀI LIỆU THAM KHẢO ====================
+\markboth{TÀI LIỆU THAM KHẢO}{TÀI LIỆU THAM KHẢO}
+\bibliographystyle{plainnat}
+\bibliography{references}
+\addcontentsline{toc}{chapter}{TÀI LIỆU THAM KHẢO}
+\cleardoublepage
+
+% Lệnh và bản đồ bằng chứng được giữ trong sổ tay riêng, không đưa phụ lục vào bản nộp.
+
+\end{document}

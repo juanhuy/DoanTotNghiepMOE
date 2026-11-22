@@ -1,0 +1,307 @@
+\chapter{THỰC NGHIỆM VÀ ĐÁNH GIÁ}
+
+Chương này trình bày kết quả thực nghiệm theo trình tự các câu hỏi nghiên cứu ở Bảng~\ref{tab:research_questions}. Mục 5.1 mô tả môi trường và phương pháp đo. Mục 5.2 kiểm tính đúng của engine trên checkpoint thật. Các mục 5.3--5.6 trình bày chuỗi kết quả chính về cách dùng VRAM và chạy mô hình lớn hơn RAM. Mục 5.7 ghi các hướng tối ưu không mang lại lợi ích. Mục 5.8 tóm tắt các khảo sát ban đầu, mục 5.9 phân tích nút thắt còn lại.
+
+\section{Môi trường và phương pháp đo}
+
+\subsection{Máy thử nghiệm và mô hình}
+
+\begin{table}[htbp]
+\centering
+\caption{Cấu hình hai máy thử nghiệm}
+\label{tab:machines}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.2cm} >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Thành phần} & \textbf{i5} & \textbf{i7} \\
+\midrule
+CPU & Intel Core i5-10500H & Intel Core i7-14650HX (16 nhân, 24 luồng) \\
+RAM & 16GB (15,4 GiB khả dụng) & 16GB (15,2 GiB khả dụng) \\
+GPU & NVIDIA GTX 1650 Max-Q, 4GB & NVIDIA RTX 5060 Laptop, 8GB \\
+Hệ điều hành & Linux, cgroup v2 & Linux, cgroup v2 \\
+Số luồng CPU của engine & 4 & 4 \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: thông tin phần cứng do công cụ thực nghiệm ghi trong từng hồ sơ đo.\par}
+\end{table}
+
+Hai mô hình được dùng là OLMoE-1B-7B-0924-Instruct (revision \texttt{7f1c97f}) và Qwen3-30B-A3B (revision \texttt{ad44e77}). Cả hai được chuyển đổi một lần trên i5: expert INT8 theo hàng, dense giữ BF16. Máy i7 dùng bản sao của cùng checkpoint OLMoE; với Qwen3, i7 tự chuyển đổi từ bản gốc và kết quả trùng mã băm với i5 ở cả 478/478 tệp. Mã băm SHA-256 của các shard gốc khớp với giá trị công bố trên Hugging Face.
+
+\subsection{Workload và cấu hình chung}
+
+Các đối chứng hiệu năng dùng chung workload hội thoại gồm bốn request: câu hỏi về sao Hỏa, một câu hỏi tiếp theo trong cùng phiên có kèm lịch sử, một câu hỏi về Python trong phiên mới và câu hỏi ``What is love?'' trong phiên mới. Mỗi tiến trình chạy workload hai lần liên tiếp: lần thứ nhất là khởi động và không được tính, lần thứ hai (turn 4--7) được đo. Mỗi request sinh tối đa 64 token bằng giải mã tham lam.
+
+Trừ khi ghi khác, cấu hình chung là: cache expert 64 MiB/lớp, cửa sổ ngữ cảnh 512 token, 4 luồng CPU, chính sách victim, tắt nạp trước dự đoán và tắt kernel nhiều token. Với cấu hình này, văn bản sinh ra, số token và lý do kết thúc của cùng một request phải giống hệt nhau giữa các khối đo; điều kiện này được kiểm ở mọi thí nghiệm và luôn đạt.
+
+\subsection{Quy trình đo có đối chứng}
+
+Mỗi thí nghiệm có một protocol được commit vào kho mã trước khi đo, gồm câu hỏi, cấu hình hai phía, thứ tự chạy và quy tắc kết luận. Hai cấu hình A và B được chạy theo thứ tự A, B, B, A, mỗi khối là một tiến trình mới. Thứ tự này tạo hai cặp (khối 1 với 2, khối 4 với 3), mỗi cặp có 4 request được đo, tổng cộng 8 so sánh. Với mỗi so sánh, tỉ số $t_B/t_A$ được tính cho tổng thời gian và thời gian sinh tiếp. Quy tắc kết luận là: B nhanh hơn nếu cả 8 tỉ số đều nhỏ hơn $1/1{,}05$; B chậm hơn nếu cả 8 đều lớn hơn $1{,}05$; các trường hợp còn lại là không nhất quán. Thiết kế này loại ảnh hưởng của thứ tự chạy và yêu cầu kết quả phải lặp lại ở mọi cặp, thay vì dựa trên một giá trị trung bình.
+
+Trước mỗi lượt đo, công cụ kiểm điều kiện máy: RAM khả dụng, không có swap mới, máy cắm sạc và GPU không bị giảm xung. Trong lúc đo, một bộ giám sát độc lập lấy mẫu bộ nhớ mỗi 250 ms và dừng lượt đo nếu engine bị đẩy ra swap. Mỗi hồ sơ ghi mã băm của mã nguồn, binary và checkpoint; dữ liệu thô được khóa bằng tệp checksum. Hai lượt đo tính expert trên GPU ở i5 bị hỏng vì môi trường (một lượt bị swap do ứng dụng khác chiếm RAM, một lượt chạy bằng pin làm GPU bị giảm xung giữa chừng). Cả hai được giữ trong hồ sơ và là lý do bổ sung bước kiểm nguồn điện vào quy trình \cite{exp_gpu_compute}.
+
+\section{Tính đúng trên checkpoint thật}
+
+Engine được so logits với Transformers 4.51.3 \cite{hf_transformers} trên 6 chuỗi cố định: 4 prompt hội thoại theo khuôn mẫu của từng mô hình, một đoạn văn tiếng Anh và một đoạn mã nguồn. Tổng cộng có 159 vị trí với Qwen3 và 186 vị trí với OLMoE; ở mỗi vị trí, logits được so trên toàn bộ từ vựng (151.936 và 50.304 token). Tham chiếu chạy từng lớp như mô tả ở mục 4.9, với hai chế độ: dùng đúng expert INT8 của engine, và dùng trọng số BF16 gốc \cite{exp_parity}.
+
+\begin{table}[htbp]
+\centering
+\caption{So sánh logits của engine với Transformers}
+\label{tab:parity}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\centering\arraybackslash}p{2.3cm} >{\centering\arraybackslash}p{2.3cm} >{\centering\arraybackslash}p{2.3cm} >{\centering\arraybackslash}p{2.3cm}}
+\toprule
+& \multicolumn{2}{c}{\textbf{Cùng expert INT8}} & \multicolumn{2}{c}{\textbf{So với BF16 gốc}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+\textbf{Chỉ số} & \textbf{Qwen3} & \textbf{OLMoE} & \textbf{Qwen3} & \textbf{OLMoE} \\
+\midrule
+Top-1 trùng & 159/159 & 186/186 & 157/159 & 184/186 \\
+Top-5 overlap & 1,000 & 1,000 & 0,945 & 0,972 \\
+$\max|\Delta z|$ & $3{,}0\cdot10^{-4}$ & $3{,}5\cdot10^{-5}$ & 4,50 & 3,15 \\
+KL trung bình (nat) & $1{,}2\cdot10^{-11}$ & $3{,}7\cdot10^{-12}$ & 0,0089 & 0,0077 \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_parity}. Engine chạy trên CPU, cache 64 MiB/lớp; Qwen3 dùng dense BF16 và embedding từ tệp như trong các phép đo hiệu năng.\par}
+\end{table}
+
+Khi dùng cùng expert INT8, engine trùng top-1 ở mọi vị trí của cả hai mô hình, và KL ở mức $10^{-11}$. Sai lệch còn lại chỉ do thứ tự cộng số thực FP32 khác nhau, tích lũy qua 48 hoặc 16 lớp. Chạy lại engine từ một binary build lại cho logits giống từng byte, tức engine cho kết quả tất định. Cùng phép so cũng xác nhận checkpoint OLMoE dùng trong toàn bộ thí nghiệm trùng từng tensor (2195/2195) với bản chuyển đổi lại từ revision công bố.
+
+So với BF16 gốc, INT8 đổi top-1 ở 4 trên 345 vị trí. Cả bốn đều là vị trí gần hòa, với biên của tham chiếu từ 0,004 đến 0,19 logit. Ví dụ, ở đầu câu trả lời cho ``What is love?'', Qwen3 BF16 chọn ``Love'' còn INT8 chọn ``The'' với biên 0,19; ở đoạn văn về Apollo, hai bản chọn ``1969'' và ``1963'' với biên 0,15. KL trung bình khoảng 0,008 nat mỗi token cho thấy phân phối xác suất gần như được giữ nguyên. Sai lệch này đến từ lượng tử hóa chứ không từ engine: tham chiếu INT8 so với tham chiếu BF16, cả hai đều chạy bằng Transformers, cho đúng các con số trên.
+
+\section{Tầng VRAM khi expert tính trên CPU}
+
+\subsection{Dense trên GPU}
+
+Đối chứng đầu tiên so chạy toàn bộ trên CPU với đưa phần dense lên GPU. Trên i5, đưa dense lên GPU làm TTFT nhanh hơn 1,24--1,62 lần ở cả 4/4 so sánh; riêng thời gian attention nhanh hơn 9,4--17,3 lần \cite{exp_backend_i5}. Dense trên GPU vì vậy được dùng trong mọi cấu hình GPU về sau, kể cả phía đối chứng.
+
+\subsection{Tầng VRAM theo chính sách victim}
+
+Đối chứng tiếp theo giữ dense trên GPU ở cả hai phía và chỉ bật/tắt tầng VRAM expert, trong khi expert vẫn tính trên CPU. Kết quả trên cả hai máy cùng một chiều: tắt tầng VRAM nhanh hơn ở 8/8 so sánh (Bảng~\ref{tab:tier_cpu}).
+
+\begin{table}[htbp]
+\centering
+\caption{Tầng VRAM bật/tắt khi expert tính trên CPU}
+\label{tab:tier_cpu}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}p{4.4cm} >{\RaggedRight\arraybackslash}p{4.4cm}}
+\toprule
+\textbf{Chỉ số} & \textbf{i5 (GTX 1650 4GB)} & \textbf{i7 (RTX 5060 8GB)} \\
+\midrule
+Expert trong pool VRAM & 298/1024 (29\%) & 845--858/1024 (83\%) \\
+Kết luận theo quy tắc & Tắt nhanh hơn, 8/8 & Tắt nhanh hơn, 8/8 \\
+Tổng thời gian bật/tắt & 1,39--1,87 & 1,78--2,00 \\
+Tốc độ sinh trung vị (bật $\rightarrow$ tắt) & 3,13 $\rightarrow$ 5,53 tok/s & 4,92 $\rightarrow$ 9,75 tok/s \\
+Dữ liệu chép RAM--VRAM mỗi request & 33--41 GiB & 33--40 GiB \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_gpu_tier_i5}, \cite{exp_gpu_tier_i7}. Workload hội thoại, 64 token, cache 64 MiB/lớp.\par}
+\end{table}
+
+Tầng VRAM có làm đúng vai trò lưu trữ: trên i7, pool chứa 83\% số expert và gần như không còn lần đọc tệp nào. Tuy vậy, mỗi expert lấy từ VRAM phải chép về RAM để CPU tính, rồi theo chính sách victim, expert bị loại khỏi RAM lại được chép lên VRAM. Lượng dữ liệu đi qua PCIe lên tới 33--41 GiB mỗi request 64 token, chậm hơn nhiều so với đọc cùng dữ liệu từ page cache của hệ điều hành. Pool lớn hơn trên i7 không thay đổi kết luận. Như vậy, vấn đề nằm ở chỗ tính chứ không ở dung lượng chứa: chừng nào expert còn phải về CPU để tính, VRAM làm kho chỉ thêm một chặng chép dữ liệu.
+
+\section{Tính expert trên GPU}
+
+Kết quả ở mục 5.3 dẫn tới thiết kế tính expert ngay tại VRAM (mục 4.5). Đối chứng dùng phía tắt tầng VRAM, tức cấu hình nhanh nhất ở mục 5.3, làm mốc A, và phía bật tầng VRAM kèm tính expert trên GPU làm B.
+
+\begin{table}[htbp]
+\centering
+\caption{Tính expert trên GPU so với tắt tầng VRAM, OLMoE}
+\label{tab:gpu_compute}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}p{4.4cm} >{\RaggedRight\arraybackslash}p{4.4cm}}
+\toprule
+\textbf{Chỉ số} & \textbf{i5 (pool 299 expert)} & \textbf{i7 (pool 960 expert)} \\
+\midrule
+Kết luận theo quy tắc & Tính trên GPU nhanh hơn, 8/8 & Tính trên GPU nhanh hơn, 8/8 \\
+Tổng thời gian GPU/tắt tầng & 0,743--0,813 & 0,086--0,124 \\
+Thời gian tính expert GPU/tắt tầng & 0,667--0,750 & -- \\
+Tốc độ sinh trung vị (tắt $\rightarrow$ GPU) & 8,24 $\rightarrow$ 10,73 tok/s & 4,64 $\rightarrow$ 50,67 tok/s \\
+Lần đọc tệp expert mỗi request & 5532--6737 $\rightarrow$ 3420--4731 & 5532--6737 $\rightarrow$ 0--105 \\
+Dữ liệu chép VRAM $\rightarrow$ RAM & 0 & 0 \\
+Dữ liệu chép RAM $\rightarrow$ VRAM & 1799 MiB một lần khi lấp pool & một lần khi lấp pool \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_gpu_compute}. Workload hội thoại, 64 token, cache 64 MiB/lớp, 4 luồng CPU.\par}
+\end{table}
+
+Trên cả hai máy, tầng VRAM chuyển từ chậm hơn 8/8 sang nhanh hơn 8/8 khi expert được tính tại chỗ. Trên i5, pool 299 expert giúp giảm 30--39\% số lần đọc tệp, còn CPU bớt khoảng 30\% thời gian tính SwiGLU; tổng thời gian request giảm 19--26\%. Lượng chép qua PCIe giảm từ 33--41 GiB mỗi request xuống 1799 MiB một lần duy nhất.
+
+Trên i7, pool chứa 93,75\% số expert nên gần như toàn bộ phép tính expert chạy trên GPU, và tốc độ sinh đạt khoảng 50 tok/s. Tỉ số tổng thời gian 0,086--0,124 không nên được hiểu là mức tăng tốc điển hình trên i7: trong lượt này, phía đối chứng đọc tệp chỉ đạt 3,1--3,8 GB/s, thấp hơn mức 6,1--12,1 GB/s ghi nhận ở các lượt i7 khác, nên mốc A chậm hơn bình thường. Kết luận theo quy tắc (8/8) không phụ thuộc vào điểm này.
+
+Kết quả của mục 5.3 và 5.4 trả lời câu hỏi VRAM nên dùng để chứa hay để tính: với GPU tầm trung, VRAM chỉ có ích cho expert khi expert được tính ngay trên GPU.
+
+\section{Mô hình không vừa RAM được cấp}
+
+Các phép đo ở mục 5.3--5.4 có một điểm yếu: page cache của hệ điều hành giữ toàn bộ checkpoint 7GB của OLMoE, nên ``đọc expert từ tệp'' thực chất là đọc từ RAM với tốc độ 9--12 GB/s. Để mô phỏng mô hình lớn hơn RAM, engine được đặt trong cgroup với trần \texttt{memory.max}, tính cả page cache và không cho swap. Trước mỗi khối, checkpoint được xóa khỏi page cache và kiểm lại còn 0 byte. Đối chứng lặp lại thí nghiệm ở mục 5.4 dưới hai mức trần 8192 MiB và 5120 MiB \cite{exp_ram_limit}.
+
+\begin{table}[htbp]
+\centering
+\caption{Tính expert trên GPU so với tắt tầng VRAM dưới trần RAM, OLMoE}
+\label{tab:ram_limit}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{2.6cm} >{\RaggedRight\arraybackslash}p{3.2cm} >{\RaggedRight\arraybackslash}p{2.6cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Máy, trần} & \textbf{Kết luận} & \textbf{Tổng thời gian GPU/tắt} & \textbf{Tốc độ sinh trung vị (tắt $\rightarrow$ GPU)} \\
+\midrule
+i5, 5120 MiB & GPU nhanh hơn, 8/8 & 0,389--0,616 & 2,14 $\rightarrow$ 4,13 tok/s \\
+i5, 8192 MiB & Không nhất quán & 0,566--1,057 & 7,70 $\rightarrow$ 9,46 tok/s \\
+i7, 5120 MiB & GPU nhanh hơn, 8/8 & 0,068--0,104 & 3,83 $\rightarrow$ 50,56 tok/s \\
+i7, 8192 MiB & GPU nhanh hơn, 8/8 & 0,137--0,204 & 7,85 $\rightarrow$ 50,27 tok/s \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_ram_limit}. Cả 64 request mỗi máy hoàn thành, không có lần dừng do thiếu bộ nhớ, không dùng swap.\par}
+\end{table}
+
+Ở trần 5120 MiB, engine dùng khoảng 3,3GB bộ nhớ ẩn danh, phần còn lại của trần là page cache, chỉ đủ giữ khoảng một phần ba checkpoint. Phía tắt tầng VRAM đọc tệp ở 1,3--1,7 GB/s và chậm đi khoảng 3,9 lần so với khi không giới hạn RAM. Phía tính trên GPU chỉ chậm đi khoảng 2,6 lần, vì mỗi lần đọc mà pool VRAM tránh được giờ có giá trị lớn hơn. Lợi ích của tính expert trên GPU vì vậy tăng lên khi RAM thiếu: tỉ số tổng thời gian trên i5 giảm từ 0,743--0,813 (không giới hạn) xuống 0,389--0,616.
+
+Mức 8192 MiB trên i5 không nhất quán. Trong khối đầu của lượt này, bộ nhớ ẩn danh của toàn hệ thống lên 5,6--8,5 GiB do một tiến trình ngoài engine, so với 1,5--4,8 GiB ở các khối khác; page cache của engine bị ép trước khi chạm trần của chính nó. Cặp còn lại cho tỉ số 0,566--0,833, cùng chiều với các mức khác. Theo quy tắc đã chốt, lượt này được ghi là không nhất quán và không đo lại.
+
+Trên i7, phía GPU giữ khoảng 50 tok/s ở cả hai mức trần vì 93,75\% expert đã nằm trong VRAM: khi VRAM chứa gần hết expert, RAM không còn là nút thắt. Đối chiếu với i5 (pool 29\%) cho thấy lợi ích của phân tầng tỉ lệ với phần expert mà VRAM chứa được.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    ybar, bar width=9pt,
+    width=0.92\textwidth, height=6.4cm,
+    ylabel={Tốc độ sinh trung vị (tok/s)},
+    symbolic x coords={i5 không giới hạn, i5 trần 5120, i7 trần 8192, i7 trần 5120},
+    xtick=data, x tick label style={font=\small, align=center, text width=2.4cm},
+    ymin=0, ymax=58, nodes near coords, nodes near coords style={font=\scriptsize},
+    every node near coord/.append style={/pgf/number format/.cd, fixed, precision=2, use comma},
+    legend style={at={(0.02,0.98)}, anchor=north west, font=\small},
+    enlarge x limits=0.18,
+]
+\addplot[fill=gray!45] coordinates {(i5 không giới hạn,8.24) (i5 trần 5120,2.14) (i7 trần 8192,7.85) (i7 trần 5120,3.83)};
+\addplot[fill=blue!55] coordinates {(i5 không giới hạn,10.73) (i5 trần 5120,4.13) (i7 trần 8192,50.27) (i7 trần 5120,50.56)};
+\legend{Tắt tầng VRAM, Tính expert trên GPU}
+\end{axis}
+\end{tikzpicture}
+\caption{Tốc độ sinh của OLMoE theo cấu hình và trần RAM}
+\label{fig:decode_bars}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_gpu_compute}, \cite{exp_ram_limit}. Mỗi cặp cột là một đối chứng ABBA riêng; so sánh trong từng cặp, không so độ cao giữa hai máy.\par}
+\end{figure}
+
+\section{Qwen3-30B-A3B lớn hơn RAM}
+
+Thí nghiệm này chạy mô hình mục tiêu của đề tài: checkpoint INT8 khoảng 30GB trên máy có 16GB RAM. Engine chạy trên CPU với dense BF16, embedding đọc từ tệp, cache 64 MiB/lớp (14 trên 128 expert mỗi lớp), trong cgroup với trần 10240 MiB rồi 8192 MiB, checkpoint được xóa khỏi page cache trước mỗi lượt. Workload gồm 8 request liên tiếp, mỗi request 64 token \cite{exp_qwen3_ram}.
+
+\begin{table}[htbp]
+\centering
+\caption{Qwen3-30B-A3B dưới trần RAM, chạy trên CPU}
+\label{tab:qwen3}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}X >{\centering\arraybackslash}p{2.2cm} >{\centering\arraybackslash}p{2.2cm} >{\centering\arraybackslash}p{2.2cm} >{\centering\arraybackslash}p{2.2cm}}
+\toprule
+& \multicolumn{2}{c}{\textbf{i5}} & \multicolumn{2}{c}{\textbf{i7}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+\textbf{Chỉ số} & \textbf{10240 MiB} & \textbf{8192 MiB} & \textbf{10240 MiB} & \textbf{8192 MiB} \\
+\midrule
+Request hoàn thành & 8/8 & 8/8 & 8/8 & 8/8 \\
+Dừng do thiếu bộ nhớ / swap & 0 / 0 & 0 / 0 & 0 / 0 & 0 / 0 \\
+Bộ nhớ ẩn danh đỉnh & 5,62 GiB & 5,61 GiB & $\approx$5,7 GiB & $\approx$5,7 GiB \\
+TTFT trung vị & 9,8 s & 11,0 s & 9,9 s & 10,9 s \\
+Tốc độ sinh trung vị & 1,34 tok/s & 1,13 tok/s & 1,53 tok/s & 1,78 tok/s \\
+Tổng thời gian trung vị & 61,5 s & 72,1 s & 55,7 s & 49,8 s \\
+Tỉ lệ thời gian chờ expert & 63--76\% & 58--72\% & \multicolumn{2}{c}{55--65\%} \\
+Tốc độ đọc tệp expert & 1,60--2,20 GB/s & 1,43--1,67 GB/s & 2,24 GB/s & 2,57 GB/s \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_qwen3_ram}. Tốc độ đọc tính bằng lượng dữ liệu engine đọc chia thời gian đọc của engine. Trên i7, trần 10240 MiB không bị chạm (đỉnh 7758,6 MiB), nên chênh lệch giữa hai mức là dao động giữa hai lượt.\par}
+\end{table}
+
+Cả 32 request trên hai máy đều hoàn thành, không lần nào bị dừng do thiếu bộ nhớ hay dùng swap. Bộ nhớ ẩn danh của engine ổn định ở khoảng 5,7 GiB, gồm dense BF16 2,29 GiB, cache expert tối đa 2,96 GiB, KV 30 MiB và phần còn lại cho bộ đệm tính toán, bộ cấp phát và bộ mã hóa văn bản. Con số này bằng khoảng 19\% kích thước checkpoint; phần còn lại của trần là page cache, được hệ điều hành thu hồi khi chạm trần. Văn bản sinh ra trên i5 và i7 giống hệt nhau ở cả 8 request, cùng với kết quả mục 5.2, xác nhận engine cho kết quả tất định trên hai phần cứng khác nhau.
+
+Mô hình lớn gấp đôi RAM chạy được, với tốc độ sinh khoảng 1,1--1,8 tok/s. Chi phí nằm ở I/O: cache chỉ giữ 11\% số expert mỗi lớp, tỉ lệ tìm thấy 38--73\%, nên mỗi request 64 token đọc lại 60--91GB dữ liệu expert, tức 2--3 lần toàn bộ checkpoint. Thời gian chờ đọc expert chiếm 58--76\% tổng thời gian trên i5. Siết trần từ 10240 xuống 8192 MiB không làm thay đổi số lần tìm thấy hay lượng dữ liệu đọc, vì routing và cache giống hệt nhau; chỉ page cache nhỏ đi nên tốc độ đọc giảm, kéo tốc độ sinh trên i5 giảm từ 1,34 xuống 1,13 tok/s.
+
+Trên i7, một lượt chạy thêm với GPU (dense FP32 4643 MiB trên VRAM và pool 565 expert) đạt tốc độ sinh trung vị 2,22 tok/s và TTFT 6,9 s, văn bản vẫn khớp. Lượt này thay đổi nhiều yếu tố cùng lúc nên chỉ dùng để xác nhận cấu hình GPU hoạt động với Qwen3, không phải đối chứng. Trên i5, dense FP32 của Qwen3 không vừa 4GB VRAM, nên engine tự chuyển sang CPU (mục 5.9).
+
+\section{Các hướng tối ưu không mang lại lợi ích}
+
+Phần này ghi các đối chứng có kết quả âm hoặc không nhất quán. Chúng là căn cứ để không đưa các cơ chế tương ứng vào cấu hình chính.
+
+\begin{table}[htbp]
+\centering
+\caption{Các đối chứng có kết quả âm hoặc không nhất quán}
+\label{tab:negative}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.4cm} >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}p{2.6cm}}
+\toprule
+\textbf{Hướng} & \textbf{Kết quả} & \textbf{Quyết định} \\
+\midrule
+Nạp trước expert khi xử lý đầu vào (OLMoE, i5) & TTFT bật/tắt 1,240 và 1,172 ở cặp thứ nhất, 0,959 và 0,928 ở cặp thứ hai: không nhất quán & Tắt \\
+Số luồng CPU 6/8/12 (OLMoE, i5) & Tổng thời gian 4 luồng/N luồng 0,890--1,021: không hơn 4 luồng & Giữ 4 luồng \\
+Số luồng CPU 8/16/24 (OLMoE, i7) & Tổng thời gian 0,777--1,004; tốc độ sinh trung vị 7,72 (4 luồng) xuống 7,02 (24 luồng) & Giữ 4 luồng \\
+Lọc expert mới theo heat khi nạp vào cache (OLMoE, i5) & Số lần nạp tăng 1,53\%, dữ liệu đọc tăng 2,56\% & Gỡ khỏi mã \\
+Cache 96 so với 64 MiB/lớp (Qwen3, i5, trần 10240 MiB) & Tỉ lệ tìm thấy 50\% $\rightarrow$ 60\%, dữ liệu đọc giảm 20\%; tổng thời gian B/A 0,787--1,045: không nhất quán & Giữ 64 MiB \\
+\bottomrule
+\end{tabularx}
+\par\smallskip{\footnotesize\RaggedRight Nguồn: \cite{exp_negative}, \cite{exp_qwen3_cache}.\par}
+\end{table}
+
+Kết quả về số luồng giống nhau trên hai máy: thêm luồng không làm phần tính expert nhanh hơn. Điều này phù hợp với nhận xét ở mục 4.3 rằng nhân ma trận INT8 với một vector bị giới hạn bởi băng thông đọc trọng số từ bộ nhớ, không bởi số nhân tính.
+
+Kết quả về cache Qwen3 cho thấy một đánh đổi riêng của mô hình lớn hơn RAM. Trong cùng một trần cgroup, mỗi MiB thêm cho cache expert là một MiB bớt đi của page cache. Cache lớn hơn giúp tìm thấy expert nhiều hơn và đọc ít hơn 20\%, nhưng page cache nhỏ hơn làm phần còn phải đọc đi xuống SSD nhiều hơn, tốc độ đọc giảm tương ứng. Hai hiệu ứng gần như triệt tiêu nhau. Muốn tăng tốc Qwen3, cần thêm bộ nhớ ngoài phần RAM đang dùng (ví dụ VRAM), hoặc giảm số byte mỗi lần đọc, thay vì chia lại cùng một trần RAM.
+
+\section{Kết quả các khảo sát ban đầu}
+
+Trước chuỗi thí nghiệm trên, nhóm đã thực hiện một số khảo sát trên OLMoE ở giai đoạn đầu, khi engine chưa có kernel GPU và chưa có quy trình ABBA đầy đủ. Các kết quả được tóm tắt dưới đây.
+
+\textbf{Tái sử dụng KV theo tiền tố chung.} Với đầu vào 116 token mà 104 token đầu trùng với chuỗi đã lưu, chỉ 12 token cần xử lý lại. Qua 5 cặp xen kẽ, trung vị thời gian xử lý đầu vào giảm từ 8847 ms xuống 2870 ms (67,56\%), và token đầu tiên giống nhau ở mọi cặp \cite{exp_prefill_i5}. Lợi ích này đến từ việc tránh tính lại, nên chỉ có khi tiền tố token thực sự trùng.
+
+\textbf{Chính sách victim so với inclusive.} Khi bật tầng VRAM với expert tính trên CPU, chính sách victim cho thời gian trung vị thấp hơn inclusive 20,77\% với câu hỏi đầu và 13,42\% với câu hỏi tiếp theo, trên 2 mẫu mỗi tổ hợp \cite{exp_web_session_i5}. Victim được giữ làm chính sách của tầng VRAM; tuy vậy, mục 5.3 cho thấy bản thân tầng VRAM với expert tính trên CPU vẫn chậm hơn tắt tầng.
+
+\textbf{Dispatch song song theo nhóm.} Phân công các token dùng chung expert thành tác vụ song song chậm hơn cách xử lý lần lượt ở 7/9 cặp, trung vị tăng 4,55\% \cite{exp_prefill_i5}. Phương án bị loại.
+
+\textbf{Sự cố thiếu bộ nhớ và RAM guard.} Trong giai đoạn đầu, một lần thử thủ công trên giao diện làm hệ điều hành dừng engine khi bộ nhớ ẩn danh lên khoảng 9,93 GiB \cite{oom_log_i5}. Sự cố này dẫn tới RAM guard với kiểm tra trước khi nạp (mục 3.7). Sau khi có guard, hai lượt kiểm tổng cộng 24 request với ngưỡng 5 GiB hoàn thành với đỉnh RSS 3,47 và 3,53 GiB, không dùng swap; cấu hình cache 256 MiB/lớp bị từ chối ngay khi khởi động vì phần dự trữ ước lượng 7,29GB vượt ngưỡng 5,37GB \cite{exp_ram_guard_i5}. Các thí nghiệm dưới trần cgroup ở mục 5.5--5.6 kiểm chứng cùng cơ chế ở quy mô lớn hơn.
+
+\section{Phân tích nút thắt và giới hạn}
+
+\subsection{Nút thắt của Qwen3 là I/O}
+
+Với Qwen3 trên i5, thời gian một request chia như sau: chờ đọc expert 58--76\%, attention và LM head 12--23\%, phần còn lại là tính expert trên CPU. Theo công thức (\ref{eq:amdahl}), kể cả khi attention và LM head được tăng tốc vô hạn, request nhanh hơn tối đa $1/(1-0{,}12)\approx1{,}13$ đến $1/(1-0{,}23)\approx1{,}30$ lần. Đây là cận trên cho lợi ích của việc đưa phần dense của Qwen3 lên GPU trên i5.
+
+Trên i5, Qwen3 hiện chạy hoàn toàn bằng CPU. Engine đưa dense lên GPU ở dạng FP32 để dùng cuBLAS SGEMV; dense của Qwen3 ở FP32 khoảng 4,9GB (trên i7, lượt GPU cấp phát 4643 MiB cho phần này), vượt 4GB của GTX 1650. Engine phát hiện điều này lúc khởi động và tự chuyển sang CPU. Pool expert trên GPU nằm trong cùng khối với dense nên cũng không được bật. Đây là giới hạn về dung lượng VRAM chứ không về kiến trúc: cùng engine dùng GPU hiệu quả với OLMoE trên i5 (mục 5.4--5.5) và chạy được Qwen3 với GPU trên i7 (mục 5.6).
+
+Nếu chỉ dùng 4GB VRAM để chứa expert của Qwen3, pool giữ được khoảng 700 trong 6144 expert (khoảng 11\%). Khác với thí nghiệm cache 96 MiB ở mục 5.7, đây là bộ nhớ cộng thêm chứ không lấy chỗ của page cache. Đây là hướng phát triển trực tiếp nhất cho Qwen3 trên máy 4GB VRAM.
+
+\subsection{Giới hạn của bằng chứng}
+
+Các kết luận của chương này có phạm vi như sau:
+\begin{itemize}
+\item \textbf{Tính đúng} được kiểm trên 6 chuỗi ngắn (345 vị trí), trên đường tính từng token của CPU. Đường tính expert trên GPU có kiểm thử riêng với sai lệch dưới $10^{-4}$. Đề tài chưa đánh giá chất lượng trên benchmark tác vụ chuẩn hay perplexity trên tập dữ liệu lớn; top-1 và KL là độ lệch so với mô hình gốc.
+\item \textbf{Mỗi đối chứng ABBA} là một lượt gồm 8 so sánh trên một workload 4 prompt, 64 token. Kết luận ``nhanh hơn 8/8'' khẳng định chiều của hiệu ứng trên workload đó; khoảng tỉ số mô tả độ lớn quan sát được, không phải ước lượng thống kê cho mọi workload.
+\item \textbf{Các lượt Qwen3} dưới trần RAM là một lượt mỗi mức, không có đối chứng ABBA. Chúng chứng minh khả năng chạy và đo chi phí, không dùng để so tốc độ giữa hai mức trần hay hai máy.
+\item \textbf{Tốc độ đọc tệp} là lượng dữ liệu engine đọc chia thời gian đọc của engine, không phải băng thông thiết bị đo độc lập.
+\item \textbf{Hai máy} khác CPU, GPU và SSD; tốc độ tuyệt đối giữa hai máy không được so với nhau.
+\end{itemize}
+
+\section{Tổng hợp kết quả}
+
+Bảng~\ref{tab:summary} tổng hợp câu trả lời cho từng câu hỏi nghiên cứu.
+
+\begin{table}[htbp]
+\centering
+\caption{Tổng hợp kết quả theo câu hỏi nghiên cứu}
+\label{tab:summary}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Câu hỏi} & \textbf{Kết quả} \\
+\midrule
+Engine có tính đúng không? & Top-1 trùng 100\% với Transformers trên cả hai mô hình, KL $\sim10^{-11}$. INT8 đổi top-1 ở 1,2\% vị trí, đều là vị trí gần hòa. \\
+VRAM nên chứa hay tính expert? & Chỉ chứa: chậm hơn tắt tầng 8/8 trên hai máy. Chứa và tính tại chỗ: nhanh hơn 8/8 trên hai máy. \\
+Phân tầng có giá trị khi thiếu RAM? & Có, và lớn hơn: tổng thời gian trên i5 còn 0,39--0,62 lần ở trần 5120 MiB, so với 0,74--0,81 khi không giới hạn. \\
+Mô hình lớn hơn RAM có chạy được? & Qwen3-30B-A3B (30GB) chạy 32/32 request dưới trần 8--10GB trên hai máy, bộ nhớ ẩn danh khoảng 5,7 GiB, 1,1--1,8 tok/s trên CPU. \\
+Nút thắt còn lại? & Đọc expert từ SSD chiếm 58--76\% thời gian với Qwen3; tăng tốc phần dense chỉ giúp tối đa 1,13--1,30 lần. \\
+Các tối ưu khác? & Kernel nhiều token và tái sử dụng KV có lợi; prefetch, admission, tăng luồng và chia lại RAM cho cache không có lợi. \\
+\bottomrule
+\end{tabularx}
+\end{table}

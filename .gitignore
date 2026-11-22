@@ -17,3 +17,4 @@ references
 
 # Fonts installed locally for the submission PDF; not repository payload.
 /baocao/latex/fonts/*.TTF
+/baocao/lan2/latex/fonts/*.TTF

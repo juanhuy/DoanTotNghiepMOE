@@ -1,0 +1,19 @@
+\chapter*{MỞ ĐẦU}
+\addcontentsline{toc}{chapter}{MỞ ĐẦU}
+\markboth{MỞ ĐẦU}{MỞ ĐẦU}
+
+Các mô hình ngôn ngữ mở cho phép nghiên cứu và triển khai ứng dụng ngay trên máy tính cá nhân. Trở ngại lớn nhất là dung lượng: một mô hình 30 tỷ tham số lượng tử hóa INT8 vẫn chiếm khoảng 30GB, gấp đôi RAM của một máy tính xách tay phổ thông. Nạp toàn bộ trọng số vào bộ nhớ là không thể, và việc đọc lại trọng số từ ổ đĩa trở thành chi phí chính của mỗi lần sinh token.
+
+Kiến trúc hỗn hợp chuyên gia (Mixture-of-Experts, MoE) mở ra một hướng giải quyết. Ở mỗi token, Router chỉ chọn một số ít expert trong mỗi lớp, nên phần trọng số thực sự được dùng nhỏ hơn nhiều so với toàn bộ mô hình. Nếu giữ những expert hay dùng ở bộ nhớ nhanh và nạp những expert còn lại khi cần, mô hình có thể chạy trong một ngân sách bộ nhớ nhỏ hơn kích thước của nó. Bài toán khi đó chuyển thành chọn expert nào để giữ, giữ ở đâu giữa VRAM, RAM và SSD, và tính expert ở thiết bị nào.
+
+Đề tài \textbf{``\reporttitle''} xây dựng MoE-TierEngine, một engine suy luận viết bằng Rust cho hai kiến trúc MoE là OLMoE-1B-7B và Qwen3-30B-A3B. Trọng số expert được lượng tử hóa INT8 và tổ chức thành ba tầng: VRAM, RAM và tệp trọng số trên SSD. Engine tính expert trên CPU hoặc trực tiếp trên GPU, dùng CUDA/cuBLAS cho phần dense, có cơ chế kiểm soát RAM, giao diện web hiển thị trạng thái thực của các tầng nhớ, và bộ công cụ đo có kiểm soát.
+
+Các kết quả chính gồm:
+\begin{itemize}
+\item Engine cho logits trùng với thư viện tham chiếu Transformers trên cả hai checkpoint thật.
+\item Tính expert ngay tại VRAM giúp tầng VRAM chuyển từ chi phí ròng thành có lợi, kết quả nhất quán trên hai máy.
+\item Qwen3-30B-A3B với checkpoint 30GB chạy được dưới trần RAM 8GB, chỉ dùng khoảng 5,7GiB bộ nhớ ẩn danh.
+\end{itemize}
+Các phép đo cũng chỉ ra nút thắt còn lại: với mô hình lớn hơn RAM, phần lớn thời gian là chờ đọc expert từ SSD.
+
+Báo cáo gồm năm chương. Chương 1 trình bày bài toán và mục tiêu. Chương 2 trình bày cơ sở lý thuyết về Transformer, MoE, lượng tử hóa, phân tầng bộ nhớ và các chỉ số đánh giá. Chương 3 mô tả kiến trúc hệ thống. Chương 4 trình bày các thuật toán suy luận, quản lý expert và tính toán trên GPU. Chương 5 trình bày phương pháp đo và kết quả thực nghiệm trên hai máy. Phần kết luận tổng hợp kết quả, giới hạn và hướng phát triển.
