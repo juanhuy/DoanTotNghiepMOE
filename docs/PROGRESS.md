@@ -4274,3 +4274,21 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - **Bìa:** dùng macro `\reportkind` ("BÁO CÁO ĐỊNH KỲ LẦN 2"); để trống khi nộp bản cuối.
 - **Kiểm tra:** `compile.sh` đạt, 61 trang, 0 lỗi, 0 overfull. Đã kiểm trực quan biểu đồ, bảng Qwen3 và bảng chương 3.
 - **Ảnh chụp web:** lấy từ lượt kiểm giao diện 22/11 với OLMoE GPU trên i5, không phải số đo.
+
+## 2026-11-22 — Tài liệu học `study/` (14 module)
+
+- Thêm thư mục `study/` gồm README (lộ trình, bản đồ hệ thống, ký hiệu) và 14 module:
+  - nền tảng: Rust cơ bản, Rust hệ thống/hiệu năng, async/Axum/SSE, toán và số thực;
+  - mô hình: Transformer, MoE, lượng tử hóa;
+  - hệ thống: bộ nhớ/hệ điều hành/cgroup, chính sách cache, GPU/CUDA;
+  - phương pháp: đo hiệu năng, kiểm thử tính đúng;
+  - đồ án: đọc hiểu engine, dự án thực hành và bộ câu hỏi bảo vệ.
+- Mỗi module có ba phần: lý thuyết tổng quát, liên hệ file/hàm thật trong repo, và bài tập có lời giải.
+- Số liệu trích trong tài liệu lấy từ README các hồ sơ P1/P2.
+- Mô tả code được đối chiếu với mã hiện hành, gồm eviction theo heat có hai đoạn 70%, dự đoán liên lớp có router hoa tiêu, `MOE_ROUTE_TRACE` là đường dẫn tệp.
+- **Kiểm tra:**
+  - các đoạn Python của lời giải đã chạy lại và cho đúng kết quả ghi trong tài liệu (online softmax, BF16, INT4, KL, router);
+  - script đọc `2026-11-14-gpu-compute-i5/run/result.json` cho tỉ số 0,743–0,813, khớp README;
+  - lời giải bài cache chạy tay được kiểm bằng mô phỏng;
+  - `python3 tools/check.py` đạt.
+- Đây là tài liệu học, không có số đo mới.

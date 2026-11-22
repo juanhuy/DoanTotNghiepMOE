@@ -120,6 +120,8 @@ Phạm vi hiện tại là demo/nghiên cứu local, greedy decoding, một requ
 
 Bắt đầu đọc [Hướng dẫn hệ thống MoE-TierEngine](docs/SYSTEM_GUIDE.md) để hiểu luồng xử lý, thuật toán, tối ưu, thuật ngữ và các file benchmark.
 
+Học toàn bộ kiến thức nền của đồ án (Rust, Transformer, MoE, lượng tử hóa, bộ nhớ, GPU, phương pháp đo, chuẩn bị bảo vệ), có bài tập và lời giải: [study/](study/README.md).
+
 
 ## Tính năng tiếp nhận từ Huy
 
