@@ -912,7 +912,7 @@
     <div class="header-telemetry">
       <div class="telem-item">
         <span>RAM:</span>
-        <span class="telem-val" id="header-ram-val">-- GB</span>
+        <span class="telem-val" id="header-ram-val">-- GiB</span>
       </div>
       <div class="telem-item">
         <span>VRAM:</span>
@@ -1021,7 +1021,7 @@
               <div class="flow-node flow-node-ram" id="node-ram">
                 <div class="flow-node-title">🧠 Host RAM</div>
                 <div class="flow-node-sub" id="flow-ram-sub">L2 Expert Cache</div>
-                <div class="flow-node-stat" id="flow-ram-stat">RSS: -- GB</div>
+                <div class="flow-node-stat" id="flow-ram-stat">RSS: -- GiB</div>
               </div>
 
               <!-- Link 2: RAM <-> GPU (PCIe DMA) -->
@@ -1114,8 +1114,8 @@
               </div>
               <div class="kpi-box">
                 <div class="kpi-box-label">L2: Host RAM (RSS)</div>
-                <div class="kpi-box-val" id="ram-val-primary">-- GB</div>
-                <div class="kpi-box-sub" id="ram-sub-primary">Process RSS</div>
+                <div class="kpi-box-val" id="ram-val-primary">-- GiB</div>
+                <div class="kpi-box-sub" id="ram-sub-primary" title="RAM guard của engine: từ chối cấu hình/request khi RSS + phần dự trữ vượt trần. Đây là kiểm tra chủ động, không phải giới hạn của kernel">Trần RAM guard: --</div>
               </div>
               <div class="kpi-box">
                 <div class="kpi-box-label">Process read_bytes (OS counter)</div>
@@ -1134,7 +1134,7 @@
             <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); line-height:1.6;">
               <div>Cache Hits: <span id="cache-hits-count" style="color:var(--text-main); font-weight:700;">--</span></div>
               <div>Cache Misses (Cold Reads): <span id="cache-misses-count" style="color:var(--accent-rose); font-weight:700;">--</span></div>
-              <div>LRU Evictions: <span id="cache-evictions-count" style="color:var(--text-main);">--</span></div>
+              <div title="Khi cache đầy, engine bỏ expert có heat thấp nhất; hòa thì bỏ expert dùng lâu nhất">Evictions (bỏ expert heat thấp nhất): <span id="cache-evictions-count" style="color:var(--text-main);">--</span></div>
             </div>
           </div>
 
@@ -1172,7 +1172,7 @@
               <span class="tier-spec-title" style="color:var(--accent-blue);">TIER 2: HOST RAM</span>
               <span id="ram-pct-badge">--%</span>
             </div>
-            <div class="tier-spec-val" id="topo-ram-text">-- GB (RSS)</div>
+            <div class="tier-spec-val" id="topo-ram-text">-- GiB (RSS)</div>
             <div class="tier-progress-track">
               <div class="tier-progress-fill" id="topo-ram-bar" style="width: 0%; background: var(--accent-blue);"></div>
             </div>
@@ -1360,6 +1360,7 @@
     const topoRamText = document.querySelector('#topo-ram-text');
     const topoRamBar = document.querySelector('#topo-ram-bar');
     const ramPctBadge = document.querySelector('#ram-pct-badge');
+    const ramSubPrimary = document.querySelector('#ram-sub-primary');
 
     // Matrix Canvas Elements
     const canvas = document.querySelector('#brain-canvas');
@@ -1683,9 +1684,14 @@
       const telem = data.system_telemetry;
       if (telem && telem.vm_rss_kib) {
         const rssGb = (telem.vm_rss_kib / 1048576).toFixed(2);
-        headerRamVal.textContent = `${rssGb} GB`;
-        ramValPrimary.textContent = `${rssGb} GB`;
-        topoRamText.textContent = `${rssGb} GB (RSS)`;
+        headerRamVal.textContent = `${rssGb} GiB`;
+        ramValPrimary.textContent = `${rssGb} GiB`;
+        topoRamText.textContent = `${rssGb} GiB (RSS)`;
+        if (data.ram_rss_limit_bytes) {
+          const limitGib = data.ram_rss_limit_bytes / 1073741824;
+          const usedPct = Math.round((telem.vm_rss_kib * 1024 / data.ram_rss_limit_bytes) * 100);
+          ramSubPrimary.textContent = `Trần RAM guard: ${limitGib.toFixed(2)} GiB (đang dùng ${usedPct}%)`;
+        }
         const totalKib = telem.mem_total_kib || 16 * 1048576;
         const ramPct = Math.round((telem.vm_rss_kib / totalKib) * 100);
         ramPctBadge.textContent = `${ramPct}% of ${(totalKib / 1048576).toFixed(1)} GiB`;
@@ -1795,7 +1801,7 @@
       }
 
       if (telem && flowRamStat && telem.vm_rss_kib) {
-        flowRamStat.textContent = `RSS: ${(telem.vm_rss_kib / 1048576).toFixed(2)} GB`;
+        flowRamStat.textContent = `RSS: ${(telem.vm_rss_kib / 1048576).toFixed(2)} GiB`;
       }
       if (telem && flowSsdStat && telem.io_read_bytes) {
         flowSsdStat.textContent = `Read: ${(telem.io_read_bytes / 1073741824).toFixed(2)} GB`;
