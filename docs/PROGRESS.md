@@ -4292,3 +4292,9 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - lời giải bài cache chạy tay được kiểm bằng mô phỏng;
   - `python3 tools/check.py` đạt.
 - Đây là tài liệu học, không có số đo mới.
+
+## 2026-11-22 — Sửa CI converter: thiếu transformers
+
+- **Lỗi:** CI job `converter` báo `ModuleNotFoundError: transformers` khi chạy `tools/test_stream_reference.py`. Test này được thêm vào `check.py --converter` ở commit b6f6263, nhưng `tools/requirements-converter.txt` chưa có dependency tương ứng.
+- **Sửa:** pin `transformers==4.51.3`, đúng phiên bản protocol `real-model-parity-v1` đã dùng.
+- **Kiểm tra:** dựng venv Python 3.12 với torch 2.6.0 CPU và requirements mới (như CI), chạy `python tools/check.py --converter`: đạt, gồm cả `test_stream_reference.py`.
