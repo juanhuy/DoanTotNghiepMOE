@@ -4241,3 +4241,10 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
     - Qwen3 CPU, 32 token: 17.664 lượt = 46 token × 48 × 8, khớp chính xác; context 47 token, KV ≈8,81MB.
 - **Lỗi bắt được khi kiểm:** khai báo `lastRouted` sau lần gọi `setGeometry` làm trang ném lỗi lúc tải; đã sửa trước khi merge.
 
+
+## 2026-11-22 — Web: hiện trần RAM guard và đổi nhãn eviction (branch work/web-ram-cap)
+
+- Trước báo cáo lần 2, rà các luận điểm báo cáo với web. Hai chỗ đã sửa:
+  - **Trần RAM:** web chỉ hiện RSS mà không hiện trần, trong khi luận điểm Qwen3 là "chạy dưới trần 9GiB". Ô Host RAM giờ hiện thêm "Trần RAM guard: X GiB (đang dùng Y%)", lấy từ `ram_rss_limit_bytes` mà `/experts` đã trả sẵn. Tooltip ghi rõ đây là kiểm tra chủ động của engine, không phải giới hạn kernel. Đơn vị RSS đổi từ "GB" sang "GiB", vì giá trị tính từ KiB/1048576.
+  - **Nhãn eviction:** "LRU Evictions" đổi thành "Evictions (bỏ expert heat thấp nhất)". Chính sách thật là `min_by_key((heat, last_used))`, không phải LRU thuần.
+- Không đổi Rust. Kiểm bằng Chrome headless (CDP, có bắt lỗi JS) với `tools/demo.sh olmoe-gpu` trên i5: hiện "Trần RAM guard: 6.00 GiB (đang dùng 54%)", tức trần mặc định min(RAM/2, 6GiB), RSS 3,24 GiB, không có lỗi JS. Đây là lượt kiểm giao diện, không phải số đo.
