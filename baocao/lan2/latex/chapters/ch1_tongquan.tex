@@ -1,0 +1,64 @@
+\chapter{TỔNG QUAN ĐỀ TÀI VÀ BÀI TOÁN NGHIÊN CỨU}
+
+
+\section{Bối cảnh và động cơ nghiên cứu}
+
+Mô hình ngôn ngữ lớn cần nhiều bộ nhớ để lưu các trọng số phục vụ tính toán. Với mô hình hỗn hợp chuyên gia (Mixture-of-Experts, MoE), các lớp MoE có nhiều mạng chuyên gia, gọi là expert. Khi xử lý một token, tức một đơn vị văn bản mà mô hình sử dụng, bộ định tuyến Router chỉ chọn một số expert để tính. Vì vậy, số tham số tham gia xử lý mỗi token có thể nhỏ hơn tổng số tham số của mô hình.
+
+Đề tài sử dụng hai mô hình MoE mở. OLMoE-1B-7B có khoảng 7 tỷ tham số, mỗi token kích hoạt khoảng 1 tỷ \cite{olmoe}; checkpoint INT8 khoảng 7GB, vừa RAM của máy thử nghiệm và phù hợp để phát triển, kiểm thử từng cơ chế. Qwen3-30B-A3B có khoảng 30 tỷ tham số, mỗi token kích hoạt khoảng 3 tỷ \cite{qwen3}; checkpoint INT8 khoảng 30GB, lớn gấp đôi RAM của máy. Mô hình thứ hai là trường hợp mục tiêu của đề tài: mô hình không thể nạp toàn bộ vào bộ nhớ, nên chỉ chạy được nếu hệ thống giữ đúng phần expert cần thiết và nạp phần còn lại khi Router chọn.
+
+Phần cứng hạn chế được xét theo lượng tài nguyên có thể dành cho mô hình. RAM còn phải phục vụ hệ điều hành và các ứng dụng khác; VRAM là bộ nhớ trên GPU, cũng có thể được dùng cho hiển thị và các tác vụ khác. Ngoài dung lượng, tốc độ tính toán và chi phí chuyển trọng số giữa SSD, RAM và VRAM đều ảnh hưởng thời gian phản hồi. Do đó, bài toán cần xem xét cả nơi lưu dữ liệu và cách phối hợp CPU với GPU.
+
+\section{Phát biểu bài toán}
+
+Bài toán của đề tài là tổ chức suy luận MoE trong lượng bộ nhớ được phép sử dụng. Hệ thống chỉ giữ một phần trọng số expert trong RAM và VRAM; các expert chưa có sẵn được nạp từ file khi cần. Việc lưu trữ, di chuyển dữ liệu và tính toán phải được phối hợp để sinh văn bản theo mô hình đã chọn.
+
+Đầu vào gồm các tệp trọng số đã chuyển đổi sang định dạng được hỗ trợ, cấu hình mô hình, bộ mã hóa văn bản thành token (tokenizer), câu hỏi và lịch sử hội thoại. Hệ thống còn nhận các giới hạn như dung lượng bộ đệm, độ dài ngữ cảnh và số token được phép sinh. Đầu ra gồm văn bản phản hồi, trạng thái kết thúc và số liệu về thời gian, truy xuất dữ liệu, bộ nhớ. Ba yêu cầu chính là:
+
+\begin{enumerate}
+\item \textbf{Thực hiện đúng quá trình suy luận của mô hình.} Bộ đệm (cache) và cơ chế chuyển dữ liệu phải cung cấp đúng trọng số cho expert được Router chọn, giữ đúng vị trí token và kết hợp đúng các đầu ra expert. Ví dụ, lấy một expert từ RAM thay vì từ file phải giữ nguyên nội dung trọng số dùng cho phép tính. Yêu cầu này được kiểm tra bằng các trường hợp đối chiếu với kết quả tham chiếu trong sai số cho phép. Tính đúng của triển khai, chất lượng câu trả lời và ảnh hưởng của lượng tử hóa là những nội dung được đánh giá riêng.
+\item \textbf{Quản lý bộ nhớ và xử lý yêu cầu có kiểm soát.} Hệ thống cần chọn expert để giữ lại hoặc chuyển tầng, đồng thời tính cả bộ nhớ cho những thành phần ngoài expert và dữ liệu trung gian. Bộ đệm key/value (KV cache), dùng để tái sử dụng một phần tính toán của các token đã xử lý, cũng chiếm bộ nhớ. Vì vậy, cache expert được cấp 1 GiB không có nghĩa toàn bộ tiến trình chỉ dùng 1 GiB RAM. Khi phát hiện yêu cầu vượt giới hạn ngữ cảnh hoặc áp lực bộ nhớ vượt ngưỡng kiểm tra, hệ thống cần phản hồi lỗi phù hợp. Khi người dùng dừng phản hồi, tác vụ cần kết thúc có kiểm soát để hệ thống tiếp nhận yêu cầu tiếp theo. Cơ chế kiểm tra của nguyên mẫu được thực hiện tại các thời điểm trong quá trình xử lý; mức độ kiểm soát thực tế được đánh giá ở chương 5.
+\item \textbf{Đánh giá hiệu năng bằng đầu vào và chỉ số xác định rõ.} Mỗi phép thử cần ghi câu hỏi, lịch sử, số token được phép sinh và trạng thái cache. Các chỉ số gồm thời gian đến token đầu, tốc độ sinh tiếp, thời gian cung cấp expert và mức sử dụng bộ nhớ. Ví dụ, tỷ lệ tìm thấy expert trong cache tăng có thể giảm nhu cầu đọc file nhưng vẫn phát sinh chuyển dữ liệu từ VRAM về RAM. Do đó, hiệu quả của một cách triển khai cần được xem cùng độ trễ và thời gian sinh của cả yêu cầu, thay vì chỉ dựa vào một chỉ số thành phần.
+\end{enumerate}
+
+Các yêu cầu trên định hướng thiết kế và kiểm thử. Chương 5 trình bày mức độ đáp ứng của nguyên mẫu trong các điều kiện đã thực nghiệm.
+
+\section{Mục tiêu và câu hỏi nghiên cứu}
+
+Mục tiêu của đề tài là thiết kế và xây dựng hệ thống suy luận MoE chạy được mô hình lớn hơn RAM trên máy tính cá nhân có GPU tầm trung, đồng thời đo được chính xác chi phí của từng cách tổ chức bộ nhớ. Câu hỏi nghiên cứu chung là: \textit{trong một ngân sách bộ nhớ cho trước, cách quản lý và di chuyển expert ảnh hưởng thế nào đến độ trễ, tốc độ sinh và lượng dữ liệu phải truyền?} Câu hỏi này được tách thành các câu hỏi cụ thể trong Bảng~\ref{tab:research_questions}.
+
+\begin{table}[htbp]
+\centering
+\caption{Câu hỏi nghiên cứu và cách khảo sát}
+\label{tab:research_questions}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{5.2cm} >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}p{1.6cm}}
+\toprule
+\textbf{Câu hỏi} & \textbf{Cách khảo sát} & \textbf{Mục} \\
+\midrule
+Engine có tính đúng như mô hình gốc không, và INT8 làm đầu ra lệch bao nhiêu? & So logits trên mọi vị trí với Transformers, dùng cùng expert INT8 và dùng BF16 gốc & 5.2 \\
+Phần nào của một request tốn thời gian nhất? & Đo riêng chờ expert, tính expert, attention và LM head & 5.3--5.7 \\
+VRAM nên dùng để chứa expert hay để tính expert? & Đối chứng ABBA tầng VRAM bật/tắt khi expert tính trên CPU, rồi khi expert tính trên GPU & 5.3--5.4 \\
+Phân tầng có còn giá trị khi RAM thực sự thiếu? & Giới hạn RAM của engine bằng cgroup, xóa page cache để buộc đọc SSD & 5.5 \\
+Mô hình lớn hơn RAM có chạy được không, với chi phí nào? & Chạy Qwen3-30B-A3B dưới trần 10GB và 8GB trên hai máy & 5.6 \\
+Các tối ưu khác (prefetch, admission, số luồng, cache lớn hơn) có giúp không? & Đối chứng ABBA từng cơ chế, ghi cả kết quả âm & 5.7 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Phạm vi đề tài}
+
+Engine chạy trên một máy tính cục bộ và xử lý một yêu cầu suy luận tại một thời điểm. Token được chọn bằng giải mã tham lam (greedy decoding). Độ dài ngữ cảnh và số token sinh được giới hạn bằng cấu hình; các thực nghiệm dùng cửa sổ 512 token.
+
+Trọng số expert được lưu INT8 với hệ số tỉ lệ theo hàng. Phần dense (attention, router, LM head) lưu FP32 hoặc BF16 tùy cấu hình; activation và KV dùng FP32. GPU được dùng cho phần dense qua cuBLAS, làm tầng lưu expert và tính expert INT8 bằng kernel riêng. Giao diện web cho phép hội thoại, nhận nội dung từng phần, dừng phản hồi và theo dõi trạng thái các tầng nhớ.
+
+Hai mô hình được hỗ trợ là OLMoE-1B-7B-0924-Instruct và Qwen3-30B-A3B. Nhóm dùng checkpoint công bố, không huấn luyện hay tinh chỉnh. Thực nghiệm chạy trên hai máy tính xách tay, ký hiệu i5 (GTX 1650 4GB) và i7 (RTX 5060 Laptop 8GB). Phục vụ nhiều người dùng đồng thời và đánh giá chất lượng trên benchmark tác vụ chuẩn nằm ngoài phạm vi đề tài.
+
+\section{Phương pháp nghiên cứu}
+
+Nhóm kết hợp nghiên cứu tài liệu, xây dựng hệ thống và thực nghiệm có đối chứng. Tính đúng được kiểm ở hai mức: fixture nhỏ có kết quả tham chiếu cho từng phép tính, và so logits với Transformers trên checkpoint thật.
+
+Mỗi thí nghiệm hiệu năng tuân theo một quy trình cố định. Câu hỏi, cấu hình, thứ tự chạy và tiêu chí kết luận được ghi thành protocol và commit vào kho mã trước khi đo. Hai cấu hình được chạy xen kẽ theo thứ tự ABBA, mỗi khối là một tiến trình mới; kết luận chỉ được đưa ra khi mọi cặp so sánh cùng chiều. Bộ công cụ kiểm điều kiện máy trước khi đo (RAM khả dụng, swap, nguồn điện, trạng thái GPU), ghi mã băm của mã nguồn, binary và checkpoint, rồi khóa dữ liệu thô bằng checksum. Lượt đo hỏng vì môi trường được giữ lại trong hồ sơ cùng nguyên nhân, không bị xóa.
+
+Hai máy dùng chung một checkpoint đã kiểm mã băm. Kết quả được so trong từng máy; tốc độ tuyệt đối giữa hai máy không được so với nhau vì khác CPU, GPU và SSD.

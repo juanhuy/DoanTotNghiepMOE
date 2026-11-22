@@ -1,0 +1,234 @@
+\chapter{THUẬT TOÁN VÀ CÁC GIẢI PHÁP KHẢO SÁT}
+
+
+Chương này mô tả cách các thành phần ở chương 3 được tổ chức thành thuật toán suy luận, gồm đường chạy chính, các phương án tối ưu đã thử và công cụ kiểm tính đúng. Các bước được diễn giải từ mã nguồn \cite{moe_tierengine_arch}; kết quả và giới hạn của từng phép đo được trình bày ở chương 5.
+
+\section{Quy trình suy luận tổng thể}
+
+Đầu vào gồm lịch sử hội thoại, mã phiên nếu có, giới hạn số token sinh và mô hình đã nạp. Đầu ra gồm văn bản trả lời, số token, lý do kết thúc và các chỉ số đo. Giả mã 4.1 trình bày đường xử lý thành công; các điểm kiểm tra hủy và bộ nhớ còn được gọi bên trong các lớp tính toán.
+
+\begin{Verbatim}[samepage=true,breaklines=true,breakanywhere=true,fontsize=\small,frame=single,framesep=3mm]
+Đầu vào: hội thoại, mã phiên, giới hạn sinh, mô hình đã nạp.
+1. Kiểm tra hội thoại và mã phiên; chỉ nhận khi mô hình rảnh.
+2. Dựng văn bản theo khuôn mẫu hội thoại; kiểm tra dự phòng RAM.
+3. Mã hóa thành token; kiểm tra đầu vào không rỗng và tổng
+   số token đầu vào cộng giới hạn sinh không vượt cửa sổ ngữ cảnh.
+4. Với yêu cầu streaming, báo sẵn sàng sau khi kiểm tra đầu vào.
+5. Tìm KV của phiên; dùng lại tiền tố hợp lệ hoặc cấp KV mới.
+6. Xử lý phần token đầu vào chưa có KV hợp lệ.
+7. Lặp đến khi gặp EOS hoặc đạt giới hạn sinh:
+   a. Chọn token có điểm dự đoán lớn nhất.
+   b. Phát phần văn bản giải mã được nếu đang trả lời theo luồng.
+   c. Nếu chưa kết thúc và còn bước sinh, đưa token vừa chọn
+      qua mô hình để cập nhật KV và điểm dự đoán tiếp theo.
+   d. Kiểm tra hủy, thời hạn và RAM tại các điểm hỗ trợ.
+8. Hoàn thiện văn bản; lưu trạng thái phiên nếu đủ ngân sách;
+   trả kết quả và số liệu đã ghi nhận.
+9. Khi lỗi, thông báo theo giao thức và nhả quyền dùng mô hình.
+   Riêng lỗi thiếu RAM kích hoạt dọn các bộ đệm RAM liên quan.
+\end{Verbatim}
+
+\textit{Nguồn: luồng sinh văn bản và điều phối yêu cầu trong mã nguồn \cite{moe_tierengine_arch}.}
+
+Các điều kiện cần giữ khi thay đổi thuật toán gồm chuỗi token đầu vào, vị trí của KV, trọng số định tuyến và thứ tự tổng hợp đầu ra expert. Thay đổi những điều kiện này có thể làm kết quả khác đi, nên cần kiểm chứng số học tương ứng. Việc báo sẵn sàng ở bước 4 chưa có nghĩa suy luận hoàn tất; lỗi vẫn có thể xảy ra trong khi xử lý đầu vào hoặc sinh tiếp.
+
+\section{Chọn top-k và tổng hợp đầu ra expert}
+
+Router tính điểm cho từng expert rồi dùng softmax để tạo các xác suất. Hệ thống chọn $k$ expert có xác suất cao nhất. Khi hai expert bằng điểm, chỉ số expert nhỏ hơn được ưu tiên để có thứ tự xác định. Mã hiện tại phân hoạch danh sách để lấy nhóm đứng đầu, sau đó chỉ sắp xếp nhóm được chọn, thay vì luôn sắp toàn bộ $E$ expert \cite{moe_tierengine_arch}.
+
+Với OLMoE, trọng số tổng hợp là xác suất ban đầu của expert được chọn; với Qwen3, xác suất của $k$ expert được chuẩn hóa lại để có tổng bằng 1, như công thức (2.5). Giả mã 4.2 mô tả cách xử lý một token ở giai đoạn sinh tiếp.
+
+\begin{Verbatim}[samepage=true,breaklines=true,breakanywhere=true,fontsize=\small,frame=single,framesep=3mm]
+Đầu vào: biểu diễn token, trọng số Router, k và trạng thái bộ đệm.
+1. Tính xác suất; chọn top-k theo điểm giảm dần,
+   nếu bằng điểm thì ưu tiên chỉ số expert nhỏ hơn.
+2. Xác định expert đã có bản dùng được và expert còn cần nạp.
+3. Lấy trọng số về RAM; có thể phối hợp nạp dữ liệu
+   với việc tính những expert đã sẵn sàng.
+4. Tính đầu ra từng expert trên CPU, lưu theo vị trí top-k.
+5. Sau khi dùng, xét lưu lại expert theo ngân sách và chính sách.
+6. Cộng các đầu ra theo thứ tự top-k với trọng số định tuyến.
+Đầu ra: vector kết quả của khối MoE cho token đó.
+\end{Verbatim}
+
+Thứ tự hoàn tất giữa các tác vụ có thể khác nhau, nhưng bước cộng cuối dùng thứ tự đã xác định để hạn chế thay đổi do thứ tự cộng số thực FP32. Việc tổ chức tải và tính đồng thời giúp giảm thời gian chờ; mức chồng lấp thực tế phụ thuộc bộ expert, số luồng và băng thông.
+
+\section{Xử lý đầu vào theo lớp và tái sử dụng expert}
+
+Giai đoạn xử lý đầu vào đưa một tập token qua từng lớp mô hình. Sau khi Router xác định expert cho từng token, hệ thống tập hợp các token dùng chung expert. Một expert được lấy ra để phục vụ các token liên quan rồi mới được xét lưu lại, nhờ đó có thể tái sử dụng dữ liệu trọng số trong cùng lớp \cite{moe_tierengine_arch}.
+
+Theo mặc định, các token dùng chung một expert được tính lần lượt, mỗi lần một vector; bản thân hạt nhân CPU vẫn chia các hàng ma trận cho nhiều luồng bằng Rayon. Cách này đọc lại toàn bộ trọng số expert từ bộ nhớ cho mỗi token.
+
+Kernel expert nhiều token khắc phục điểm này. Khi nhiều token cùng được chuyển đến một expert, kernel nhận một khối 2 hoặc 4 vector đầu vào và duyệt mỗi hàng trọng số INT8 một lần, nhân với cả khối. Lượng dữ liệu trọng số phải đọc từ RAM giảm theo số token trong khối, trong khi số phép nhân không đổi. Đối chứng trên trọng số thật cho kernel 2 token và 4 token nhanh hơn lần lượt 1,41 và 1,38 lần so với gọi kernel một token tương ứng; trên mô hình thật với prompt dài 64--128 token, thời gian tính expert khi xử lý đầu vào giảm 29--34\% và TTFT giảm 6--9\% \cite{exp_expert_batch}. Tính năng được bật bằng \texttt{MOE\_EXPERT\_BATCH\_PREFILL} và chỉ ảnh hưởng giai đoạn xử lý đầu vào.
+
+Trước đó, nhóm thử một hướng khác: phân công nhiều token dùng chung expert thành các tác vụ song song. Mục đích là tăng mức song song, nhưng chi phí điều phối luồng, song song lồng nhau và truy cập bộ nhớ có thể làm lợi ích giảm hoặc đảo chiều. Trong thí nghiệm chín cặp trên i5, phương án theo nhóm chậm hơn ở bảy cặp. Phương án này bị loại \cite{exp_prefill_i5}. Hai kết quả cho thấy với expert INT8, giới hạn nằm ở băng thông đọc trọng số chứ không ở số luồng tính: tăng song song không giúp, còn giảm số lần đọc trọng số thì giúp.
+
+\subsection{Nạp trước expert và dự đoán liên tầng}
+
+Engine có hai tình huống nạp trước khác nhau. Khi xử lý đầu vào theo lớp, Router đã xác định các expert cần dùng; hệ thống nạp trước một nhóm expert còn thiếu, giới hạn tối đa $k$ expert. Các expert còn lại được lấy khi đến lượt xử lý. Đây là nạp trước dựa trên nhu cầu đã biết, không phải dự đoán Router \cite{moe_tierengine_arch}.
+
+Khi sinh tiếp từng token, mã nguồn còn có cơ chế dự đoán expert cho lớp kế tiếp. Hệ thống tích lũy số lần các expert ở hai lớp liên tiếp cùng được chọn. Với mỗi expert ứng viên ở lớp sau, điểm dự đoán cộng các số đếm chuyển tiếp từ expert hiện tại và thêm một phần tư bộ đếm mức sử dụng của ứng viên, làm tròn xuống. Đây là điểm kinh nghiệm dựa trên lịch sử, không phải xác suất đã được chuẩn hóa.
+
+Cơ chế này chỉ chọn tối đa hai ứng viên khi lớp hiện tại không có expert còn thiếu cần nạp. Các ứng viên phải có điểm dương và chưa có bản dùng được trong bộ đệm RAM hoặc VRAM của lớp sau. Khi lớp hiện tại có dữ liệu cần nạp, hệ thống ưu tiên việc đó để hạn chế tranh chấp truy xuất. Nếu dự đoán không được dùng ở lớp tiếp theo, vùng đệm được hoàn trả cho cơ chế tái sử dụng.
+
+Dự đoán chỉ ảnh hưởng thời điểm nạp dữ liệu, không thay kết quả chọn top-k của Router. Trong thực tế, điều kiện ``lớp hiện tại không còn expert cần nạp'' hiếm khi xảy ra khi cache nhỏ: trong workload đo, cơ chế này chỉ được kích hoạt ở 15 trên 22.680 lượt xét (0,066\%). Nạp trước khi xử lý đầu vào cũng không cho kết quả nhất quán khi đối chứng bật/tắt (mục 5.7), nên cả hai cơ chế được để tắt trong các cấu hình đo chính.
+
+\section{Tính toán INT8, tái sử dụng vùng đệm và đọc tệp}
+
+Hạt nhân expert nhân trọng số INT8 với đầu vào FP32 rồi áp dụng hệ số tỉ lệ của từng hàng. Hai nhánh cổng và mở rộng tạo biểu diễn trung gian; phép chiếu cuối đưa kết quả về chiều ẩn. Cách tính không cần tạo một bản FP32 đầy đủ của toàn bộ ma trận expert trước mỗi lần dùng \cite{moe_tierengine_arch}.
+
+Các vòng lặp có đường kiểm thử đối chiếu với phép tính tuần tự đơn giản. Kiểm thử này giúp kiểm tra sai số số học của hạt nhân, không thay thế đánh giá chất lượng văn bản sau lượng tử hóa hoặc đo tốc độ toàn hệ thống. Tốc độ còn phụ thuộc thời gian cung cấp trọng số và các phần tính khác.
+
+Sau khi expert rời bộ đệm, hệ thống có thể giữ lại vùng cấp phát chứa trọng số và hệ số tỉ lệ để nạp expert tiếp theo. Tái sử dụng vùng đệm nhằm giảm cấp phát lặp, không có nghĩa mọi yêu cầu đều không cấp phát mới. Vùng đệm còn giữ phải tính vào ngân sách cùng dữ liệu expert đang lưu.
+
+Bộ đọc tệp xác định vị trí tensor rồi đọc theo vị trí đó. Dữ liệu vẫn đi qua hệ điều hành và bộ đệm RAM; đây không phải đường truyền trực tiếp từ NVMe vào VRAM. Lượng dữ liệu ứng dụng đọc và lượng dữ liệu SSD đọc vật lý vì thế cần được phân biệt.
+
+\section{Tính expert INT8 trên GPU}
+
+Khi expert được lưu trong VRAM nhưng tính trên CPU, mỗi lần dùng expert đó phải chép khoảng 6 MiB (OLMoE) từ VRAM về RAM qua PCIe. Thực nghiệm ở mục 5.3 cho thấy lượng chép này lên tới 33--41 GiB mỗi request và làm tầng VRAM thành chi phí ròng. Hướng giải quyết là đưa phép tính đến chỗ dữ liệu: expert nằm trong VRAM được tính ngay trên GPU, và chỉ vector đầu vào ($d$ số FP32, 8 KiB) đi lên, vector đầu ra ($d$ số FP32) đi về.
+
+Engine cài đặt SwiGLU INT8 bằng hai kernel CUDA, biên dịch khi khởi động bằng NVRTC \cite{nvidia_nvrtc} theo kiến trúc của GPU đang có. Cách này không đòi hỏi bộ công cụ CUDA lúc build. Bố cục dữ liệu trên VRAM giữ nguyên như trong tệp: ba ma trận INT8 gate, up, down nối tiếp nhau, theo sau là hệ số tỉ lệ FP32 của từng hàng.
+
+\begin{Verbatim}[samepage=true,breaklines=true,breakanywhere=true,fontsize=\small,frame=single,framesep=3mm]
+Kernel 1 (moe_gate_up): lưới m block, mỗi block 256 luồng, block i xử lý hàng i.
+  1. Mỗi luồng tính tổng riêng của W_g[i,:]·x và W_u[i,:]·x trên các cột
+     cách nhau 256, đọc 4 byte INT8 và 4 số FP32 mỗi lần.
+  2. Cộng dồn trong warp bằng shuffle, rồi giữa các warp qua bộ nhớ chung.
+  3. Luồng 0: g = tổng_g·s_g[i]; u = tổng_u·s_u[i]; a[i] = SiLU(g)·u.
+Kernel 2 (moe_down): lưới d block, block j tính out[j] = (W_d[j,:]·a)·s_d[j].
+Sau hai kernel: chép out (d số FP32) về RAM, cộng có trọng số như expert CPU.
+\end{Verbatim}
+
+\textit{Nguồn: kernel trong mã nguồn \cite{moe_tierengine_arch}.}
+
+Mỗi hàng được giao cho một block để mọi luồng đọc các byte liền kề của cùng hàng, giúp truy cập bộ nhớ toàn cục được gộp. Hệ số tỉ lệ được nhân sau khi cộng xong một hàng, đúng như công thức (2.8), nên kết quả chỉ khác bản CPU ở thứ tự cộng số thực. Kiểm thử trên GPU thật cho sai lệch logits dưới $10^{-4}$ so với đường CPU.
+
+Pool expert trên GPU dùng chính sách lấp đầy: các expert được nạp đầu tiên được chép lên VRAM cho đến khi hết chỗ, sau đó pool giữ cố định. Khi Router chọn một expert, engine kiểm pool trước; nếu có thì tính trên GPU, nếu không thì đi theo đường RAM và CPU như bình thường. Chi phí chép lên VRAM chỉ phát sinh một lần, ở request đầu tiên. Với GTX 1650 4GB, pool chứa 299 trong 1024 expert của OLMoE (29\%); với RTX 5060 Laptop 8GB, pool chứa 960 expert (93,75\%).
+
+\section{Phối hợp bộ đệm inclusive và victim}
+
+Hai chính sách quyết định cách phối hợp RAM và VRAM, trong khi expert vẫn tính trên CPU. Bảng 4.1 mô tả nguyên tắc của từng chính sách.
+
+\begin{table}[htbp]
+\centering
+\caption{So sánh nguyên tắc inclusive và victim}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm} >{\RaggedRight\arraybackslash}p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Khía cạnh} & \textbf{Inclusive đối chứng} & \textbf{Victim đang sử dụng} \\
+\midrule
+Bản sao giữa RAM và VRAM & Cho phép cùng expert có bản ở cả hai tầng & Ưu tiên VRAM cho expert rời bộ đệm RAM \\
+Khi loại expert khỏi RAM & Bản VRAM phụ thuộc trạng thái đã lưu & Thử đưa expert bị loại lên VRAM trước khi tái sử dụng vùng RAM \\
+Khi giữ lại expert trong RAM sau khi lấy từ VRAM & Có thể tiếp tục giữ bản VRAM & Khi GPU bật, bỏ bản VRAM tương ứng sau khi truyền về hoàn tất \\
+Đánh đổi & Bản sao trùng có thể giảm số expert khác nhau giữ được & Có thể giảm đọc tệp nhưng tăng truyền từ VRAM về RAM \\
+Chỉ số cần xem cùng nhau & Số lần nạp, lượng dữ liệu, thời gian và bộ nhớ & Các chỉ số tương tự, không chỉ tỷ lệ tìm thấy expert \\
+\bottomrule
+\end{tabularx}
+
+\textit{Nguồn: hai chính sách trong mã nguồn và thí nghiệm đối chứng \cite{moe_tierengine_arch}, \cite{exp_web_session_i5}.}
+\end{table}
+
+
+
+Giả thuyết của victim là giảm bản sao trùng để hai tầng giữ được nhiều expert khác nhau hơn, từ đó giảm số lần cần đọc tệp. Điều này không bảo đảm mọi loại truyền dữ liệu đều giảm. Một expert trước đây phải đọc tệp có thể trở thành expert lấy từ VRAM, làm số byte truyền về RAM tăng. Chương 5 vì vậy xem đồng thời tổng thời gian sinh, lượng dữ liệu đọc tệp và các đường truyền.
+
+\subsection{Lựa chọn expert bị loại khỏi RAM}
+
+Chính sách phối hợp hai tầng ở trên khác với thuật toán chọn expert bị loại. Trong RAM, mã hiện tại kết hợp mức sử dụng và độ gần của lần truy cập, đồng thời phân biệt nhóm thử thách và nhóm được bảo vệ \cite{moe_tierengine_arch}.
+
+Expert mới vào thuộc nhóm thử thách; expert được dùng lại từ bộ đệm RAM được chuyển sang nhóm bảo vệ. Khi cần chỗ, hệ thống ưu tiên loại trong nhóm thử thách, chọn expert có bộ đếm mức sử dụng thấp nhất; nếu bằng nhau, chọn expert có lần dùng cuối xa hơn. Nếu không còn ứng viên nhóm thử thách, hệ thống áp dụng cách chọn tương tự trên các expert còn lại.
+
+Nhóm bảo vệ được giới hạn ở 70\% ngân sách của lớp; khi vượt, expert có bộ đếm thấp nhất trong nhóm bảo vệ bị hạ về nhóm thử thách. Bộ đếm mức sử dụng (heat) được giảm một nửa sau mỗi 65.536 lượt truy cập của lớp, để lịch sử cũ không chi phối mãi. Do tiêu chí chính là heat, cơ chế này gần với LFU có suy giảm hơn là LRU; thời điểm dùng cuối chỉ là tiêu chí phụ khi hai expert bằng heat.
+
+Nhóm cũng thử thêm một bước lọc khi nạp (admission): expert mới có heat thấp hơn expert sắp bị loại sẽ không được đưa vào cache. Đối chứng trên mô hình thật cho số lần nạp tăng 1,53\% và lượng dữ liệu đọc tăng 2,56\%, tức bước lọc làm cache kém hơn; phương án này đã được gỡ khỏi mã chính \cite{exp_negative}.
+
+\section{Tái sử dụng KV theo tiền tố chung dài nhất}
+
+Gọi $a$ là chuỗi token đã lưu và $b$ là chuỗi đầu vào mới, độ dài tiền tố chung dài nhất là:
+
+\begin{equation}
+\label{eq:4.1}
+r=\max\{j:0\leq j\leq\min(|a|,|b|),\ a_i=b_i\ \forall\ 0\leq i<j\}.
+\end{equation}
+
+Đầu vào đã được kiểm tra không rỗng. Khi có trạng thái phiên phù hợp, số token được tái sử dụng là:
+
+\begin{equation}
+\label{eq:4.2}
+r_{reuse}=\min(r,|b|-1).
+\end{equation}
+
+Giới hạn $|b|-1$ giữ lại ít nhất token cuối để tính điểm dự đoán, vì phiên không lưu điểm dự đoán của mọi vị trí. Nếu không có phiên tương ứng hoặc không có tiền tố chung, số token được tái sử dụng là 0 \cite{moe_tierengine_arch}.
+
+Thuật toán tìm phiên trước khi cấp các mảng KV mới. Nếu dùng lại được tiền tố, hệ thống cắt ngắn độ dài hợp lệ của các mảng khóa và giá trị đến đúng vị trí, rồi tính phần token còn thiếu. Vùng nhớ đã cấp phát có thể vẫn lớn hơn phần dữ liệu hợp lệ. Nếu không dùng lại được, hệ thống cấp bộ KV mới theo giới hạn cấu hình. Cách này hỗ trợ cả đầu vào được sửa hoặc rút ngắn nhưng vẫn giữ phần đầu giống nhau.
+
+Ví dụ, với chuỗi đã lưu là A, B, C, D và đầu vào mới là A, B, X, tiền tố chung dài hai token nên có thể dùng lại KV của A và B. Nếu đầu vào mới là A, B và trùng hoàn toàn phần đầu đã lưu, hệ thống chỉ dùng lại một token để tính lại B và tạo điểm dự đoán mới.
+
+Nội dung hội thoại giống nhau về ý nghĩa chưa bảo đảm chuỗi token giống nhau. Khuôn mẫu hội thoại, ranh giới token và việc mã hóa lại có thể làm thay đổi tiền tố. Bộ i5 ghi nhận dùng lại 11 trong 166 token ở lượt Love; bộ i7 ghi nhận 143 trong 162 token. Đây là các số đo trên hai đầu vào thực tế khác nhau, được phân tích riêng ở chương 5 \cite{exp_phase1_i5}, \cite{exp_phase1_i7}.
+
+\section{Ngân sách bộ nhớ và kiểm tra áp lực RAM}
+
+Kế hoạch bộ nhớ trước khi nạp mô hình được khái quát như sau:
+
+\begin{equation}
+\label{eq:4.3}
+B_{plan}=B_{dense}+B_{cache}+B_{session,reserve}+B_{request,reserve}+B_{overhead}.
+\end{equation}
+
+Các thành phần lần lượt là trọng số chung của mô hình, ngân sách bộ đệm expert, dự phòng phiên, dự phòng yêu cầu và phần phụ trợ. Hệ thống so kế hoạch với giới hạn tiến trình và RAM cần chừa. Các khoản dự phòng là ước lượng cho kiểm tra trước, không phải tổng RSS chính xác \cite{moe_tierengine_arch}.
+
+Khi sinh, hệ thống tiếp tục xét RSS và RAM có thể cấp phát, bao gồm ảnh hưởng của giới hạn cgroup v2 nhìn thấy được. Thống kê RAM chỉ được đọc tại các điểm kiểm tra hỗ trợ, với khoảng cách tối thiểu 25 ms giữa hai lần đọc. Đây là bảo vệ hợp tác: bộ nhớ vẫn có thể tăng giữa các lần kiểm tra.
+
+Công cụ thực nghiệm có bộ giám sát độc lập lấy mẫu định kỳ 250 ms. Hệ thống suy luận có thể từ chối hoặc kết thúc yêu cầu bằng lỗi có kiểm soát; bộ giám sát có thể dừng tiến trình do công cụ thử nghiệm tạo khi vượt ngưỡng cấu hình. Hai lớp này hỗ trợ hạn chế tác động của thiếu bộ nhớ, không chứng minh mọi tình huống vượt RAM đều bị ngăn chặn \cite{exp_ram_guard_i5}.
+
+\section{Kiểm tính đúng trên mô hình lớn hơn RAM}
+
+So logits với Transformers đòi hỏi chạy được mô hình tham chiếu. Ở dạng thông thường, Transformers nạp toàn bộ trọng số; với Qwen3-30B-A3B ở FP32, con số này khoảng 120GB, không khả thi trên máy 16GB. Nhóm xây dựng bộ tham chiếu chạy từng lớp, khai thác việc các lớp decoder được tính tuần tự:
+
+\begin{Verbatim}[samepage=true,breaklines=true,breakanywhere=true,fontsize=\small,frame=single,framesep=3mm]
+Đầu vào: checkpoint, danh sách chuỗi token, chế độ expert (BF16 gốc hoặc INT8).
+1. Tính embedding cho mọi chuỗi; giữ trạng thái ẩn h của từng chuỗi trong RAM.
+2. Với mỗi lớp l = 1..L:
+   a. Dựng lớp decoder của Transformers trên thiết bị meta (chưa cấp bộ nhớ).
+   b. Đọc trọng số của riêng lớp l từ tệp; nếu chế độ INT8 thì giải lượng tử
+      expert từ đúng checkpoint INT8 mà engine dùng; gán vào lớp.
+   c. Chạy lớp trên h của từng chuỗi (FP32, attention eager); cập nhật h.
+   d. Giải phóng lớp và trọng số.
+3. Áp RMSNorm cuối và LM head; ghi logits mọi vị trí ra tệp.
+\end{Verbatim}
+
+\textit{Nguồn: công cụ \texttt{tools/stream\_reference.py} trong kho mã \cite{moe_tierengine_arch}.}
+
+Bộ nhớ đỉnh chỉ còn bằng trọng số một lớp cộng trạng thái ẩn, khoảng 2,8GB với Qwen3 và 2,0GB với OLMoE. Trước khi dùng, công cụ được kiểm trên các mô hình nhỏ ngẫu nhiên của cả hai kiến trúc: logits khớp với Transformers chạy cả mô hình trong sai số $10^{-5}$. Hai chế độ expert cho phép tách hai câu hỏi: so với tham chiếu dùng cùng expert INT8, sai lệch phản ánh lỗi của engine; so với tham chiếu BF16 gốc, sai lệch phản ánh ảnh hưởng của lượng tử hóa \cite{exp_parity}.
+
+\section{Tổng hợp các giải pháp}
+
+Bảng~\ref{tab:solutions} tổng hợp các giải pháp đã triển khai và quyết định sử dụng, căn cứ trên kết quả đối chứng ở chương 5.
+
+\begin{table}[htbp]
+\centering
+\caption{Các giải pháp và quyết định sử dụng}
+\label{tab:solutions}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{4.2cm} >{\RaggedRight\arraybackslash}p{2.6cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Giải pháp} & \textbf{Trạng thái} & \textbf{Căn cứ} \\
+\midrule
+Tái sử dụng KV theo tiền tố chung & Dùng & Prefill giảm 67,56\% trên workload có tiền tố chung, token đầu khớp 5/5 cặp (mục 5.8) \\
+Chính sách victim giữa RAM và VRAM & Dùng khi tầng VRAM bật & Thời gian giảm 13--21\% so với inclusive trong khảo sát nhỏ (mục 5.8) \\
+Dense trên GPU (cuBLAS) & Dùng khi VRAM đủ & TTFT nhanh hơn 1,24--1,62 lần so với CPU (mục 5.3) \\
+Tầng VRAM, expert tính trên CPU & Không dùng & Chậm hơn tắt tầng 8/8 trên cả hai máy (mục 5.3) \\
+Tính expert INT8 trên GPU & Dùng khi VRAM đủ & Nhanh hơn tắt tầng 8/8 trên cả hai máy (mục 5.4--5.5) \\
+Kernel expert nhiều token & Tùy chọn & TTFT nhanh hơn 6--9\% với prompt dài (mục 4.3) \\
+Dense BF16, embedding từ tệp & Dùng cho Qwen3 & Cần thiết để Qwen3 vừa trần 8GB (mục 5.6) \\
+Dispatch song song theo nhóm & Loại & Chậm hơn 7/9 cặp \\
+Admission theo heat & Loại & Lượng đọc tăng 2,56\% \\
+Prefetch khi prefill, dự đoán liên tầng & Tắt & Không nhất quán; hiếm được kích hoạt (mục 5.7) \\
+Tăng số luồng CPU quá 4 & Không dùng & Không nhanh hơn trên cả hai máy (mục 5.7) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các mức cải thiện trong bảng thuộc các thí nghiệm có cấu hình riêng, nên không cộng dồn thành một hệ số tăng tốc chung. Điểm chung của các kết quả là chi phí di chuyển trọng số chi phối hiệu năng: giải pháp có lợi là giải pháp giảm số byte trọng số phải di chuyển (tái sử dụng KV, kernel nhiều token, tính tại VRAM), còn giải pháp chỉ tăng song song hoặc thay đổi thứ tự nạp thì không mang lại lợi ích rõ ràng.
