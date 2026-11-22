@@ -1,6 +1,6 @@
 # [BÁO CÁO KỲ 1] Báo cáo định kỳ lần 1
 
-> Báo cáo lần 2 (đang soạn): [Giới hạn và hướng phát triển](lan2/GIOI_HAN_VA_HUONG_PHAT_TRIEN.md), kèm câu trả lời mẫu cho câu hỏi Qwen3/GPU trên i5.
+> Báo cáo lần 2 (đang soạn): [Khung báo cáo](lan2/KHUNG_BAO_CAO_LAN_2.md), [Giới hạn và hướng phát triển](lan2/GIOI_HAN_VA_HUONG_PHAT_TRIEN.md), kèm câu trả lời mẫu cho câu hỏi Qwen3/GPU trên i5.
 
 - Nội dung: [Báo cáo Markdown](BAO_CAO_DINH_KY_LAN_1.md).
 - Bản dàn trang: [LaTeX](latex/main.tex), [PDF](latex/main.pdf).

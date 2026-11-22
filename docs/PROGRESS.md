@@ -4248,3 +4248,14 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - **Trần RAM:** web chỉ hiện RSS mà không hiện trần, trong khi luận điểm Qwen3 là "chạy dưới trần 9GiB". Ô Host RAM giờ hiện thêm "Trần RAM guard: X GiB (đang dùng Y%)", lấy từ `ram_rss_limit_bytes` mà `/experts` đã trả sẵn. Tooltip ghi rõ đây là kiểm tra chủ động của engine, không phải giới hạn kernel. Đơn vị RSS đổi từ "GB" sang "GiB", vì giá trị tính từ KiB/1048576.
   - **Nhãn eviction:** "LRU Evictions" đổi thành "Evictions (bỏ expert heat thấp nhất)". Chính sách thật là `min_by_key((heat, last_used))`, không phải LRU thuần.
 - Không đổi Rust. Kiểm bằng Chrome headless (CDP, có bắt lỗi JS) với `tools/demo.sh olmoe-gpu` trên i5: hiện "Trần RAM guard: 6.00 GiB (đang dùng 54%)", tức trần mặc định min(RAM/2, 6GiB), RSS 3,24 GiB, không có lỗi JS. Đây là lượt kiểm giao diện, không phải số đo.
+
+## 2026-11-22 — Khung báo cáo định kỳ lần 2
+
+- Thêm `baocao/lan2/KHUNG_BAO_CAO_LAN_2.md`:
+  - mạch trình bày gồm năm bước, từ tầng VRAM làm kho, qua tính expert trên GPU (A1) và trần RAM, đến Qwen3 lớn hơn RAM, parity và nút thắt I/O;
+  - các mục cần sửa trong chương 1–4 của quyển LaTeX;
+  - chương 5 mới với bảng số liệu lấy từ README hồ sơ P1/P2;
+  - danh sách hình cần vẽ.
+- Ghi rõ các dòng lịch sử của EVIDENCE_MATRIX không được trích số vì thiếu hồ sơ đủ provenance: INT4, Gini/hot pinning, KV FP8, `.moekv`, routing EMA.
+- Chương 4 phải sửa mô tả eviction: bỏ expert heat thấp nhất, không phải LRU.
+- Đây là việc tài liệu: không có số đo mới, chưa chuyển sang LaTeX.
