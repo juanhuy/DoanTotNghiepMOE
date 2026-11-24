@@ -1,0 +1,5 @@
+[2m2026-11-24T04:20:10.343857Z[0m [32m INFO[0m [2mmoe_tier_engine::ram[0m[2m:[0m Cooperative RAM guard; limit includes dense/cache/request/allocator RSS, not a kernel cap [3mrss_limit_bytes[0m[2m=[0m9663676416 [3msystem_headroom_bytes[0m[2m=[0m536870912
+[2m2026-11-24T04:20:10.344113Z[0m [32m INFO[0m [2mmoe_tier_engine::olmoe[0m[2m:[0m Token embedding read per token from the checkpoint (not resident in RAM)
+[2m2026-11-24T04:20:14.512039Z[0m [32m INFO[0m [2mmoe_tier_engine::olmoe[0m[2m:[0m CPU selected at load; skipping CUDA probe and GPU allocation
+[2m2026-11-24T04:20:14.512421Z[0m [32m INFO[0m [2mmoe_tier_engine[0m[2m:[0m Chạy chế độ CPU/RAM/SSD
+[2m2026-11-24T04:20:14.512429Z[0m [32m INFO[0m [2mmoe_tier_engine[0m[2m:[0m MoE server ready [3maddress[0m[2m=[0m"127.0.0.1:50065" [3mdirectory[0m[2m=[0m"/home/son/son/DATN/Models/qwen3-30b-a3b-int8" [3mmodel_name[0m[2m=[0m"olmoe"

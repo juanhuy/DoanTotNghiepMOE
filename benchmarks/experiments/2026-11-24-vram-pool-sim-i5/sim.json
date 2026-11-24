@@ -1,0 +1,372 @@
+{
+ "trace": "/dev/fd/63",
+ "layers": 48,
+ "experts": 128,
+ "expert_bytes": 4732928,
+ "cache_mib_per_layer": 64,
+ "calls": 8,
+ "baseline": [
+  {
+   "call": 0,
+   "prefill_tokens": 15,
+   "decode_steps": 63,
+   "hits": 15711,
+   "misses": 14241,
+   "evictions": 13569,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 1,
+   "prefill_tokens": 86,
+   "decode_steps": 63,
+   "hits": 41344,
+   "misses": 15872,
+   "evictions": 15872,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 2,
+   "prefill_tokens": 18,
+   "decode_steps": 63,
+   "hits": 11885,
+   "misses": 19219,
+   "evictions": 19219,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 3,
+   "prefill_tokens": 16,
+   "decode_steps": 63,
+   "hits": 13955,
+   "misses": 16381,
+   "evictions": 16381,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 4,
+   "prefill_tokens": 15,
+   "decode_steps": 63,
+   "hits": 17156,
+   "misses": 12796,
+   "evictions": 12796,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 5,
+   "prefill_tokens": 86,
+   "decode_steps": 63,
+   "hits": 41684,
+   "misses": 15532,
+   "evictions": 15532,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 6,
+   "prefill_tokens": 18,
+   "decode_steps": 63,
+   "hits": 12331,
+   "misses": 18773,
+   "evictions": 18773,
+   "gpu_routes": 0,
+   "uploads": 0
+  },
+  {
+   "call": 7,
+   "prefill_tokens": 16,
+   "decode_steps": 63,
+   "hits": 14683,
+   "misses": 15653,
+   "evictions": 15653,
+   "gpu_routes": 0,
+   "uploads": 0
+  }
+ ],
+ "validation": {
+  "run_dir": "benchmarks/experiments/2026-11-24-vram-pool-sim-i5/run",
+  "mismatches": []
+ },
+ "baseline_ssd_loads": 128467,
+ "scenarios": [
+  {
+   "policy": "a1_first",
+   "slots": 256,
+   "pool_filled": 256,
+   "layers_with_pool": 5,
+   "ssd_loads": 118985,
+   "ssd_loads_vs_baseline": 0.9261911619326364,
+   "gpu_routes": 14259,
+   "uploads": 256,
+   "per_call_misses": [
+    13314,
+    14596,
+    18027,
+    15196,
+    11571,
+    14246,
+    17566,
+    14469
+   ]
+  },
+  {
+   "policy": "a1_quota",
+   "slots": 256,
+   "pool_filled": 256,
+   "layers_with_pool": 48,
+   "ssd_loads": 119288,
+   "ssd_loads_vs_baseline": 0.9285497442923085,
+   "gpu_routes": 16411,
+   "uploads": 256,
+   "per_call_misses": [
+    13405,
+    14516,
+    18107,
+    15287,
+    11625,
+    14143,
+    17608,
+    14597
+   ]
+  },
+  {
+   "policy": "oracle_static",
+   "slots": 256,
+   "pool_filled": 256,
+   "layers_with_pool": 46,
+   "ssd_loads": 108824,
+   "ssd_loads_vs_baseline": 0.8470969198315521,
+   "gpu_routes": 66050,
+   "uploads": 0,
+   "per_call_misses": [
+    11788,
+    13316,
+    16962,
+    13837,
+    10717,
+    13199,
+    15980,
+    13025
+   ]
+  },
+  {
+   "policy": "a1_first",
+   "slots": 512,
+   "pool_filled": 512,
+   "layers_with_pool": 10,
+   "ssd_loads": 110608,
+   "ssd_loads_vs_baseline": 0.860983754582889,
+   "gpu_routes": 29191,
+   "uploads": 512,
+   "per_call_misses": [
+    12562,
+    13499,
+    16930,
+    14079,
+    10604,
+    13208,
+    16386,
+    13340
+   ]
+  },
+  {
+   "policy": "a1_quota",
+   "slots": 512,
+   "pool_filled": 512,
+   "layers_with_pool": 48,
+   "ssd_loads": 110013,
+   "ssd_loads_vs_baseline": 0.856352214965711,
+   "gpu_routes": 32316,
+   "uploads": 512,
+   "per_call_misses": [
+    12646,
+    13413,
+    16763,
+    14113,
+    10519,
+    13025,
+    16149,
+    13385
+   ]
+  },
+  {
+   "policy": "oracle_static",
+   "slots": 512,
+   "pool_filled": 512,
+   "layers_with_pool": 48,
+   "ssd_loads": 90660,
+   "ssd_loads_vs_baseline": 0.705706523854375,
+   "gpu_routes": 104314,
+   "uploads": 0,
+   "per_call_misses": [
+    9702,
+    11080,
+    14795,
+    11165,
+    8789,
+    11001,
+    13717,
+    10411
+   ]
+  },
+  {
+   "policy": "a1_first",
+   "slots": 700,
+   "pool_filled": 700,
+   "layers_with_pool": 14,
+   "ssd_loads": 104398,
+   "ssd_loads_vs_baseline": 0.8126444923599057,
+   "gpu_routes": 39520,
+   "uploads": 700,
+   "per_call_misses": [
+    12024,
+    12667,
+    16096,
+    13280,
+    9846,
+    12383,
+    15545,
+    12557
+   ]
+  },
+  {
+   "policy": "a1_quota",
+   "slots": 700,
+   "pool_filled": 700,
+   "layers_with_pool": 48,
+   "ssd_loads": 103133,
+   "ssd_loads_vs_baseline": 0.8027976056107794,
+   "gpu_routes": 44392,
+   "uploads": 700,
+   "per_call_misses": [
+    11992,
+    12471,
+    15912,
+    13152,
+    9713,
+    12207,
+    15213,
+    12473
+   ]
+  },
+  {
+   "policy": "oracle_static",
+   "slots": 700,
+   "pool_filled": 700,
+   "layers_with_pool": 48,
+   "ssd_loads": 78726,
+   "ssd_loads_vs_baseline": 0.6128110721041201,
+   "gpu_routes": 127476,
+   "uploads": 0,
+   "per_call_misses": [
+    8503,
+    9812,
+    12779,
+    9492,
+    7549,
+    9688,
+    12122,
+    8781
+   ]
+  },
+  {
+   "policy": "a1_first",
+   "slots": 1024,
+   "pool_filled": 1024,
+   "layers_with_pool": 21,
+   "ssd_loads": 94320,
+   "ssd_loads_vs_baseline": 0.7341963305751672,
+   "gpu_routes": 58941,
+   "uploads": 1024,
+   "per_call_misses": [
+    11193,
+    11321,
+    14702,
+    12000,
+    8678,
+    11121,
+    14033,
+    11272
+   ]
+  },
+  {
+   "policy": "a1_quota",
+   "slots": 1024,
+   "pool_filled": 1024,
+   "layers_with_pool": 48,
+   "ssd_loads": 90672,
+   "ssd_loads_vs_baseline": 0.7057999330567383,
+   "gpu_routes": 68984,
+   "uploads": 1024,
+   "per_call_misses": [
+    10907,
+    10740,
+    14353,
+    11583,
+    8289,
+    10482,
+    13489,
+    10829
+   ]
+  },
+  {
+   "policy": "oracle_static",
+   "slots": 1024,
+   "pool_filled": 1024,
+   "layers_with_pool": 48,
+   "ssd_loads": 60994,
+   "ssd_loads_vs_baseline": 0.4747834074120202,
+   "gpu_routes": 161878,
+   "uploads": 0,
+   "per_call_misses": [
+    6648,
+    7680,
+    10286,
+    6952,
+    5669,
+    7456,
+    9865,
+    6438
+   ]
+  }
+ ],
+ "heldout": {
+  "train_calls": "0-1",
+  "test_calls": "2-3",
+  "baseline_ssd_loads": 30563,
+  "ratios": [
+   {
+    "slots": 256,
+    "learned_static": 0.9093020973072016,
+    "oracle_static": 0.835585511893466,
+    "a1_first": 0.9347249942741223,
+    "a1_quota": 0.9358701698131728
+   },
+   {
+    "slots": 512,
+    "learned_static": 0.7843798056473513,
+    "oracle_static": 0.6890030428950038,
+    "a1_first": 0.8758302522658116,
+    "a1_quota": 0.8691882341393188
+   },
+   {
+    "slots": 700,
+    "learned_static": 0.6924712888132709,
+    "oracle_static": 0.5932336485292674,
+    "a1_first": 0.83486568726892,
+    "a1_quota": 0.8195530543467592
+   },
+   {
+    "slots": 1024,
+    "learned_static": 0.542486012498773,
+    "oracle_static": 0.45077381147138695,
+    "a1_first": 0.7636684880410954,
+    "a1_quota": 0.7381474331708274
+   }
+  ]
+ }
+}

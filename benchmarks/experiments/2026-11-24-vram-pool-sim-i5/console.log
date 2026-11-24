@@ -1,0 +1,10 @@
+Artifact: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261124T041839.526156Z-ram-c8435367ef7c4471962ca43c4df1016b
+turn=0 RSS=5696156KiB swap=0KiB
+turn=1 RSS=5717560KiB swap=0KiB
+turn=2 RSS=5764336KiB swap=0KiB
+turn=3 RSS=5812288KiB swap=0KiB
+turn=4 RSS=5841424KiB swap=0KiB
+turn=5 RSS=5841452KiB swap=0KiB
+turn=6 RSS=5870080KiB swap=0KiB
+turn=7 RSS=5902048KiB swap=0KiB
+completed: /home/son/son/DATN/DoanTotNghiepMOE/benchmarks/runs/i5/20261124T041839.526156Z-ram-c8435367ef7c4471962ca43c4df1016b/result.json
