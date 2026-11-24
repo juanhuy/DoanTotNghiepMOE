@@ -4311,3 +4311,41 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - Sau khi sửa: `olmoe_reference` xanh 5/5 lần và `--bin` xanh 3/3 lần trên 1 nhân.
   - Bộ kiểm tra như CI đạt: `check.py --rust --release` và `--http` (20 completed, 10 cancelled).
 - Thay đổi chỉ ở điều phối HTTP/stream, không ảnh hưởng số đo hiệu năng đã có.
+
+## 2026-11-23 — Bỏ hướng expert INT4 (owner quyết định)
+
+- Owner quyết định không làm hướng phát triển "Expert INT4" nêu trong `baocao/lan2/GIOI_HAN_VA_HUONG_PHAT_TRIEN.md` mục 3.3. Ghi vào `docs/PLAN.md` (Trạng thái cần nhớ).
+- Không sửa code; đường INT4 có sẵn giữ nguyên. Bản thảo báo cáo lần 2 đã nộp nên không sửa hồi tố; báo cáo cuối không đưa INT4 vào hướng phát triển ưu tiên.
+- Hướng tiếp theo đang cân nhắc: tách pool expert VRAM khỏi khối dense GPU (Qwen3 trên i5), chưa bắt đầu.
+
+## 2026-11-23 — Bước 1 hướng "VRAM làm kho expert": bộ mô phỏng pool (branch `work/vram-expert-sim`, đang làm)
+
+- **Mục đích:** ước lượng trước khi sửa engine: thêm pool expert trên VRAM (tách khỏi dense GPU) giảm được bao nhiêu lần đọc expert từ SSD cho Qwen3 trên i5. Chỉ đếm lần nạp, không đo thời gian.
+- **Phát hiện khi đọc code:** với A1 (`MOE_GPU_EXPERT_COMPUTE=on`), pool VRAM là `fill_only` + inclusive (`src/gpu.rs` `upload_and_cache`, `src/olmoe.rs` `victim_cache = ... && !gpu_expert_compute_enabled`): pool chứa N expert đầu tiên được đọc và không bao giờ evict. Với pool nhỏ so với tổng expert, các slot dồn vào vài layer đầu.
+- **Công cụ:** `tools/sim_vram_expert_pool.py` phát lại routing từ `MOE_ROUTE_TRACE` (có sẵn), tái hiện chính sách cache RAM của engine và ba chính sách pool: `a1_first` (A1 hiện tại), `a1_quota` (chia đều slot theo layer), `oracle_static` (top-N theo tần suất cả trace, cận trên, nhìn trước tương lai).
+- **Kiểm chứng:** OLMoE i5, CPU, cache 64, mixed, keep-cache, trace bằng `check_ram_stability.py` (`--allow-dirty`, chẩn đoán, không phải số đo hiệu năng). Watchdog dừng sau 3/8 turn vì máy đang thiếu RAM do ứng dụng khác (engine swap ~95MiB); run `benchmarks/runs/i5/20261123T092653.289328Z-ram-14f20732…`. Với pool 0, mô phỏng khớp **tuyệt đối** hits/misses/evictions của engine ở cả 3 turn.
+- Số mô phỏng OLMoE (3 turn, chỉ để kiểm công cụ): SSD loads 18514; pool 256 slot: `a1_first` 0,706, `a1_quota` 0,695, `oracle_static` 0,521 lần baseline.
+- **Giới hạn:** phần pool chưa được đối chiếu với run A1 thật (chỉ phần RAM đã khớp). Chưa có trace Qwen3: cần RAM trống ≥ ~7–8GB.
+- **Tiếp theo:** trace Qwen3 cấu hình `qwen3-ram-cap-v1` (trần 10240), mô phỏng với số slot theo VRAM GTX 1650, rồi quyết định có làm bước 2 không (ngưỡng đề xuất: SSD loads giảm ≥ 25%).
+
+## 2026-11-24 — Kết quả mô phỏng pool VRAM cho Qwen3 i5 (P2, `benchmarks/experiments/2026-11-24-vram-pool-sim-i5`)
+
+- **Trace:** chạy lại `qwen3-ram-cap-v1` trần 10240 với `MOE_ROUTE_TRACE` (người dùng tắt ứng dụng khác, available 12,7GB). 8/8 turn, VmSwap 0. Không xóa page cache trước khi chạy và có ghi trace nên thời gian không dùng để so sánh. Text và cache miss giống hệt hồ sơ 17/11 ở 8/8 turn.
+- **Kiểm chứng:** pool 0 khớp tuyệt đối hits/misses/evictions của engine 8/8 turn. Phần pool chưa đối chiếu run GPU thật.
+- **Kết quả (SSD loads / baseline 128.467):** 700 slot: `a1_first` 0,813, `a1_quota` 0,803, `oracle_static` 0,613 (cận trên). Held-out học turn 0–1, phát lại turn 2–3: `learned_static` 0,692, `a1_first` 0,835.
+- **Kết luận:** chính sách A1 hiện tại (fill-only, N expert đầu tiên) **không đạt** ngưỡng 25% đặt trước; chia đều theo layer không giúp. Chọn expert theo tần suất (học từ prompt khác) **đạt** (giảm 31%). Suy ra, chưa đo: tối đa ~1,24–1,31 lần toàn request nếu I/O tỉ lệ với số lần đọc; thực tế thấp hơn.
+- **Công cụ/kiểm thử:** thêm `--heldout`, `tools/test_sim_vram_expert_pool.py` (5 test) vào `tools/check.py`.
+- **Giới hạn:** 4 prompt tiếng Anh ngắn, held-out 2 turn; đếm lần nạp, không mô hình hóa PCIe/GPU compute/page cache/RAM của CUDA context.
+- **Trạng thái:** chờ owner quyết định bước 2 (tách pool khỏi dense GPU + nạp pool theo hồ sơ tần suất).
+
+## 2026-11-24 — Pool expert VRAM không cần dense GPU: Qwen3 i5 nhanh hơn CPU-only 16/16 (qwen3-vram-pool-ab-v1, P1)
+
+- **Quyết định:** owner giao agent tự quyết; agent chọn làm bước 2 vì mô phỏng P2 cho thấy đặt expert theo tần suất đạt ngưỡng 25%.
+- **Engine (`d67a8c5`):** `MOE_GPU_DENSE=off` (mặc định on) giữ attention/LM head trên CPU, VRAM chỉ chứa pool expert và kernel A1; `MOE_GPU_EXPERT_PLACEMENT=<hồ sơ MOE_USAGE_PATH>` nạp sẵn expert dùng nhiều nhất; status thêm `gpu_dense_enabled`, `gpu_expert_placement_loaded`; harness thêm `--gpu-dense`, `--gpu-expert-placement` (ghi SHA-256). Các hàm dense nhận ma trận GPU dạng `Option`, thiếu thì chạy CPU.
+- **Lỗi phát hiện ở lượt thử và đã sửa:** `reset_cache` (harness gọi trước request đầu) xóa cả placement, pool bị nạp lại kiểu đọc trước giữ trước (85/713 trùng hồ sơ). Sửa: reset giữ placement, chỉ xóa entry khác. Hồi quy trong `gpu_expert_pool_without_dense_gpu_matches_cpu_with_placement` đỏ trước, xanh sau.
+- **Kiểm thử:** test CUDA thật trên GTX 1650 (EXECUTED, không skip); `check.py --rust --release` đạt; `check.py` đạt.
+- **Kiểm trước (revision sạch, worktree):** hồ sơ `long-prefill` tất định (giống từng byte giữa hai lượt); lượt B: pool đúng 713 expert theo hồ sơ 8/8 turn, miss và route GPU khớp tuyệt đối mô phỏng, text khớp CPU 8/8.
+- **A/B (protocol commit `a84171f` trước đo):** ABBA, trần 10240, worktree sạch, 4/4 block 8/8, 0 OOM/swap. `b_faster: true`: total B/A 0,686–0,869, decode 0,665–0,839; decode trung vị 0,94→1,33 tok/s, total 82,2→61,5s, TTFT 11,9→10,9s, payload 74,6→52,1GB, miss 0,724 lần. RSS +~370MiB, VRAM 3,37GB, nạp pool 4,2–4,5s.
+- **Đính chính dự đoán:** protocol ghi cận ~1,2 lần chỉ tính I/O; thực tế cao hơn vì phần tính expert trên CPU cũng giảm (~24s → 15–18s/request). Không tách được đóng góp từng phần.
+- **Giới hạn:** một workload/một ABBA/một máy; placement tĩnh; baseline A hôm nay chậm hơn P1 17/11 nên chỉ so trong ABBA; chưa đo parity logits model thật ở cấu hình B (text khớp 16/16).
+- **Trạng thái:** mặc định code và khuyến nghị vận hành chưa đổi. Việc có thể làm tiếp: giao i7 lặp protocol; kiểm workload khác cho placement; cập nhật mục giới hạn/hướng phát triển của báo cáo cuối (Qwen3 i5 đã dùng được GPU).

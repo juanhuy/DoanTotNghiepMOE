@@ -180,6 +180,10 @@ def parser():
                      help='VRAM expert storage tier when --gpu auto; dense GPU unaffected')
     cli.add_argument('--gpu-expert-compute', choices=('on', 'off'), default='off',
                      help='A1: INT8 SwiGLU on GPU for VRAM-resident experts (needs --gpu auto, tier on)')
+    cli.add_argument('--gpu-dense', choices=('on', 'off'), default='on',
+                     help='off keeps attention/LM head on CPU; VRAM then holds only the expert pool')
+    cli.add_argument('--gpu-expert-placement', type=Path,
+                     help='usage profile (MOE_USAGE_PATH format) whose top experts fill the VRAM pool at load')
     cli.add_argument('--cache', type=common.nonnegative, required=True, help='MiB per layer')
     cli.add_argument('--model-dir', type=Path, default=Path('models/olmoe-1b-7b-int8'))
     cli.add_argument('--threads', type=common.positive, default=8)
@@ -232,6 +236,12 @@ def execute(args):
               'notes': ['bounded stability observation, not causal performance comparison or proof of no leaks',
                         'checkpoint hashing warms OS cache', 'watchdog terminates only its own child server'], 'turns': []}
     record['checkpoint'] = common.checkpoint_manifest(model)
+    env.pop('MOE_GPU_EXPERT_PLACEMENT', None)
+    if args.gpu_expert_placement is not None:
+        placement = common.absolute(args.gpu_expert_placement, ROOT)
+        record['gpu_expert_placement'] = {'path': str(placement),
+                                          'sha256': hashlib.sha256(placement.read_bytes()).hexdigest()}
+        env['MOE_GPU_EXPERT_PLACEMENT'] = str(placement)
     record['hardware_observed'] = common.hardware_observed(ROOT, env)
     record['binary_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
     with zipfile.ZipFile(directory / 'source.zip', 'x', compression=zipfile.ZIP_DEFLATED) as archive:
@@ -249,6 +259,7 @@ def execute(args):
                MOE_MEMORY_TRACE=args.memory_trace, MOE_KV_BUFFER_REUSE=args.kv_buffer_reuse, MOE_GATE_UP_MODE=args.gate_up_mode, MOE_EXPERT_BATCH_PREFILL=args.expert_batch_prefill,
                MOE_GPU_EXPERT_TIER=args.gpu_expert_tier, MOE_PREFILL_PREFETCH=args.prefill_prefetch,
                MOE_GPU_EXPERT_COMPUTE=args.gpu_expert_compute,
+               MOE_GPU_DENSE=args.gpu_dense,
                MOE_DENSE_STORAGE=args.dense_storage, MOE_EMBEDDING_STORAGE=args.embedding_storage,
                MOE_CHAT_THINKING='off',
                MOE_EXPERT_CACHE_POLICY='victim', MOE_RAM_LIMIT_BYTES=str(args.ram_limit_mib * 1024**2),
@@ -327,6 +338,10 @@ def execute(args):
             # Older binaries have no field and no GPU expert compute.
             if status.get('gpu_expert_compute_enabled', False) is not (args.gpu_expert_compute == 'on'):
                 raise RuntimeError('GPU expert compute not active as requested (NVRTC/tier/pool?)')
+            if args.gpu == 'auto' and status.get('gpu_dense_enabled', True) is not (args.gpu_dense == 'on'):
+                raise RuntimeError('GPU dense mode mismatch; rebuild the server')
+            if args.gpu_expert_placement is not None and not status.get('gpu_expert_placement_loaded'):
+                raise RuntimeError('GPU expert placement requested but no expert was preloaded')
             if status.get('gate_up_mode') != args.gate_up_mode:
                 raise RuntimeError('Gate-Up mode mismatch; rebuild the server')
             if status.get('lookahead_enabled') is not (args.lookahead == 'on'):

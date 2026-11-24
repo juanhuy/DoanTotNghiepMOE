@@ -1725,8 +1725,10 @@ impl GpuExpertCache {
 /// toàn bộ các buffer VRAM (layers, lm_head, expert_cache, expert_pool, pinned_upload_buf)
 /// được giải phóng (cuMemFree) TRƯỚC KHI CUDA Primary Context bị giải phóng trong `engine.drop()`.
 pub struct GpuDenseStorage {
+    /// Empty when dense weights stay on the CPU (`MOE_GPU_DENSE=off`): VRAM then holds only the
+    /// expert pool, and every dense call falls through to the CPU path.
     pub layers: Vec<LayerDenseGpu>,
-    pub lm_head: GpuMatrix,
+    pub lm_head: Option<GpuMatrix>,
     pub total_allocated_bytes: usize,
     pub expert_cache: GpuExpertCache,
     /// Pool VRAM pre-allocated — Sub-step 16-A: 1 cuMemAlloc thay cho N×2 lần (16-A)
@@ -1743,6 +1745,11 @@ pub struct GpuDenseStorage {
 }
 
 impl GpuDenseStorage {
+    /// Whether attention projections and the LM head run on cuBLAS.
+    pub fn dense_on_gpu(&self) -> bool {
+        self.lm_head.is_some()
+    }
+
     /// Nạp và thăng hạng expert lên VRAM sử dụng Memory Pool và Pinned Memory buffer (16-A + 16-C)
     pub fn upload_and_cache(
         &mut self,

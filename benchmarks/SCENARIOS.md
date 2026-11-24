@@ -716,3 +716,29 @@ python tools/compare_logits.py ref-bf16 engine --vocab V --json engine-vs-ref-bf
 ```
 
 **Kết quả i5 20/11:** [hồ sơ P1](experiments/2026-11-20-real-model-parity-i5/README.md). Phép so 1 đạt cả hai model: Qwen3 top-1 159/159, max |Δ| 3,0e-4, KL 1,2e-11; OLMoE 186/186, 3,5e-5, 3,7e-12. Phép so 2: top-1 157/159 và 184/186, KL trung bình 0,0089 và 0,0077. Checkpoint OLMoE trùng 2195/2195 tensor. Script tham chiếu được sửa lỗi giữ bộ nhớ sau khi commit protocol (2a50149), không đổi phép tính.
+
+## Pool expert VRAM không cần dense GPU cho Qwen3 trên i5 (qwen3-vram-pool-ab-v1, 24/11)
+
+Câu hỏi: trên i5 (GTX 1650 4GB), khi dense vẫn ở CPU và VRAM chỉ chứa expert (A1 tính trên GPU), pool nạp sẵn theo hồ sơ tần suất có làm Qwen3 nhanh hơn CPU-only dưới cùng trần cgroup 10240MiB không? Cơ sở: mô phỏng P2 [vram-pool-sim](experiments/2026-11-24-vram-pool-sim-i5/README.md) và lượt kiểm trước ở [hồ sơ này](experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md).
+
+- Nguồn: commit `d67a8c5` trở về sau, không đổi `src/`; chạy trong git worktree sạch (`git_dirty` false), binary SHA-256 `bb4f2a9cf13e2bcf…`.
+- Giữ nguyên cấu hình `qwen3-ram-cap-v1` (CPU4, cache 64MiB/layer, dense BF16, mixed × 8, keep-cache, max64, context 512, lookahead off, batch off, trần 10240, guard 9216/stop 9728/headroom 512).
+  - A: `--gpu cpu` (như hồ sơ P1 17/11).
+  - B: `--gpu auto --gpu-expert-tier on --gpu-expert-compute on --gpu-dense off --gpu-expert-placement benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/placement-long-prefill.txt` (SHA-256 `3a5cea5d…`, học bằng `MOE_USAGE_PATH` từ workload `long-prefill`, prompt khác `mixed`). B được phép dùng thêm RAM cho CUDA context/pinned buffer trong cùng trần; đó là chi phí thật của tính năng.
+- Thứ tự A B B A, mỗi block một process mới, checkpoint bị xóa khỏi page cache trước mỗi block. Ghép turn t của A0 với B1 và của A3 với B2, được 16 so sánh. Phân tích bằng `tools/compare_ram_runs.py --protocol qwen3-vram-pool-ab-v1`.
+- Rule (chốt trước đo): tỉ số B/A của total_ms và decode_ms ≤ 1/1,05 ở cả 16 so sánh thì B nhanh hơn; ≥ 1,05 ở cả 16 thì B chậm hơn; còn lại là không nhất quán. Text phải khớp; turn có text hoặc số token khác nhau được báo riêng, không bỏ.
+- Dự đoán ghi trước: số cache miss của B bằng 0,724 lần A (mô phỏng khớp tuyệt đối lượt kiểm trước); nếu I/O tỉ lệ với số lần đọc, nhanh hơn tối đa khoảng 1,2 lần (suy ra, chưa đo).
+- Báo thêm: misses/GPU computes, file GB, peak anon/file/current của scope, VRAM cấp phát, thời gian nạp pool lúc khởi động (không tính vào request). OOM hoặc lỗi guard ở B là kết quả. Mỗi block một lượt, không chạy lại.
+
+```bash
+P=benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/placement-long-prefill.txt
+for mode in A B B A; do
+  if [ $mode = A ]; then gpu="--gpu cpu"; else
+    gpu="--gpu auto --gpu-expert-tier on --gpu-expert-compute on --gpu-dense off --gpu-expert-placement $P"; fi
+  systemd-inhibit --what=idle:sleep --why="qwen3 vram pool ab" \
+    python3 tools/check_ram_stability.py --testbed i5 $gpu --workload mixed --cycles 8 --keep-cache \
+    --cache 64 --context 512 --max-tokens 64 --threads 4 --lookahead off --dense-storage bf16 \
+    --model-dir ../Models/qwen3-30b-a3b-int8 --memory-max-mib 10240 \
+    --ram-limit-mib 9216 --stop-rss-mib 9728 --headroom-mib 512
+done
+```

@@ -17,6 +17,8 @@ Cập nhật 10/11/2026. Đây là kế hoạch duy nhất để tiếp tục c�
 - Prototype OLMoE INT8/API/UI/session/cache/tiering đã có. Expert SwiGLU tính CPU; CUDA/cuBLAS hỗ trợ phần dense và tầng lưu expert VRAM, tùy phần cứng.
 - Kernel nhiều token đã có trong code, CPU/INT8 opt-in MOE_EXPERT_BATCH_PREFILL=on, mặc định off. Prompt ngắn09/11 TTFT không đạt; S2 10/11 prompt64/128token đạt TTFT/prefill≥1,05 ở4/4 so sánh (max1, một ABBA). Không tự bật mặc định; chưa kiểm decode/i7.
 - Nghiệm thu tổng RAM/giai đoạn1 vẫn mở. Allocator giữ vùng đã free là bằng chứng chính của tăng RSS đã điều tra; chưa chứng minh hard cap, plateau dài hạn hoặc hết leak nhỏ. S1 10/11: 24/24request, RSS max3188,6MiB, spread8request cuối14MiB, VmSwap engine0; swap-out hệ thống do process khác vẫn xảy ra.
+- **24/11 pool expert VRAM không cần dense GPU** (`MOE_GPU_DENSE=off`, `MOE_GPU_EXPERT_PLACEMENT`, mặc định code không đổi): Qwen3 trên i5 nhanh hơn CPU-only 16/16 so sánh ABBA ([P1](../benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md)). Chưa chạy i7, chưa đổi khuyến nghị vận hành.
+- **23/11 owner quyết định bỏ hướng expert INT4:** không phát triển, không đo, không đưa vào kế hoạch tiếp theo. Đường INT4 có sẵn trong code giữ nguyên, không mở lại nếu chưa có quyết định mới.
 - Kỳ1 i5/i7 dùng checkpoint khác nhau. Dữ liệu cũ không tự là số đo của revision hiện tại hoặc đối chứng CPU hai máy.
 - Kiểm cuối source hiện có ngày09/11:133Rust tests/profile,8ignored/profile,87Python,7Node; HTTP fixture bật batch30vòng=20completed/10cancelled.434payload checksum. Đây là kết quả cũ có nguồn, không phải kiểm mới ngày10/11.
 

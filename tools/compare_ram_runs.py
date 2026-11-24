@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ABBA comparison of check_ram_stability runs (qwen3-cache-ab-v1).
+"""ABBA comparison of check_ram_stability runs (qwen3-cache-ab-v1, qwen3-vram-pool-ab-v1).
 Blocks: A0 B1 B2 A3. Pair turn t of A0 with B1 and of A3 with B2 -> 2 x turns comparisons.
 Rule (pre-registered): B/A total_ms and decode_ms ratio <= 1/1.05 in every comparison => B faster;
 >= 1.05 in every comparison => B slower; otherwise no consistent difference. Text must match.
@@ -25,7 +25,9 @@ def turn_metrics(record):
         rows.append({'text': turn['response']['text'], 'total_ms': m['total_ms'], 'decode_ms': m['decode_ms'],
                      'ttft_ms': m['time_to_first_token_ms'], 'decode_tps': m['decode_tokens_per_second'],
                      'hits': m['expert_cache_hits'], 'misses': m['expert_cache_misses'],
-                     'file_gb': m['expert_file_bytes_read'] / 1e9, 'io_ms': m['expert_io_ms']})
+                     'file_gb': m['expert_file_bytes_read'] / 1e9, 'io_ms': m['expert_io_ms'],
+                     'gpu_computes': m.get('expert_gpu_computes', 0),
+                     'completion_tokens': turn['response']['usage']['completion_tokens']})
     return rows
 
 
@@ -33,6 +35,7 @@ def main():
     cli = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     cli.add_argument('blocks', nargs=4)
     cli.add_argument('--out', type=Path)
+    cli.add_argument('--protocol', default='qwen3-cache-ab-v1')
     args = cli.parse_args()
     records = [load(p) for p in args.blocks]
     rows = [turn_metrics(r) for r in records]
@@ -44,16 +47,21 @@ def main():
             comparisons.append({'pair': f'A{a}-B{b}', 'turn': t,
                                 'total_ratio': rb['total_ms'] / ra['total_ms'],
                                 'decode_ratio': rb['decode_ms'] / ra['decode_ms'],
-                                'text_match': ra['text'] == rb['text']})
+                                'text_match': ra['text'] == rb['text'],
+                                'misses_ratio': rb['misses'] / ra['misses'],
+                                'b_gpu_computes': rb['gpu_computes']})
     faster = all(c['total_ratio'] <= 1 / 1.05 and c['decode_ratio'] <= 1 / 1.05 for c in comparisons)
     slower = all(c['total_ratio'] >= 1.05 and c['decode_ratio'] >= 1.05 for c in comparisons)
 
     def mode(indices, key, fn=statistics.median):
         return fn([row[key] for i in indices for row in rows[i]])
     summary = {
-        'protocol': 'qwen3-cache-ab-v1',
+        'protocol': args.protocol,
         'blocks': [str(p) for p in args.blocks],
         'cache_mib': [r['config']['cache'] for r in records],
+        'gpu': [{k: r['config'].get(k) for k in ('gpu', 'gpu_dense', 'gpu_expert_tier', 'gpu_expert_compute')}
+                | {'placement_sha256': (r.get('gpu_expert_placement') or {}).get('sha256'),
+                   'git_commit': r.get('git_commit'), 'git_dirty': r.get('git_dirty')} for r in records],
         'b_faster': faster, 'b_slower': slower,
         'text_match_all': all(c['text_match'] for c in comparisons),
         'total_ratio_range': [min(c['total_ratio'] for c in comparisons), max(c['total_ratio'] for c in comparisons)],

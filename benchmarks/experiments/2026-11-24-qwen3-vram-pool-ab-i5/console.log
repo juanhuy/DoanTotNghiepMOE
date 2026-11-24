@@ -1,0 +1,48 @@
+BLOCK A
+Artifact: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T054109.961617Z-ram-ef4c72c5f2c842399e62ff469cdf9eaa
+turn=0 RSS=5695048KiB swap=0KiB
+turn=1 RSS=5721332KiB swap=0KiB
+turn=2 RSS=5773896KiB swap=0KiB
+turn=3 RSS=5853568KiB swap=0KiB
+turn=4 RSS=5880072KiB swap=0KiB
+turn=5 RSS=5881504KiB swap=0KiB
+turn=6 RSS=5886132KiB swap=0KiB
+turn=7 RSS=5918800KiB swap=0KiB
+completed: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T054109.961617Z-ram-ef4c72c5f2c842399e62ff469cdf9eaa/result.json
+EXIT A 0
+BLOCK B
+Artifact: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T055411.209468Z-ram-f22e785076294399b80f9b9b7da7f1ca
+turn=0 RSS=6097988KiB swap=0KiB
+turn=1 RSS=6125960KiB swap=0KiB
+turn=2 RSS=6171604KiB swap=0KiB
+turn=3 RSS=6219276KiB swap=0KiB
+turn=4 RSS=6245820KiB swap=0KiB
+turn=5 RSS=6248316KiB swap=0KiB
+turn=6 RSS=6272452KiB swap=0KiB
+turn=7 RSS=6293676KiB swap=0KiB
+completed: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T055411.209468Z-ram-f22e785076294399b80f9b9b7da7f1ca/result.json
+EXIT B 0
+BLOCK B
+Artifact: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T060501.404177Z-ram-603a3f10532c4fdb855b979dc5b28235
+turn=0 RSS=6094896KiB swap=0KiB
+turn=1 RSS=6122804KiB swap=0KiB
+turn=2 RSS=6168500KiB swap=0KiB
+turn=3 RSS=6216372KiB swap=0KiB
+turn=4 RSS=6243128KiB swap=0KiB
+turn=5 RSS=6244548KiB swap=0KiB
+turn=6 RSS=6265224KiB swap=0KiB
+turn=7 RSS=6289416KiB swap=0KiB
+completed: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T060501.404177Z-ram-603a3f10532c4fdb855b979dc5b28235/result.json
+EXIT B 0
+BLOCK A
+Artifact: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T061453.325326Z-ram-421f50d23e974f5ca166f5eea8eae79f
+turn=0 RSS=5695132KiB swap=0KiB
+turn=1 RSS=5717696KiB swap=0KiB
+turn=2 RSS=5764224KiB swap=0KiB
+turn=3 RSS=5811936KiB swap=0KiB
+turn=4 RSS=5838436KiB swap=0KiB
+turn=5 RSS=5871936KiB swap=0KiB
+turn=6 RSS=5936500KiB swap=0KiB
+turn=7 RSS=5943692KiB swap=0KiB
+completed: /home/son/son/DATN/wt-vram/benchmarks/runs/i5/20261124T061453.325326Z-ram-421f50d23e974f5ca166f5eea8eae79f/result.json
+EXIT A 0
