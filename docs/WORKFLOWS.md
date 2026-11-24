@@ -300,6 +300,20 @@ PY
 6. **Tùy chọn, ghi là khám phá (P3), không thuộc protocol:** một lượt ở trần 10240 với `--gpu auto --gpu-expert-tier on --gpu-expert-compute on`. VRAM 8GB của i7 chứa được dense FP32 (~4,9GB) và một pool expert nhỏ. Ghi lại `gpu_expert_compute_enabled`, `expert_gpu_computes`, pool slot, tok/s và text. So text với lượt CPU, chưa so tốc độ theo kiểu A/B.
 7. Lưu vào `benchmarks/experiments/<ngày>-qwen3-ram-cap-i7/` (`limit-10240/`, `limit-8192/`, tùy chọn `gpu-explore/`, preflight, console, CHECKSUMS.sha256 không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng `work/i7-qwen3`. Báo 8/8, oom_kill, VmSwap, đỉnh scope current/anon/file, TTFT/decode trung vị, tốc độ đọc file, hit rate, text có khớp i5 không. Không đổi cache/threads/ngưỡng.
 
+## Nhiệm vụ i7: pool expert VRAM không cần dense GPU cho Qwen3 (giao 24/11/2026)
+
+**Trạng thái: chưa làm.**
+
+Protocol `qwen3-vram-pool-ab-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#pool-expert-vram-không-cần-dense-gpu-cho-qwen3-trên-i5-qwen3-vram-pool-ab-v1-2411). Kết quả i5 ([P1](../benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md)): B nhanh hơn CPU-only 16/16 so sánh, decode trung vị 0,94→1,33 tok/s, text khớp 16/16, 713 slot trên GTX 1650. i7 chạy độc lập, không suy kết quả i5 sang i7. VRAM 8GB của i7 sẽ cho nhiều slot hơn; đó là đặc điểm của máy, ghi lại, không chỉnh để giống i5. Cần khoảng 1 giờ.
+
+1. `git switch main && git pull`, `git status --short` rỗng (nếu không rỗng, chạy trong `git worktree` sạch như i5 đã làm, ghi lại). Build release, `python3 tools/check.py --rust --release` PASS. Test `gpu_expert_pool_without_dense_gpu_matches_cpu_with_placement` phải in `EXECUTED` (không phải `SKIPPED`): `cargo test --release --lib gpu_expert_pool_without_dense -- --nocapture`.
+2. Checkpoint Qwen3 INT8 dùng lại từ nhiệm vụ 18/11; kiểm lại 0 file lệch bằng lệnh ở bước 4 của [nhiệm vụ Qwen3](#nhiệm-vụ-i7-qwen3-30b-a3b-dưới-trần-ram-giao-18112026).
+3. Dùng **đúng** file hồ sơ trong repo `benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/placement-long-prefill.txt` (SHA-256 `3a5cea5d63f1150b…`), không tự sinh lại.
+4. Cắm sạc, đóng Chrome/Slack, `python3 tools/preflight_memory.py` phải `eligible: true`. Chạy đúng vòng lặp ABBA trong SCENARIOS, đổi `--testbed i7`. Mỗi block một lượt, không chạy lại block.
+5. Phân tích: `python3 tools/compare_ram_runs.py --protocol qwen3-vram-pool-ab-v1 A0 B1 B2 A3 --out summary.json`. Báo `b_faster`/`b_slower`, khoảng total/decode B/A, text, miss B/A, số slot (`gpu.vram_experts_resident`), VRAM cấp phát, VmHWM, đỉnh scope anon/file, thời gian nạp pool (trong `server.log`).
+6. **Tùy chọn, P3, không thuộc protocol:** một lượt B với `--gpu-dense on` (dense F32 + pool nhỏ hơn) để xem trên i7 nên đặt dense hay expert lên VRAM. Ghi là khám phá, không kết luận A/B.
+7. Lưu vào `benchmarks/experiments/<ngày>-qwen3-vram-pool-ab-i7/` (block0-A-cpu, block1-B-pool, block2-B-pool, block3-A-cpu, summary.json, console, preflight, CHECKSUMS.sha256 không gồm README, README ngắn), thêm mục lục và PROGRESS trên branch riêng `work/i7-vram-pool`. Không đổi cache/threads/ngưỡng/hồ sơ.
+
 ## Phân công sau khi nhận chung source
 
 Cập nhật10/11: i5 làm S6 theo PLAN; i7 làm [nhiệm vụ tầng VRAM expert](#nhiệm-vụ-i7-tầng-vram-expert-bậttắt-giao-10112026) trước, sau đó mới tới các việc dưới đây. Ghi chú cũ: i5 tiếp tục câu hỏi expertcache/I/O theoPLAN. i7 trước mắt xác nhậnchecks/fixture và đánh giá độc lập công cụ chất lượng/routing; chưa tự đổi cùng moduleolmoe.rs mà không thống nhất owner. Nhánh nghiên cứuINT4/FP8 dùng baseline/corpus/config riêng, không gộp số liệu khảo sát cũ thành kết luận bản merge đã nhanh hơn.

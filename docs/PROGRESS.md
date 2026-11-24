@@ -4349,3 +4349,8 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - **Đính chính dự đoán:** protocol ghi cận ~1,2 lần chỉ tính I/O; thực tế cao hơn vì phần tính expert trên CPU cũng giảm (~24s → 15–18s/request). Không tách được đóng góp từng phần.
 - **Giới hạn:** một workload/một ABBA/một máy; placement tĩnh; baseline A hôm nay chậm hơn P1 17/11 nên chỉ so trong ABBA; chưa đo parity logits model thật ở cấu hình B (text khớp 16/16).
 - **Trạng thái:** mặc định code và khuyến nghị vận hành chưa đổi. Việc có thể làm tiếp: giao i7 lặp protocol; kiểm workload khác cho placement; cập nhật mục giới hạn/hướng phát triển của báo cáo cuối (Qwen3 i5 đã dùng được GPU).
+
+## 2026-11-24 — Merge pool expert VRAM vào main; giao i7 qwen3-vram-pool-ab-v1
+
+- Merge `work/vram-expert-sim` vào `main` local (`d85ca51`, chưa push). Owner đồng ý danh sách việc tiếp theo.
+- Thêm nhiệm vụ i7 vào WORKFLOWS và AGENTS: lặp ABBA `qwen3-vram-pool-ab-v1` với `--testbed i7`, dùng đúng file hồ sơ của i5; tùy chọn P3 thử `--gpu-dense on`.
