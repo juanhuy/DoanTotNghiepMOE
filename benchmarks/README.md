@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 24/11 (pool expert VRAM cho Qwen3 i5): [P1 — pool expert VRAM không cần dense GPU, ABBA](experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md). Dense ở CPU, 713 expert nạp sẵn theo hồ sơ tần suất (học từ workload khác) trên GTX 1650, A1 tính trên GPU. So với CPU-only cùng trần 10240MiB: nhanh hơn 16/16 so sánh (total B/A 0,686–0,869, decode 0,665–0,839), decode trung vị 0,94→1,33 tok/s, text khớp 16/16, cache miss 0,724 lần đúng mô phỏng; RSS +~370MiB.
+
 Kết quả mới 24/11 (mô phỏng pool VRAM Qwen3 i5): [P2 — pool expert VRAM tách khỏi dense, mô phỏng](experiments/2026-11-24-vram-pool-sim-i5/README.md). Phát lại routing thật của Qwen3 (mô phỏng khớp tuyệt đối hit/miss/eviction engine 8/8 turn). Ở 700 slot (ước tính GTX 1650), chính sách A1 hiện tại (fill-only, N expert đầu tiên) chỉ giảm 19% lần đọc SSD; chọn expert theo tần suất học từ prompt khác giảm 31% (held-out 2 turn), cận trên 39–41%. Đếm lần nạp, không đo thời gian.
 
 Kết quả mới 20/11 (parity model thật i5): [P1 — parity logits trên model thật](experiments/2026-11-20-real-model-parity-i5/README.md). Bản tham chiếu Transformers chạy từng layer (RAM đỉnh ~2,8GB cho model 57GB). Engine khớp Transformers với expert INT8 trên cả hai checkpoint thật: Qwen3-30B-A3B top-1 159/159, max |Δlogit| 3,0e-4; OLMoE-1B-7B 186/186, 3,5e-5; KL ~1e-11. So với BF16 gốc, INT8 giữ top-1 98,7% / 98,9% (chỉ đổi ở vị trí gần hòa), KL trung bình ~0,008. Checkpoint OLMoE i5 trùng 2195/2195 tensor với `OLMoE-1B-7B-0924-Instruct@7f1c97f` convert lại.

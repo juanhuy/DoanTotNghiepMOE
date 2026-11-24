@@ -4337,3 +4337,15 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - **Công cụ/kiểm thử:** thêm `--heldout`, `tools/test_sim_vram_expert_pool.py` (5 test) vào `tools/check.py`.
 - **Giới hạn:** 4 prompt tiếng Anh ngắn, held-out 2 turn; đếm lần nạp, không mô hình hóa PCIe/GPU compute/page cache/RAM của CUDA context.
 - **Trạng thái:** chờ owner quyết định bước 2 (tách pool khỏi dense GPU + nạp pool theo hồ sơ tần suất).
+
+## 2026-11-24 — Pool expert VRAM không cần dense GPU: Qwen3 i5 nhanh hơn CPU-only 16/16 (qwen3-vram-pool-ab-v1, P1)
+
+- **Quyết định:** owner giao agent tự quyết; agent chọn làm bước 2 vì mô phỏng P2 cho thấy đặt expert theo tần suất đạt ngưỡng 25%.
+- **Engine (`d67a8c5`):** `MOE_GPU_DENSE=off` (mặc định on) giữ attention/LM head trên CPU, VRAM chỉ chứa pool expert và kernel A1; `MOE_GPU_EXPERT_PLACEMENT=<hồ sơ MOE_USAGE_PATH>` nạp sẵn expert dùng nhiều nhất; status thêm `gpu_dense_enabled`, `gpu_expert_placement_loaded`; harness thêm `--gpu-dense`, `--gpu-expert-placement` (ghi SHA-256). Các hàm dense nhận ma trận GPU dạng `Option`, thiếu thì chạy CPU.
+- **Lỗi phát hiện ở lượt thử và đã sửa:** `reset_cache` (harness gọi trước request đầu) xóa cả placement, pool bị nạp lại kiểu đọc trước giữ trước (85/713 trùng hồ sơ). Sửa: reset giữ placement, chỉ xóa entry khác. Hồi quy trong `gpu_expert_pool_without_dense_gpu_matches_cpu_with_placement` đỏ trước, xanh sau.
+- **Kiểm thử:** test CUDA thật trên GTX 1650 (EXECUTED, không skip); `check.py --rust --release` đạt; `check.py` đạt.
+- **Kiểm trước (revision sạch, worktree):** hồ sơ `long-prefill` tất định (giống từng byte giữa hai lượt); lượt B: pool đúng 713 expert theo hồ sơ 8/8 turn, miss và route GPU khớp tuyệt đối mô phỏng, text khớp CPU 8/8.
+- **A/B (protocol commit `a84171f` trước đo):** ABBA, trần 10240, worktree sạch, 4/4 block 8/8, 0 OOM/swap. `b_faster: true`: total B/A 0,686–0,869, decode 0,665–0,839; decode trung vị 0,94→1,33 tok/s, total 82,2→61,5s, TTFT 11,9→10,9s, payload 74,6→52,1GB, miss 0,724 lần. RSS +~370MiB, VRAM 3,37GB, nạp pool 4,2–4,5s.
+- **Đính chính dự đoán:** protocol ghi cận ~1,2 lần chỉ tính I/O; thực tế cao hơn vì phần tính expert trên CPU cũng giảm (~24s → 15–18s/request). Không tách được đóng góp từng phần.
+- **Giới hạn:** một workload/một ABBA/một máy; placement tĩnh; baseline A hôm nay chậm hơn P1 17/11 nên chỉ so trong ABBA; chưa đo parity logits model thật ở cấu hình B (text khớp 16/16).
+- **Trạng thái:** mặc định code và khuyến nghị vận hành chưa đổi. Việc có thể làm tiếp: giao i7 lặp protocol; kiểm workload khác cho placement; cập nhật mục giới hạn/hướng phát triển của báo cáo cuối (Qwen3 i5 đã dùng được GPU).
