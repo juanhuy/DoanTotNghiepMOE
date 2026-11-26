@@ -44,15 +44,16 @@ Protocol [`qwen3-vram-pool-ab-v1`](../../SCENARIOS.md#pool-expert-vram-không-c�
 ## Khám phá tùy chọn (P3, không thuộc A/B): `--gpu-dense on`
 
 - Chạy thêm 1 lượt B với `--gpu-dense on` ([explore-dense-on](explore-dense-on/), [explore-console.log](explore-console.log)) dưới cùng trần `10240MiB` và cùng placement profile.
-- Nạp toàn bộ dense BF16 (`4.643 MB` VRAM) + pool L1 nhỏ hơn (**565 slot**, nạp pool `2,14s`, tổng VRAM cấp phát `7.542.642.688` byte = 7,02 GiB). Hoàn thành 8/8 turn, `oom_kill: 0`, `VmSwap: 0`, text khớp A0 `8/8`. `VmHWM: 5,92 GiB`, peak scope `10240,0 / 5828,2 / 7021,6 MiB`.
+- Nạp toàn bộ dense lên VRAM (`allocated_mb=4643`, tức 4643MiB; checkpoint lưu BF16 nhưng engine nới sang F32 khi đưa lên GPU) + pool L1 nhỏ hơn (**565 slot**, nạp pool `2,14s`, tổng VRAM cấp phát `7.542.642.688` byte = 7,02 GiB). Hoàn thành 8/8 turn, `oom_kill: 0`, `VmSwap: 0`, text khớp A0 `8/8`. `VmHWM: 5,92 GiB`, peak scope `10240,0 / 5828,2 / 7021,6 MiB`.
 - Kết quả lượt khám phá:
   - Decode trung vị **2,44 tok/s** (tổng 16→8 turn, TTFT trung vị **8,06s**, total/request trung vị **35,42s**).
   - Payload expert đọc/request trung vị **57,00GB**, hit rate `48,2%–79,2%`, GPU computes `3.575–10.007` route (~0,39s GPU), thời gian expert CPU trung vị `12,64s`.
 
 ## Diễn giải
 
-- Trên i7 (RTX 5060 Laptop 8GB), giữ dense trên CPU và dành toàn bộ 7,03 GiB VRAM cho **1594 expert slot** (25,9% trong tổng 6144 expert của Qwen3-30B-A3B) giúp cắt 62,3% số lần cache miss SSD (từ 128.467 xuống 48.474), giảm payload đọc từ 74,60 GB xuống 25,37 GB, đưa decode trung vị từ **1,92 lên 3,74 tok/s** (~1,95×) và thời gian mỗi request từ **47,1s xuống 25,8s** (gấp đôi tốc độ ở tất cả 16 cặp so sánh).
-- Qua lượt khám phá `--gpu-dense on` (P3), dù dense (4,64 GB) vẫn vừa cùng 565 expert trong VRAM 8GB, tốc độ chỉ đạt **2,44 tok/s** (chậm hơn rõ rệt so với **3,74 tok/s** khi `--gpu-dense off`). Lý do: trên Qwen3-30B-A3B dưới trần RAM, nút thắt thống trị là đọc expert INT8 từ SSD; nhường ~4,6 GB VRAM từ dense sang lưu thêm ~1029 hot expert mang lại hiệu quả giảm I/O và tăng thông lượng lớn hơn nhiều so với offload dense cuBLAS.
+- Trên i7 (RTX 5060 Laptop 8GB), giữ dense trên CPU và dành toàn bộ 7,03 GiB VRAM cho **1594 expert slot** (25,9% trong tổng 6144 expert của Qwen3-30B-A3B) giúp cắt 62,3% số lần cache miss SSD (từ 128.467 xuống 48.474), giảm payload đọc từ 74,60 GB xuống 25,37 GB, đưa decode trung vị từ **1,92 lên 3,74 tok/s** (~1,95×) và thời gian mỗi request từ **47,1s xuống 25,8s** (total nhanh hơn 1,66–2,00 lần ở 16 cặp so sánh; *đính chính khi review 26/11: bản đầu ghi "gấp đôi ở tất cả 16 cặp"*).
+- Ngoài giảm I/O, phần tính expert trên CPU cũng giảm từ ~13,1s xuống ~5,2s mỗi request (trung vị theo block) vì các route trên pool chạy trên GPU (~0,66s); A/B này không tách được đóng góp từng phần (*bổ sung khi review 26/11*).
+- Qua lượt khám phá `--gpu-dense on` (P3), dù dense (4643MiB F32) cùng 565 expert trong VRAM 8GB, tốc độ chỉ đạt **2,44 tok/s** (chậm hơn rõ rệt so với **3,74 tok/s** khi `--gpu-dense off`). Giải thích khả dĩ (chưa kiểm bằng A/B): với Qwen3-30B-A3B dưới trần RAM, đọc expert từ SSD là nút thắt chính, nên dành ~4,6GiB VRAM cho thêm ~1029 expert (payload 57,0 → 25,4GB) có lợi hơn đưa dense lên cuBLAS. Đây là một lượt đơn lẻ so với hai block B ở thời điểm khác, chỉ dùng làm chiều tham khảo (*đính chính khi review 26/11*).
 
 ## Giới hạn
 

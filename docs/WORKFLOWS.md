@@ -302,7 +302,7 @@ PY
 
 ## Nhiệm vụ i7: pool expert VRAM không cần dense GPU cho Qwen3 (giao 24/11/2026)
 
-**Trạng thái: chưa làm.**
+**Trạng thái: xong 26/11, review và merge 26/11** ([P1 i7](../benchmarks/experiments/2026-11-26-qwen3-vram-pool-ab-i7/README.md)): 16/16 nhanh hơn CPU-only, 1594 slot, decode 1,92→3,74 tok/s, text khớp i5.
 
 Protocol `qwen3-vram-pool-ab-v1` trong [SCENARIOS](../benchmarks/SCENARIOS.md#pool-expert-vram-không-cần-dense-gpu-cho-qwen3-trên-i5-qwen3-vram-pool-ab-v1-2411). Kết quả i5 ([P1](../benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md)): B nhanh hơn CPU-only 16/16 so sánh, decode trung vị 0,94→1,33 tok/s, text khớp 16/16, 713 slot trên GTX 1650. i7 chạy độc lập, không suy kết quả i5 sang i7. VRAM 8GB của i7 sẽ cho nhiều slot hơn; đó là đặc điểm của máy, ghi lại, không chỉnh để giống i5. Cần khoảng 1 giờ.
 

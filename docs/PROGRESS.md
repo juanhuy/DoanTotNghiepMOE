@@ -4355,7 +4355,7 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - Merge `work/vram-expert-sim` vào `main` local (`d85ca51`, chưa push). Owner đồng ý danh sách việc tiếp theo.
 - Thêm nhiệm vụ i7 vào WORKFLOWS và AGENTS: lặp ABBA `qwen3-vram-pool-ab-v1` với `--testbed i7`, dùng đúng file hồ sơ của i5; tùy chọn P3 thử `--gpu-dense on`.
 
-## 2026-11-26 — Pool expert VRAM không cần dense GPU trên i7: Qwen3 nhanh hơn CPU-only 16/16 (~1,95× decode), vượt trội `--gpu-dense on` (work/i7-vram-pool, P1)
+## 2026-11-26 — Pool expert VRAM không cần dense GPU trên i7: Qwen3 nhanh hơn CPU-only 16/16 (~1,95× decode), so với `--gpu-dense on` xem đính chính review bên dưới (work/i7-vram-pool, P1)
 
 - Thực hiện nhiệm vụ i7 giao 24/11 trên nhánh `work/i7-vram-pool` (từ `main` `ee990c3`, `git_dirty: false`, binary `966fb8659f882fc7…`).
 - **Kiểm thử & chuẩn bị:**
@@ -4369,7 +4369,15 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
   - Decode trung vị 1,92 → **3,74 tok/s**; total/request 47,12 → **25,78s**; TTFT 9,16 → **6,25s**; payload SSD/request 74,60 → **25,37GB**; tổng miss giảm 62,3% (tỉ số 0,377, từng cặp 0,309–0,483); hit rate 38,2%–72,9% → 70,1%–90,6%.
   - Pool VRAM (B): **1594 slot**, VRAM cấp phát 7.544.287.232 byte (7,03 GiB), nạp pool khởi động 5,91s (B1) và 7,18s (B2); `VmHWM` sau request cuối 5,90 GiB (so với 5,62–5,63 GiB của A); peak scope current/anon/file: A0 `9237,0/5753,2/3551,6`, B1 `9981,4/5807,8/5089,3`, B2 `10240,0/5806,3/7671,0`, A3 `10240,0/5743,9/6531,2` MiB.
 - **Lượt khám phá tùy chọn `--gpu-dense on` (P3, không thuộc A/B):**
-  - Dense BF16 (4643 MB VRAM) + pool **565 slot** (7,02 GiB VRAM, nạp 2,14s), 8/8 turn, 0 OOM/swap, text khớp 8/8: decode trung vị **2,44 tok/s**, total **35,42s**, TTFT **8,06s**, payload **57,00GB**, `VmHWM` 5,92 GiB.
+  - Dense F32 trên GPU (4643 MiB, nguồn BF16) + pool **565 slot** (tổng VRAM 7,02 GiB, nạp 2,14s), 8/8 turn, 0 OOM/swap, text khớp 8/8: decode trung vị **2,44 tok/s**, total **35,42s**, TTFT **8,06s**, payload **57,00GB**, `VmHWM` 5,92 GiB.
   - Kết luận trên i7: nhường toàn bộ VRAM 8GB cho pool expert (`--gpu-dense off`, 1594 slot, 3,74 tok/s) hiệu quả hơn rõ rệt so với đặt dense lên VRAM (`--gpu-dense on`, 565 slot, 2,44 tok/s) vì I/O SSD là nút thắt chính.
 - Đóng gói `benchmarks/experiments/2026-11-26-qwen3-vram-pool-ab-i7/` (69 file trong `CHECKSUMS.sha256`), cập nhật `benchmarks/README.md` (39 hồ sơ).
 
+
+## 2026-11-26 — Review và merge `work/i7-vram-pool` (owner)
+
+- **Kiểm từ raw:** `sha256sum -c` 69/69 OK; 5/5 lượt `git_dirty` false ở `ee990c3`, `--testbed i7`, cấu hình đúng protocol (cache 64, CPU4, trần 10240); checkpoint trong `result.json` giống i5 478/478; placement SHA-256 `3a5cea5d…` ở cả B và lượt khám phá.
+- **Tính lại bằng `tools/compare_ram_runs.py`:** `b_faster`, khoảng total 0,500–0,604 / decode 0,466–0,590, trung vị decode 1,92→3,74 tok/s, total 47,1→25,8s, TTFT 9,16→6,25s, payload 74,6→25,4GB khớp `summary.json` của i7. Miss tổng 0,377, hit 38,2–72,9% → 70,1–90,6%, 1594 slot, VRAM 7.544.287.232 byte, nạp 5,9/7,2s, VmHWM 5,62–5,63 → 5,90GiB đều khớp. Text B trên i7 giống hệt text B trên i5 8/8.
+- **Đính chính chữ (raw giữ nguyên):** dense ở lượt `--gpu-dense on` là F32 trên GPU (nguồn BF16), 4643MiB, không phải "BF16 4643MB"; "gấp đôi tốc độ ở tất cả 16 cặp" sai, đúng là total nhanh hơn 1,66–2,00 lần; bổ sung phần tính expert trên CPU cũng giảm 13,1→5,2s; so sánh với `--gpu-dense on` là lượt P3 đơn lẻ, chỉ giữ chiều tham khảo, bỏ khẳng định nhân quả.
+- **Hai máy (không so tốc độ tuyệt đối giữa máy):** cùng protocol/checkpoint/hồ sơ, B nhanh hơn CPU-only 16/16 ở cả i5 (713 slot, decode ×1,42) và i7 (1594 slot, ×1,95). VRAM lớn hơn chứa nhiều expert hơn, miss giảm 28% (i5) và 62% (i7).
+- Nhiệm vụ i7 24/11: **xong**. Cập nhật AGENTS/WORKFLOWS.
