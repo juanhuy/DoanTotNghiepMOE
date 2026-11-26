@@ -1,5 +1,7 @@
 # Giới hạn và hướng phát triển (bản thảo cho báo cáo định kỳ lần 2)
 
+> **Đính chính 26/11:** mục 1 và mục 4 dưới đây đã lỗi thời. Qwen3 trên i5 nay dùng được GPU nhờ để dense ở CPU và dành VRAM cho expert đặt theo tần suất: nhanh hơn CPU 16/16 trên i5 và i7 ([P1 i5](../../benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md), [P1 i7](../../benchmarks/experiments/2026-11-26-qwen3-vram-pool-ab-i7/README.md)). Hướng INT4 (mục 3.3) đã bỏ ngày 23/11. Câu trả lời bảo vệ cập nhật nằm trong `study/14-thuc-hanh-va-bao-ve.md` và báo cáo cuối mục 5.7.
+
 Mục này dùng cho chương kết luận của báo cáo lần 2 và để chuẩn bị trả lời hội đồng. Mỗi nhận định ghi rõ là **đo** (có hồ sơ) hay **suy ra** (tính từ số đo, chưa thực nghiệm riêng). Số liệu lấy từ hồ sơ đã khóa checksum; không trích số khác ngày hoặc khác máy để so tốc độ.
 
 ## 1. Qwen3-30B-A3B chưa dùng được GPU trên i5

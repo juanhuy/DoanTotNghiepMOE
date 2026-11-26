@@ -1451,7 +1451,9 @@
         const cacheMib = Math.round(data.cache_bytes_per_layer / 1048576);
         const perLayer = data.expert_payload_bytes ? Math.floor(data.cache_bytes_per_layer / data.expert_payload_bytes) : '?';
         const gpu = data.gpu_mode_at_load === 'cpu' ? 'CPU only'
-          : (data.gpu_expert_compute_enabled ? 'GPU dense + expert' : (data.gpu?.enabled ? 'GPU dense' : 'GPU off'));
+          : (data.gpu_expert_compute_enabled
+              ? (data.gpu_dense_enabled === false ? 'GPU expert pool (dense CPU)' : 'GPU dense + expert')
+              : (data.gpu?.enabled ? 'GPU dense' : 'GPU off'));
         config.textContent = `CONFIG: cache ${cacheMib}MiB/layer (~${perLayer}/${data.num_experts} expert) · ${gpu} · dense ${(data.dense_storage || 'f32').toUpperCase()}`;
       }
       const ramDetail = document.querySelector('#topo-ram-detail');
@@ -1708,7 +1710,9 @@
       const gpu = data.gpu;
       if (gpu && gpu.enabled) {
         btnHeaderGpuToggle.classList.remove('off');
-        headerGpuLabel.textContent = data.gpu_expert_compute_enabled ? 'GPU: dense + expert' : 'GPU cuBLAS: ON';
+        headerGpuLabel.textContent = data.gpu_expert_compute_enabled
+          ? (data.gpu_dense_enabled === false ? 'GPU: expert (dense CPU)' : 'GPU: dense + expert')
+          : 'GPU cuBLAS: ON';
         if (gpuDeviceText && gpu.device_name) {
           gpuDeviceText.textContent = `${gpu.device_name} (${(gpu.total_vram_bytes / 1073741824).toFixed(1)} GB)`;
         }

@@ -7,7 +7,8 @@
 #   olmoe-gpu   OLMoE-1B-7B, GPU auto + VRAM expert tier + GPU expert compute (README demo config)
 #   olmoe-cpu   OLMoE-1B-7B, CPU only
 #   qwen3       Qwen3-30B-A3B, CPU only, dense BF16, RAM guard 9GiB (measured on i5)
-#   qwen3-gpu   Qwen3-30B-A3B, GPU auto + tier + compute (needs ~5GB free VRAM, e.g. i7 RTX 5060 8GB)
+#   qwen3-gpu   Qwen3-30B-A3B, dense on CPU, VRAM holds only experts preloaded from the measured
+#               frequency profile, computed on GPU (qwen3-vram-pool-ab-v1: GTX 1650 4GB and RTX 5060 8GB)
 #
 # Model directories: --model-dir, or OLMOE_DIR / QWEN3_DIR, else the first existing default.
 # The engine's RAM guard refuses a configuration that does not fit (e.g. a too large cache):
@@ -35,7 +36,8 @@ done
 root=$(cd "$(dirname "$0")/.." && pwd)
 first_dir() { for d in "$@"; do [[ -n $d && -f $d/config.json ]] && { echo "$d"; return; }; done; }
 
-unset MOE_GPU_MODE MOE_GPU_EXPERT_TIER MOE_GPU_EXPERT_COMPUTE MOE_DENSE_STORAGE MOE_RAM_LIMIT_BYTES
+unset MOE_GPU_MODE MOE_GPU_EXPERT_TIER MOE_GPU_EXPERT_COMPUTE MOE_DENSE_STORAGE MOE_RAM_LIMIT_BYTES \
+  MOE_GPU_DENSE MOE_GPU_EXPERT_PLACEMENT
 case $preset in
   olmoe-gpu|olmoe-cpu)
     model_dir=${model_dir:-$(first_dir "${OLMOE_DIR:-}" "$root/models/olmoe-1b-7b-int8" "$root/../Models/olmoe_merged")}
@@ -48,7 +50,8 @@ case $preset in
     model_dir=${model_dir:-$(first_dir "${QWEN3_DIR:-}" "$root/models/qwen3-30b-a3b-int8" "$root/../Models/qwen3-30b-a3b-int8")}
     export MOE_DENSE_STORAGE=bf16 MOE_RAM_LIMIT_BYTES=$(( ${ram_limit_mib:-9216} * 1048576 ))
     if [[ $preset == qwen3-gpu ]]; then
-      export MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on
+      export MOE_GPU_MODE=auto MOE_GPU_EXPERT_TIER=on MOE_GPU_EXPERT_COMPUTE=on MOE_GPU_DENSE=off \
+        MOE_GPU_EXPERT_PLACEMENT=$root/benchmarks/experiments/2026-11-24-qwen3-vram-pool-ab-i5/placement-long-prefill.txt
     else
       export MOE_GPU_MODE=cpu
     fi ;;
@@ -63,7 +66,7 @@ binary=$root/target/release/moe-tier-engine
 
 export MOE_MODEL_DIR=$model_dir MOE_BIND=127.0.0.1:$port MOE_CONTEXT=$context
 export MOE_CACHE_BYTES_PER_LAYER=$(( cache * 1048576 ))
-echo "preset=$preset model=$model_dir cache=${cache}MiB/layer context=$context gpu=${MOE_GPU_MODE}" \
+echo "preset=$preset model=$model_dir cache=${cache}MiB/layer context=$context gpu=${MOE_GPU_MODE} dense_gpu=${MOE_GPU_DENSE:-on}" \
      "ram_limit=${MOE_RAM_LIMIT_BYTES:-default}" >&2
 echo "open http://127.0.0.1:$port  (Ctrl+C to stop)" >&2
 exec "$binary"

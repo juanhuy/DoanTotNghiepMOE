@@ -1,5 +1,7 @@
 # [BÁO CÁO KỲ 1] Báo cáo định kỳ lần 1
 
+> **Báo cáo cuối trước phản biện (26/11):** cùng quyển LaTeX ở `lan2/latex/`, cập nhật mục 5.7 (pool expert VRAM cho Qwen3, mô phỏng + ABBA i5/i7), chương 3–4, kết luận và hướng phát triển (bỏ INT4); bìa không còn dòng "báo cáo định kỳ". Bản nộp lần 2 giữ trong git ở commit `3995e00`.
+>
 > Báo cáo lần 2: [LaTeX](lan2/latex/main.tex), [PDF](lan2/latex/main.pdf), biên dịch bằng `bash baocao/lan2/latex/compile.sh` (cần bốn tệp font Times như bản lần 1, đặt trong `baocao/lan2/latex/fonts/`). [Khung báo cáo](lan2/KHUNG_BAO_CAO_LAN_2.md), [Giới hạn và hướng phát triển](lan2/GIOI_HAN_VA_HUONG_PHAT_TRIEN.md), kèm câu trả lời mẫu cho câu hỏi Qwen3/GPU trên i5.
 
 - Nội dung: [Báo cáo Markdown](BAO_CAO_DINH_KY_LAN_1.md).

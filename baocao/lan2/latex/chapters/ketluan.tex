@@ -12,18 +12,19 @@ Về hiệu năng, kết quả chính của đề tài là cách dùng VRAM. Khi
 
 Về mục tiêu chạy mô hình lớn trên phần cứng hạn chế, Qwen3-30B-A3B với checkpoint 30GB chạy hết workload dưới trần RAM 8GB trên máy 16GB, chỉ dùng khoảng 5,7 GiB bộ nhớ ẩn danh, không dừng do thiếu bộ nhớ và không dùng swap. Kết quả lặp lại trên máy thứ hai với văn bản sinh ra giống hệt.
 
-Các đối chứng cũng chỉ ra những hướng không có lợi: nạp trước expert, lọc expert khi nạp vào cache, tăng số luồng CPU và chia lại cùng một trần RAM cho cache expert. Điểm chung của các kết quả dương là giảm số byte trọng số phải di chuyển; các thay đổi chỉ tăng song song hoặc đổi thứ tự nạp không mang lại lợi ích rõ ràng.
+Khi phần dense của Qwen3 không vừa GPU 4GB, engine để dense ở CPU và dành toàn bộ VRAM cho expert. Mô phỏng trên routing thật cho thấy cách chọn expert quyết định lợi ích: lấp đầy theo thứ tự nạp chỉ giảm 19\% số lần đọc SSD, còn đặt theo tần suất học từ workload khác giảm 28--31\%. Với cách đặt theo tần suất, Qwen3 nhanh hơn chạy CPU ở cả 16 so sánh trên mỗi máy, tốc độ sinh tăng khoảng 1,42 lần trên GTX 1650 4GB và 1,95 lần trên RTX 5060 8GB, văn bản sinh ra không đổi.
+
+Các đối chứng cũng chỉ ra những hướng không có lợi: nạp trước expert, lọc expert khi nạp vào cache, tăng số luồng CPU và chia lại cùng một trần RAM cho cache expert. Điểm chung của các kết quả dương là giảm số byte trọng số phải di chuyển, hoặc thêm bộ nhớ nhanh ngoài phần RAM đang dùng; các thay đổi chỉ tăng song song, đổi thứ tự nạp hay chia lại cùng một ngân sách RAM không mang lại lợi ích rõ ràng.
 
 \section*{Hạn chế}
 
-Tốc độ sinh của Qwen3 trên CPU còn thấp, khoảng 1,1--1,8 tok/s, vì 58--76\% thời gian là chờ đọc expert từ SSD. Trên máy có GPU 4GB, Qwen3 chưa dùng được GPU vì phần dense ở FP32 không vừa VRAM. Tính đúng mới được kiểm ở mức logits trên tập chuỗi ngắn; đề tài chưa đánh giá chất lượng trên benchmark tác vụ chuẩn. Mỗi đối chứng hiệu năng là một lượt ABBA trên một workload, và RAM guard là kiểm tra chủ động của engine chứ không phải giới hạn cứng của hệ điều hành; giới hạn cứng trong thực nghiệm do cgroup đảm nhận.
+Tốc độ sinh của Qwen3 còn thấp, khoảng 1--4 tok/s tùy máy và cấu hình, vì phần lớn thời gian vẫn là chờ đọc expert từ SSD: với GPU 4GB, gần 90\% số expert vẫn nằm ngoài VRAM. Cách đặt expert lên VRAM là tĩnh, học từ một workload; hiệu quả với workload khác xa (ngôn ngữ khác, mã nguồn) chưa được kiểm. Tính đúng mới được kiểm ở mức logits trên tập chuỗi ngắn; đề tài chưa đánh giá chất lượng trên benchmark tác vụ chuẩn. Mỗi đối chứng hiệu năng là một lượt ABBA trên một workload, và RAM guard là kiểm tra chủ động của engine chứ không phải giới hạn cứng của hệ điều hành; giới hạn cứng trong thực nghiệm do cgroup đảm nhận.
 
 \section*{Hướng phát triển}
 
 \begin{enumerate}
-\item \textbf{Dùng VRAM làm kho expert khi dense không vừa.} Kernel GPU nhận đầu vào và trả kết quả qua RAM, nên có thể tách pool expert khỏi khối dense trên GPU. Với Qwen3 trên GPU 4GB, pool chứa được khoảng 11\% số expert, là bộ nhớ cộng thêm chứ không lấy chỗ của page cache.
-\item \textbf{Dense 16-bit trên GPU.} Giữ dense ở BF16 hoặc FP16 trên VRAM (khoảng 2,5GB thay vì 4,9GB) bằng phép nhân nửa độ chính xác, để cả dense và một phần expert của Qwen3 vừa 4GB.
-\item \textbf{Expert INT4.} Giảm một nửa số byte mỗi lần đọc expert, tác động trực tiếp vào nút thắt I/O. Cần đánh giá độ lệch logits theo cùng phương pháp ở mục 5.2 trước khi đo tốc độ.
+\item \textbf{Đặt expert lên VRAM theo workload.} Hồ sơ tần suất hiện được học một lần và giữ cố định. Có thể cập nhật hồ sơ theo thời gian, hoặc học riêng cho từng loại workload, rồi đánh giá bằng cùng công cụ mô phỏng trước khi đo, vì mô phỏng đã khớp tuyệt đối với engine.
+\item \textbf{Chia VRAM giữa dense và expert.} Trên GPU 8GB, lượt khám phá cho thấy dành VRAM cho expert có lợi hơn cho dense với Qwen3. Cần một đối chứng có kiểm soát và một quy tắc chọn cách chia theo kích thước mô hình và dung lượng VRAM.
 \item \textbf{Định tuyến có tính đến cache.} Khi Router gần hòa giữa expert đã có trong bộ nhớ và expert phải đọc từ SSD, ưu tiên expert đã có. Hướng này thay đổi đầu ra của mô hình, nên phải đánh giá chất lượng cùng với tốc độ.
 \item \textbf{Đánh giá chất lượng có hệ thống} trên benchmark tác vụ chuẩn và perplexity, để định lượng ảnh hưởng của INT8 và các hướng trên.
 \end{enumerate}

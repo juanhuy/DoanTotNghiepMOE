@@ -130,6 +130,20 @@ Vì tiêu chí chính là heat (tần suất có suy giảm), chính sách này 
 - **Inclusive** (đối chứng): expert vừa đọc từ tệp cũng được đưa lên VRAM.
 - **Victim** (mặc định khi bật tầng VRAM mà expert tính trên CPU): expert bị loại khỏi RAM được đẩy lên VRAM; khi lấy lại từ VRAM về RAM thì bản VRAM bị xóa. Hai tầng không trùng nhau.
 - **Lấp đầy** (fill-only, khi tính expert trên GPU): VRAM nhận các expert được nạp đầu tiên đến khi đầy rồi giữ cố định, không trao đổi với RAM. Đơn giản, không tốn băng thông PCIe sau lần lấp đầu. Nhược điểm: pool không thích nghi; với OLMoE trên i5, pool dồn vào các lớp đầu (vì lớp đầu được nạp trước).
+- **Đặt theo hồ sơ tần suất** (`MOE_GPU_EXPERT_PLACEMENT`, thêm 24/11): một lượt chạy CPU ghi số lần router chọn mỗi cặp (lớp, expert) bằng `MOE_USAGE_PATH`; lúc khởi động engine nạp các cặp có số lần lớn nhất lên VRAM tới khi đầy, rồi giữ cố định như lấp đầy. Lệnh reset chỉ xóa các expert không thuộc hồ sơ.
+
+### 6.2b Bài học từ Qwen3: chọn đúng expert quan trọng hơn chọn đúng lớp
+
+Với Qwen3, VRAM 4 GB chỉ chứa 713 trong 6 144 expert (11,6%). Mô phỏng trên routing thật (`tools/sim_vram_expert_pool.py`, khớp tuyệt đối bộ đếm hit/miss/eviction của engine) cho số lần đọc SSD còn lại, so với không có pool:
+
+| Cách đặt (≈700 slot) | Đọc SSD còn lại |
+| --- | ---: |
+| Lấp đầy theo thứ tự nạp | 0,81 |
+| Lấp đầy, chia đều slot cho các lớp | 0,80 |
+| Theo tần suất học từ prompt khác | 0,69 |
+| Theo tần suất của chính chuỗi đo (cận trên, nhìn trước tương lai) | 0,61 |
+
+Chia đều theo lớp gần như không giúp: vấn đề là chọn sai expert, không phải dồn sai lớp. Đây chính là bài học của Belady (mục 3): biết trước tương lai thì tốt nhất; hồ sơ tần suất là cách xấp xỉ tương lai bằng quá khứ. Đo thật (ABBA, trần 10 GiB) với hồ sơ học từ workload khác: Qwen3 nhanh hơn CPU 16/16 trên cả i5 (tốc độ sinh 0,94 → 1,33 tok/s) và i7 (1 594 slot, 1,92 → 3,74 tok/s). Hồ sơ: `benchmarks/experiments/2026-11-24-vram-pool-sim-i5`, `2026-11-24-qwen3-vram-pool-ab-i5`, `2026-11-26-qwen3-vram-pool-ab-i7`.
 
 ### 6.3 Prefetch trong engine
 

@@ -55,7 +55,7 @@ Cách ổn định nhất là dùng script có sẵn cấu hình. Đổi model h
 tools/demo.sh olmoe-gpu            # OLMoE, GPU dense + expert (cấu hình khuyến nghị)
 tools/demo.sh olmoe-cpu            # OLMoE, CPU-only
 tools/demo.sh qwen3                # Qwen3-30B-A3B, CPU-only, dense BF16, guard 9GiB
-tools/demo.sh qwen3-gpu            # Qwen3 có GPU (cần ~5GB VRAM trống, ví dụ i7; GPU 4GB tự quay về CPU)
+tools/demo.sh qwen3-gpu            # Qwen3: dense CPU, VRAM chỉ chứa expert nạp sẵn theo hồ sơ tần suất (chạy được trên GPU 4GB và 8GB)
 tools/demo.sh qwen3 --cache 96     # đổi cache MiB/layer; guard từ chối nạp nếu không vừa RAM
 ```
 

@@ -120,6 +120,14 @@ S = 1 / ((1 − f) + f/s)  ≤  1 / (1 − f)
 
 Áp dụng trước khi bỏ công tối ưu. Với Qwen3 trên i5, attention và LM head chiếm 12–23% thời gian request. Đưa toàn bộ phần đó lên GPU, kể cả nhanh vô hạn, request chỉ nhanh hơn tối đa `1/(1−0,12) ≈ 1,13` đến `1/(1−0,23) ≈ 1,30` lần. Trong khi đó, chờ đọc expert chiếm 58–76%. Kết luận rõ ràng: muốn nhanh hơn phải giảm I/O, không phải tăng tốc dense.
 
+### 6b. Ước lượng trước bằng mô phỏng, rồi mới đo
+
+Ví dụ thật của đồ án (24/11): trước khi sửa engine để dành VRAM cho expert của Qwen3, nhóm viết công cụ phát lại routing thật qua đúng chính sách cache của engine. Ba điều làm mô phỏng đáng tin và hữu ích:
+
+1. **Kiểm công cụ trước khi dùng:** khi không có pool, số hit/miss/eviction mô phỏng phải **trùng tuyệt đối** bộ đếm engine (đã trùng 8/8 request). Không trùng thì không dùng.
+2. **Đặt ngưỡng dừng trước:** giảm dưới 25% số lần đọc thì bỏ hướng này. Chính sách cũ chỉ giảm 19% (không đạt); đặt theo tần suất giảm 31% (đạt).
+3. **Ghi dự đoán vào protocol trước khi đo:** dự đoán số miss 0,724 lần (đo được đúng 0,724) và cận tăng tốc khoảng 1,2 lần (chỉ tính I/O). Đo được 1,42 lần: dự đoán thấp vì bỏ qua việc phần tính expert trên CPU cũng giảm. Ghi lại chỗ dự đoán sai là một phần của bằng chứng, không phải điều cần giấu.
+
 ## 7. Profiling
 
 Đo tổng thời gian cho biết **có** chậm hay không; profiling cho biết **chậm ở đâu**.
@@ -154,7 +162,7 @@ S = 1 / ((1 − f) + f/s)  ≤  1 / (1 − f)
 Một request gồm: đọc expert 60%, tính expert 25%, attention 10%, khác 5%.
 
 1. Tăng tốc tính expert 4 lần (GPU): request nhanh hơn bao nhiêu?
-2. Giảm byte đọc một nửa (INT4) làm phần đọc nhanh gấp 2: nhanh hơn bao nhiêu?
+2. Giảm một nửa thời gian đọc (ví dụ bộ nhớ nhanh giữ được các expert hay dùng): nhanh hơn bao nhiêu?
 3. Làm cả hai?
 
 <details><summary>Lời giải</summary>

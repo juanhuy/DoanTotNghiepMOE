@@ -4381,3 +4381,14 @@ Mục tiêu đã chốt: chạy Qwen3-30B-A3B INT8 (~31GB, gấp đôi RAM máy)
 - **Đính chính chữ (raw giữ nguyên):** dense ở lượt `--gpu-dense on` là F32 trên GPU (nguồn BF16), 4643MiB, không phải "BF16 4643MB"; "gấp đôi tốc độ ở tất cả 16 cặp" sai, đúng là total nhanh hơn 1,66–2,00 lần; bổ sung phần tính expert trên CPU cũng giảm 13,1→5,2s; so sánh với `--gpu-dense on` là lượt P3 đơn lẻ, chỉ giữ chiều tham khảo, bỏ khẳng định nhân quả.
 - **Hai máy (không so tốc độ tuyệt đối giữa máy):** cùng protocol/checkpoint/hồ sơ, B nhanh hơn CPU-only 16/16 ở cả i5 (713 slot, decode ×1,42) và i7 (1594 slot, ×1,95). VRAM lớn hơn chứa nhiều expert hơn, miss giảm 28% (i5) và 62% (i7).
 - Nhiệm vụ i7 24/11: **xong**. Cập nhật AGENTS/WORKFLOWS.
+
+## 2026-11-26 — Báo cáo cuối trước phản biện và tài liệu study đồng bộ với kết quả pool VRAM
+
+- **Báo cáo** (`baocao/lan2/latex/`, cập nhật tại chỗ; bản nộp lần 2 giữ ở `3995e00`):
+  - Mục mới 5.7 "Pool expert VRAM cho Qwen3 khi dense không vừa VRAM": mô phỏng (bảng 5.7), ABBA i5/i7 (bảng 5.8, hình 5.2), nguồn mức tăng, chi phí, baseline A i5 khác ngày, lượt khám phá dense-on i7 ghi là P3. Các mục sau đánh số lại 5.8–5.11; tham chiếu viết tay ở chương 1, 4, 5 sửa theo.
+  - Chương 1 thêm câu hỏi nghiên cứu; chương 3 thêm chế độ `MOE_GPU_DENSE=off`/placement và preset demo; chương 4 thêm cách đặt theo hồ sơ tần suất và dòng trong bảng tổng hợp giải pháp; mở đầu, kết luận, hạn chế, hướng phát triển (bỏ INT4 và hướng đã làm; thêm đặt expert theo workload, chia VRAM dense/expert); 3 mục tài liệu tham khảo; bìa bỏ dòng "BÁO CÁO ĐỊNH KỲ LẦN 2" theo chú thích `metadata.tex`.
+  - Mọi số mới đối chiếu lại với raw (TTFT i7 B 6,245s → 6,2; VmHWM ghi theo khoảng; chi phí RAM 280–370MiB). `compile.sh`: 64 trang, không có tham chiếu/trích dẫn chưa xác định; đã xem ảnh trang 55–56.
+- **Đồng bộ mã/giao diện với cấu hình đã đo:** preset `tools/demo.sh qwen3-gpu` đổi sang dense CPU + placement trong repo (trước đây đưa dense lên GPU, không chạy trên GPU 4GB); chạy thử trên i5: 713 expert nạp trong 4,2s, server sẵn sàng. Web hiển thị "GPU: expert (dense CPU)" khi `gpu_dense_enabled` false. README gốc cập nhật dòng preset.
+- **Study:** module 09 (đặt theo tần suất, mục 6.2b bảng mô phỏng), 10 (vì sao không đưa dense lên GPU), 11 (mục 6b mô phỏng trước khi đo, dự đoán sai được ghi lại), 13 (bài 6 thành đối chiếu với commit thật), 14 (câu hỏi bảo vệ Qwen3/GPU, INT4, 11% expert, hồ sơ tần suất, 16 so sánh, kế hoạch ba tháng, câu không nên nói), 07 (ghi quyết định bỏ INT4).
+- `baocao/README.md` trỏ tới bản cuối; `GIOI_HAN_VA_HUONG_PHAT_TRIEN.md` thêm đính chính, không sửa nội dung cũ.
+- **Kiểm tra:** `tools/check.py` và `--web` đạt. File `baocao/lan2/latex/BKDK2_C51.pdf` và `study/1.html` của người dùng không đụng tới.

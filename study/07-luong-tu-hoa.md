@@ -76,7 +76,7 @@ Với chỉ 16 mức, lượng tử hóa theo hàng thường quá thô; cần t
 - **AWQ:** nhân trọng số của các kênh "quan trọng" (kênh có activation lớn) với hệ số trước khi lượng tử hóa, để bảo vệ chúng.
 - **GGUF k-quants (llama.cpp):** lượng tử hóa hai cấp, hệ số tỉ lệ của nhóm con cũng được lượng tử hóa.
 
-Engine có đường INT4 (`dot_i4_f32` trong `src/int8_expert.rs`, `tools/prepare_olmoe_int4.py`). Tuy nhiên đồ án **không** dùng INT4 làm cấu hình chính và không trích số liệu tốc độ hay chất lượng của nó, vì chưa có lượt đo đủ nguồn gốc. INT4 được nêu là hướng phát triển: nó giảm một nửa lượng byte phải đọc, đánh thẳng vào nút thắt I/O của Qwen3, nhưng phải đánh giá chất lượng trước.
+Engine có đường INT4 (`dot_i4_f32` trong `src/int8_expert.rs`, `tools/prepare_olmoe_int4.py`). Ngày 23/11 nhóm quyết định không phát triển tiếp INT4. Đồ án **không** dùng INT4 làm cấu hình chính và không trích số liệu tốc độ hay chất lượng của nó, vì chưa có lượt đo đủ nguồn gốc. INT4 được nêu là hướng phát triển: nó giảm một nửa lượng byte phải đọc, đánh thẳng vào nút thắt I/O của Qwen3, nhưng phải đánh giá chất lượng trước.
 
 ## 5. Chỉ lượng tử hóa trọng số hay cả activation
 

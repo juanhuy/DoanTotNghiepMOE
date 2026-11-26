@@ -153,12 +153,13 @@ CPU & \texttt{MOE\_GPU\_MODE=cpu} & Không dùng GPU. Dense và expert tính tr�
 Dense trên GPU & \texttt{MOE\_GPU\_MODE=auto} & Dense FP32 trên VRAM, tính bằng cuBLAS. Expert tính trên CPU. \\
 Tầng VRAM expert & thêm \texttt{MOE\_GPU\_EXPERT\_TIER=on} & VRAM giữ thêm expert theo chính sách victim. Expert lấy từ VRAM được chép về RAM để CPU tính. \\
 Tính expert trên GPU & thêm \texttt{MOE\_GPU\_EXPERT\_COMPUTE=on} & Pool VRAM lấp đầy một lần rồi giữ cố định. Expert có trong pool được tính bằng kernel trên GPU; expert ngoài pool vẫn đi qua RAM và CPU. \\
+VRAM chỉ chứa expert & thêm \texttt{MOE\_GPU\_DENSE=off} và \texttt{MOE\_GPU\_EXPERT\_PLACEMENT} & Dense ở lại CPU. Toàn bộ VRAM dành cho pool expert, nạp sẵn lúc khởi động theo hồ sơ tần suất (mục 4.5). Expert trong pool tính trên GPU như dòng trên. \\
 \bottomrule
 \end{tabularx}
 \par\smallskip{\footnotesize\RaggedRight Nguồn: cấu hình GPU trong mã nguồn \cite{moe_tierengine_arch}.\par}
 \end{table}
 
-Khi khởi động, engine ước lượng dung lượng VRAM cần cho dense và vùng tính tạm. Nếu không đủ, engine tự chuyển sang chế độ CPU và ghi lý do vào nhật ký thay vì dừng với lỗi. Trường hợp này xảy ra với Qwen3 trên GTX 1650 4GB, vì dense FP32 của Qwen3 cần khoảng 4,9GB VRAM. Pool expert trên GPU được cấp phát trong cùng khối với dense, nên khi dense không lên GPU được thì pool cũng không được bật.
+Khi khởi động, engine ước lượng dung lượng VRAM cần cho dense và vùng tính tạm. Nếu không đủ, engine tự chuyển sang chế độ CPU và ghi lý do vào nhật ký thay vì dừng với lỗi. Trường hợp này xảy ra với Qwen3 trên GTX 1650 4GB, vì dense FP32 của Qwen3 cần khoảng 4,9GB VRAM. Ở bản đầu, pool expert được cấp phát trong cùng khối với dense, nên khi dense không lên GPU được thì pool cũng không được bật. Bản hiện tại tách hai quyết định này: với \texttt{MOE\_GPU\_DENSE=off}, engine bỏ qua việc đưa dense lên GPU nhưng vẫn tạo pool expert và kernel tính expert, mọi phép chiếu dense đi theo đường CPU. Kernel expert nhận đầu vào và trả kết quả qua RAM (mục 4.5), nên không cần dense nằm trên GPU. Mặc định vẫn đưa dense lên GPU như trước; chế độ mới phải bật tường minh.
 
 \section{Quản lý bộ nhớ và session}
 
@@ -262,4 +263,4 @@ Trang thứ nhất (Hình~\ref{fig:web_console}) hiển thị dòng cấu hình 
 
 Trang thứ hai (Hình~\ref{fig:web_matrix}) vẽ ma trận $L\times E$ expert, tự điều chỉnh theo mô hình đang chạy. Chế độ vị trí vật lý tô từng ô theo nơi expert đang nằm, lấy từ danh sách expert của pool VRAM và cache RAM. Chế độ routing tô các expert được Router chọn trong request gần nhất, tính bằng hiệu bộ đếm sử dụng trước và sau request. Chế độ tần suất hiển thị mức sử dụng tích lũy. Trên ma trận của OLMoE ở chế độ tính expert trên GPU có thể thấy pool VRAM tập trung ở các lớp đầu, đúng với chính sách lấp đầy theo thứ tự nạp.
 
-Để chạy các cấu hình một cách ổn định, kho mã có script \texttt{tools/demo.sh} với bốn cấu hình đặt sẵn: OLMoE trên GPU, OLMoE trên CPU, Qwen3 trên CPU và Qwen3 với GPU. Script luôn build lại binary trước khi chạy, vì giao diện được nhúng vào binary.
+Để chạy các cấu hình một cách ổn định, kho mã có script \texttt{tools/demo.sh} với bốn cấu hình đặt sẵn: OLMoE trên GPU, OLMoE trên CPU, Qwen3 trên CPU và Qwen3 với GPU. Cấu hình Qwen3 với GPU dùng đúng cấu hình đã đo ở mục 5.7: dense trên CPU, VRAM chỉ chứa expert nạp sẵn theo hồ sơ tần suất, chạy được trên cả GPU 4GB và 8GB. Giao diện ghi rõ chế độ này là ``GPU: expert (dense CPU). Script luôn build lại binary trước khi chạy, vì giao diện được nhúng vào binary.

@@ -161,7 +161,7 @@ Lưu key và value của các token đã xử lý để không tính lại mỗi
 
 **Hỏi: Sao không dùng INT4 cho nhanh hơn?**
 
-Đồ án hướng tới chạy mô hình lớn **với chất lượng giữ được** trên phần cứng hạn chế. INT8 đã được kiểm gần như không đổi đầu ra. INT4 giảm một nửa số byte phải đọc nên sẽ đánh thẳng vào nút thắt I/O, nhưng cần đánh giá chất lượng theo cùng phương pháp trước khi dùng. Engine có đường INT4 nhưng đồ án chưa có lượt đo đủ nguồn gốc nên không công bố số liệu; INT4 được nêu là hướng phát triển.
+Đồ án hướng tới chạy mô hình lớn **với chất lượng giữ được** trên phần cứng hạn chế. INT8 đã được kiểm gần như không đổi đầu ra (top-1 trùng 98,7–98,9% so với BF16). INT4 giảm một nửa số byte phải đọc, nhưng làm lệch đầu ra nhiều hơn hẳn và cần một vòng đánh giá chất lượng riêng. Nhóm chọn giữ INT8 và giảm I/O bằng cách khác không đổi đầu ra: dành VRAM cho các expert hay dùng (văn bản khớp 16/16 với CPU). Engine có đường INT4 nhưng đồ án không công bố số liệu INT4.
 
 ### B.3 Thiết kế
 
@@ -169,9 +169,17 @@ Lưu key và value của các token đã xử lý để không tính lại mỗi
 
 Cache mỗi lớp có ngân sách byte (mặc định 64 MiB). Mỗi expert có bộ đếm heat (số lần được router chọn, giảm một nửa sau mỗi 65 536 lượt). Cache chia hai đoạn: thử thách (expert mới vào) và bảo vệ (expert đã được dùng lại khi đang trong cache, tối đa 70% ngân sách). Khi cần chỗ, loại expert có heat thấp nhất trong đoạn thử thách, hòa thì loại expert dùng lâu nhất. Đây là biến thể của SLRU với tiêu chí LFU có suy giảm, không phải LRU thuần.
 
-**Hỏi: Vì sao Qwen3 không dùng GPU trên máy i5?**
+**Hỏi: Dense của Qwen3 không vừa GPU 4 GB, vậy Qwen3 có dùng được GPU trên máy i5 không?**
 
-Do dung lượng VRAM. Engine đưa dense lên GPU ở dạng FP32 để dùng cuBLAS; dense của Qwen3 ở FP32 khoảng 4,9 GB, lớn hơn GTX 1650 4 GB, nên engine tự chuyển sang CPU. Kể cả đưa được, lợi ích nhỏ: đo được 58–76% thời gian là chờ đọc expert, phần dense chỉ 12–23%, nên theo Amdahl tối đa nhanh khoảng 1,13–1,30 lần. Khi VRAM đủ thì GPU có ích: OLMoE trên chính máy i5 nhanh hơn 8/8 khi tính expert trên GPU; Qwen3 trên RTX 5060 8 GB đạt 2,22 tok/s so với 1,53 tok/s chạy CPU (lượt khám phá, không phải đối chứng).
+Có. Dense FP32 của Qwen3 khoảng 4,9 GB, lớn hơn GTX 1650 4 GB, nên với cấu hình mặc định engine chạy CPU. Nhưng đưa dense lên GPU vốn lợi ích nhỏ: dense chỉ chiếm 12–23% thời gian, theo Amdahl tối đa 1,13–1,30 lần; còn chờ đọc expert chiếm 58–76%. Vì vậy nhóm làm ngược lại: để dense ở CPU (`MOE_GPU_DENSE=off`) và dành hết VRAM cho 713 expert hay dùng nhất (học từ một workload khác), tính chúng bằng kernel GPU. Đối chứng ABBA dưới trần 10 GiB: nhanh hơn CPU ở 16/16 so sánh, tốc độ sinh 0,94 → 1,33 tok/s, văn bản khớp 16/16. Máy i7 lặp lại độc lập: 1 594 expert, 16/16, 1,92 → 3,74 tok/s.
+
+**Hỏi: Chỉ 11% expert nằm trên VRAM, sao lại có ích?**
+
+Router không chọn đều: một số expert được chọn nhiều hơn hẳn. Mô phỏng trên routing thật cho thấy nếu chọn expert theo thứ tự nạp thì chỉ giảm 19% số lần đọc SSD, còn chọn theo tần suất thì giảm 28–31%. Ngoài ra các expert trong pool được tính trên GPU nên CPU cũng bớt việc (thời gian tính expert trên CPU giảm từ khoảng 24 xuống 15–18 giây mỗi request).
+
+**Hỏi: Hồ sơ tần suất học từ chính bộ prompt đo thì có gian lận không?**
+
+Không học từ bộ đo. Hồ sơ được học từ workload `long-prefill` (hai đoạn văn dài về thư viện), còn phép đo dùng workload `mixed` (Mars, Python, love). Tệp hồ sơ được commit cùng protocol trước khi đo, kèm mã băm. Giới hạn còn lại: mới thử một workload đo; workload khác xa (ngôn ngữ khác, mã nguồn) chưa được kiểm.
 
 **Hỏi: RAM guard có đảm bảo không bao giờ hết RAM không?**
 
@@ -185,7 +193,7 @@ Viết bộ tham chiếu chạy Transformers **từng lớp**: mỗi lớp đư�
 
 **Hỏi: Đo bao nhiêu lần? Có ý nghĩa thống kê không?**
 
-Mỗi đối chứng là một lượt ABBA gồm 4 tiến trình mới, 8 so sánh ghép cặp. Quy tắc chốt trước: chỉ kết luận nhanh hơn khi **cả 8** tỉ số cùng chiều và vượt 5%. Nếu thực sự không có khác biệt, xác suất cả 8 cặp cùng nghiêng một phía một cách ngẫu nhiên là khoảng 0,8% (kiểm định dấu). Khi không đạt, kết quả được ghi là không nhất quán, như với prefetch và cache 96 MiB.
+Mỗi đối chứng là một lượt ABBA gồm 4 tiến trình mới, 8 so sánh ghép cặp. Quy tắc chốt trước: chỉ kết luận nhanh hơn khi **cả 8** tỉ số cùng chiều và vượt 5%. Nếu thực sự không có khác biệt, xác suất cả 8 cặp cùng nghiêng một phía một cách ngẫu nhiên là khoảng 0,8% (kiểm định dấu). Khi không đạt, kết quả được ghi là không nhất quán, như với prefetch và cache 96 MiB. Các đối chứng Qwen3 (cache 96 MiB, pool VRAM) ghép hai cặp khối × 8 request nên có 16 so sánh; xác suất cả 16 cùng chiều do ngẫu nhiên là khoảng 0,003%.
 
 **Hỏi: Vì sao dùng ABBA mà không đo A rồi đo B?**
 
@@ -197,7 +205,7 @@ Không. Hai máy khác CPU, GPU, SSD. Mỗi máy được dùng để kiểm k�
 
 **Hỏi: Tại sao tăng cache cho Qwen3 lại không nhanh hơn?**
 
-Dưới trần cgroup cố định, cache expert và page cache dùng chung ngân sách. Tăng cache từ 64 lên 96 MiB/lớp làm hit rate tăng từ 50% lên 60% và dữ liệu đọc giảm 20%, nhưng page cache bớt 1,5 GiB nên các lần đọc còn lại phải xuống SSD nhiều hơn. Hai hiệu ứng gần như triệt tiêu, kết quả không nhất quán. Muốn nhanh hơn cần bộ nhớ ngoài trần (VRAM) hoặc giảm byte mỗi lần đọc (INT4).
+Dưới trần cgroup cố định, cache expert và page cache dùng chung ngân sách. Tăng cache từ 64 lên 96 MiB/lớp làm hit rate tăng từ 50% lên 60% và dữ liệu đọc giảm 20%, nhưng page cache bớt 1,5 GiB nên các lần đọc còn lại phải xuống SSD nhiều hơn. Hai hiệu ứng gần như triệt tiêu, kết quả không nhất quán. Muốn nhanh hơn cần bộ nhớ ngoài trần: VRAM là bộ nhớ như vậy, và dành VRAM cho expert đã làm Qwen3 nhanh hơn 16/16.
 
 **Hỏi: Số liệu này lấy ở đâu, kiểm lại được không?**
 
@@ -207,7 +215,7 @@ Mỗi thí nghiệm có một thư mục hồ sơ trong `benchmarks/experiments/
 
 **Hỏi: 1,1–1,8 tok/s thì dùng được vào việc gì?**
 
-Với Qwen3 trên CPU, tốc độ này đủ cho việc không cần tương tác nhanh (xử lý tài liệu, chạy nền), và quan trọng hơn là chứng minh một mô hình gấp đôi RAM chạy được, ổn định, kết quả đúng. Phân tích đã chỉ ra nút thắt (I/O chiếm 58–76%) và hướng giải quyết cụ thể (pool VRAM, INT4). Với OLMoE, engine đạt khoảng 10 tok/s trên i5 và khoảng 50 tok/s trên i7 khi tính expert trên GPU, đủ cho hội thoại.
+Với Qwen3 trên CPU, tốc độ này đủ cho việc không cần tương tác nhanh (xử lý tài liệu, chạy nền), và quan trọng hơn là chứng minh một mô hình gấp đôi RAM chạy được, ổn định, kết quả đúng. Phân tích đã chỉ ra nút thắt (I/O chiếm 58–76%), và hướng giải quyết đã được đo: dành VRAM cho expert đưa Qwen3 lên 1,33 tok/s trên GPU 4 GB và 3,74 tok/s trên GPU 8 GB. Với OLMoE, engine đạt khoảng 10 tok/s trên i5 và khoảng 50 tok/s trên i7 khi tính expert trên GPU, đủ cho hội thoại.
 
 **Hỏi: Có phải em chỉ chọn kết quả đẹp để báo cáo?**
 
@@ -220,16 +228,17 @@ Kết luận "nhanh hơn ở 8/8 so sánh" đáng tin. Độ lớn của tỉ s�
 **Hỏi: Nếu có thêm ba tháng, em sẽ làm gì?**
 
 Theo thứ tự lợi ích dự kiến:
-1. Tách pool expert khỏi dense trên GPU để Qwen3 dùng 4 GB VRAM làm kho expert (khoảng 11% số expert, là bộ nhớ cộng thêm chứ không lấy chỗ page cache); kernel đã nhận đầu vào từ RAM nên khả thi.
-2. Dense 16-bit trên GPU (2,5 GB thay vì 4,9 GB).
-3. Expert INT4 kèm đánh giá chất lượng theo cùng phương pháp so logits.
-4. Đánh giá chất lượng trên benchmark chuẩn.
+1. Cập nhật hồ sơ đặt expert theo workload (hiện học một lần, giữ cố định), đánh giá trước bằng chính công cụ mô phỏng đã khớp engine.
+2. Đối chứng có kiểm soát cách chia VRAM giữa dense và expert (hiện mới có một lượt khám phá trên i7).
+3. Định tuyến có tính đến cache khi router gần hòa, kèm đánh giá chất lượng.
+4. Đánh giá chất lượng trên benchmark chuẩn và perplexity.
 
 Mỗi hướng đi kèm một thí nghiệm ABBA với protocol chốt trước.
 
 ### B.6 Những câu không nên nói
 
-- "GPU không giúp gì cho Qwen3": chưa đo trên i5, và số liệu i7 cho thấy có giúp.
+- "Qwen3 không dùng được GPU 4 GB": sai từ 24/11, dành VRAM cho expert đã đo nhanh hơn 16/16.
+- "Pool VRAM nhanh hơn 1,42 lần trong mọi trường hợp": đó là trung vị tốc độ sinh trên một workload; khoảng đo được của tổng thời gian là 0,69–0,87 lần (i5).
 - "Engine không bao giờ hết RAM": RAM guard không phải giới hạn cứng.
 - "Nhanh hơn X lần so với llama.cpp": chưa đo đối chứng với llama.cpp.
 - "Chính sách cache là LRU": sai, là heat có suy giảm với hai đoạn.

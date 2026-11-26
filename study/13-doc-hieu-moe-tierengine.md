@@ -229,7 +229,7 @@ Giải thích từng trường ở cấp cao nhất (`cache_bytes_per_layer`, `r
 
 ### Bài 6 ★★★ — Đề xuất thay đổi
 
-Hướng phát triển số 1 của đồ án là "dùng VRAM làm kho expert khi dense không vừa" (để Qwen3 trên GTX 1650 dùng được pool expert). Không viết code, hãy viết một bản thiết kế 1 trang:
+Hướng "dùng VRAM làm kho expert khi dense không vừa" (để Qwen3 trên GTX 1650 dùng được pool expert) đã được làm ngày 24/11 (commit `d67a8c5`, cờ `MOE_GPU_DENSE=off` và `MOE_GPU_EXPERT_PLACEMENT`). Trước khi đọc commit đó, hãy tự viết một bản thiết kế 1 trang, rồi so với cách đã làm:
 
 1. Hiện tại pool expert được cấp ở đâu và vì sao nó phụ thuộc vào dense trên GPU?
 2. Kernel GPU nhận đầu vào từ đâu (RAM hay VRAM)? Điều đó có cho phép tách pool khỏi dense không?
@@ -238,5 +238,5 @@ Hướng phát triển số 1 của đồ án là "dùng VRAM làm kho expert kh
 
 <details><summary>Gợi ý</summary>
 
-Pool expert nằm trong `GpuDenseStorage` (`src/gpu.rs`), chỉ được tạo khi dense lên GPU thành công. Kernel nhận vector đầu vào từ RAM (`cuMemcpyHtoD` trong `src/gpu_expert.rs`) và trả kết quả về RAM, nên về nguyên tắc không cần dense trên GPU. Thay đổi chính: tách `expert_pool`, `expert_cache` và kernel ra khỏi `GpuDenseStorage` thành một cấu trúc riêng có thể tồn tại khi dense ở CPU. Thí nghiệm: ABBA trên Qwen3, i5, trần 10 GiB, tắt và bật pool, chỉ số chính là tổng thời gian và decode tok/s, chỉ số công việc là số lần đọc tệp. Đây là bài tập tốt nhất để chuẩn bị cho câu hỏi "nếu có thêm thời gian, em sẽ làm gì?".
+Pool expert nằm trong `GpuDenseStorage` (`src/gpu.rs`), chỉ được tạo khi dense lên GPU thành công. Kernel nhận vector đầu vào từ RAM (`cuMemcpyHtoD` trong `src/gpu_expert.rs`) và trả kết quả về RAM, nên về nguyên tắc không cần dense trên GPU. Thay đổi chính: tách `expert_pool`, `expert_cache` và kernel ra khỏi `GpuDenseStorage` thành một cấu trúc riêng có thể tồn tại khi dense ở CPU. Thí nghiệm: ABBA trên Qwen3, i5, trần 10 GiB, tắt và bật pool, chỉ số chính là tổng thời gian và decode tok/s, chỉ số công việc là số lần đọc tệp. Cách đã làm thực tế nhỏ hơn đề xuất trên: không tách cấu trúc, mà cho `GpuDenseStorage.layers` được rỗng và `lm_head` thành `Option`; các hàm `dense_gemv`, `dense_gemm`, `dense_qkv`, `dense_gemm_qkv` thiếu ma trận GPU thì đi đường CPU. Thêm `preload_gpu_expert_placement` nạp pool theo hồ sơ tần suất, và `reset_cache` giữ lại các expert theo hồ sơ (lỗi này được phát hiện ở lượt chạy thử: harness reset trước request đầu làm mất hết placement). Đọc test `gpu_expert_pool_without_dense_gpu_matches_cpu_with_placement` để thấy cả ba điểm được kiểm thế nào.
 </details>

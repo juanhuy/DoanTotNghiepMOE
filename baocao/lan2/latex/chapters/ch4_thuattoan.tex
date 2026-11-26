@@ -71,7 +71,7 @@ Khi sinh tiếp từng token, mã nguồn còn có cơ chế dự đoán expert 
 
 Cơ chế này chỉ chọn tối đa hai ứng viên khi lớp hiện tại không có expert còn thiếu cần nạp. Các ứng viên phải có điểm dương và chưa có bản dùng được trong bộ đệm RAM hoặc VRAM của lớp sau. Khi lớp hiện tại có dữ liệu cần nạp, hệ thống ưu tiên việc đó để hạn chế tranh chấp truy xuất. Nếu dự đoán không được dùng ở lớp tiếp theo, vùng đệm được hoàn trả cho cơ chế tái sử dụng.
 
-Dự đoán chỉ ảnh hưởng thời điểm nạp dữ liệu, không thay kết quả chọn top-k của Router. Trong thực tế, điều kiện ``lớp hiện tại không còn expert cần nạp'' hiếm khi xảy ra khi cache nhỏ: trong workload đo, cơ chế này chỉ được kích hoạt ở 15 trên 22.680 lượt xét (0,066\%). Nạp trước khi xử lý đầu vào cũng không cho kết quả nhất quán khi đối chứng bật/tắt (mục 5.7), nên cả hai cơ chế được để tắt trong các cấu hình đo chính.
+Dự đoán chỉ ảnh hưởng thời điểm nạp dữ liệu, không thay kết quả chọn top-k của Router. Trong thực tế, điều kiện ``lớp hiện tại không còn expert cần nạp'' hiếm khi xảy ra khi cache nhỏ: trong workload đo, cơ chế này chỉ được kích hoạt ở 15 trên 22.680 lượt xét (0,066\%). Nạp trước khi xử lý đầu vào cũng không cho kết quả nhất quán khi đối chứng bật/tắt (mục 5.8), nên cả hai cơ chế được để tắt trong các cấu hình đo chính.
 
 \section{Tính toán INT8, tái sử dụng vùng đệm và đọc tệp}
 
@@ -104,6 +104,8 @@ Sau hai kernel: chép out (d số FP32) về RAM, cộng có trọng số như e
 Mỗi hàng được giao cho một block để mọi luồng đọc các byte liền kề của cùng hàng, giúp truy cập bộ nhớ toàn cục được gộp. Hệ số tỉ lệ được nhân sau khi cộng xong một hàng, đúng như công thức (2.8), nên kết quả chỉ khác bản CPU ở thứ tự cộng số thực. Kiểm thử trên GPU thật cho sai lệch logits dưới $10^{-4}$ so với đường CPU.
 
 Pool expert trên GPU dùng chính sách lấp đầy: các expert được nạp đầu tiên được chép lên VRAM cho đến khi hết chỗ, sau đó pool giữ cố định. Khi Router chọn một expert, engine kiểm pool trước; nếu có thì tính trên GPU, nếu không thì đi theo đường RAM và CPU như bình thường. Chi phí chép lên VRAM chỉ phát sinh một lần, ở request đầu tiên. Với GTX 1650 4GB, pool chứa 299 trong 1024 expert của OLMoE (29\%); với RTX 5060 Laptop 8GB, pool chứa 960 expert (93,75\%).
+
+Chính sách lấp đầy theo thứ tự nạp phù hợp khi pool chứa được phần lớn expert, như OLMoE. Với Qwen3, pool chỉ chứa 11--26\% trong 6144 expert, nên việc chọn expert nào để đặt lên VRAM trở nên quan trọng. Expert được nạp đầu tiên là các expert của những lớp đầu trong lượt xử lý đầu vào của request đầu tiên, chưa chắc là những expert được dùng nhiều. Engine vì vậy có thêm cách đặt theo hồ sơ tần suất: một lượt chạy trên CPU ghi số lần Router chọn mỗi cặp (lớp, expert) ra tệp; khi khởi động, engine sắp các cặp theo số lần giảm dần và nạp lần lượt lên VRAM cho tới khi hết chỗ. Pool vẫn giữ cố định như trước, nên kết quả tính không đổi, chỉ khác tập expert nằm trên GPU. Lệnh đặt lại bộ đệm chỉ xóa các expert không thuộc hồ sơ; các expert theo hồ sơ là cấu hình, trọng số không đổi nên được giữ lại. Mục 5.7 so sánh hai cách đặt bằng mô phỏng và đo hiệu quả của cách đặt theo tần suất.
 
 \section{Phối hợp bộ đệm inclusive và victim}
 
@@ -216,17 +218,18 @@ Bảng~\ref{tab:solutions} tổng hợp các giải pháp đã triển khai và 
 \toprule
 \textbf{Giải pháp} & \textbf{Trạng thái} & \textbf{Căn cứ} \\
 \midrule
-Tái sử dụng KV theo tiền tố chung & Dùng & Prefill giảm 67,56\% trên workload có tiền tố chung, token đầu khớp 5/5 cặp (mục 5.8) \\
-Chính sách victim giữa RAM và VRAM & Dùng khi tầng VRAM bật & Thời gian giảm 13--21\% so với inclusive trong khảo sát nhỏ (mục 5.8) \\
+Tái sử dụng KV theo tiền tố chung & Dùng & Prefill giảm 67,56\% trên workload có tiền tố chung, token đầu khớp 5/5 cặp (mục 5.9) \\
+Chính sách victim giữa RAM và VRAM & Dùng khi tầng VRAM bật & Thời gian giảm 13--21\% so với inclusive trong khảo sát nhỏ (mục 5.9) \\
 Dense trên GPU (cuBLAS) & Dùng khi VRAM đủ & TTFT nhanh hơn 1,24--1,62 lần so với CPU (mục 5.3) \\
 Tầng VRAM, expert tính trên CPU & Không dùng & Chậm hơn tắt tầng 8/8 trên cả hai máy (mục 5.3) \\
 Tính expert INT8 trên GPU & Dùng khi VRAM đủ & Nhanh hơn tắt tầng 8/8 trên cả hai máy (mục 5.4--5.5) \\
+VRAM chỉ chứa expert, đặt theo tần suất & Dùng cho Qwen3 & Nhanh hơn CPU 16/16 trên cả hai máy (mục 5.7) \\
 Kernel expert nhiều token & Tùy chọn & TTFT nhanh hơn 6--9\% với prompt dài (mục 4.3) \\
 Dense BF16, embedding từ tệp & Dùng cho Qwen3 & Cần thiết để Qwen3 vừa trần 8GB (mục 5.6) \\
 Dispatch song song theo nhóm & Loại & Chậm hơn 7/9 cặp \\
 Admission theo heat & Loại & Lượng đọc tăng 2,56\% \\
-Prefetch khi prefill, dự đoán liên tầng & Tắt & Không nhất quán; hiếm được kích hoạt (mục 5.7) \\
-Tăng số luồng CPU quá 4 & Không dùng & Không nhanh hơn trên cả hai máy (mục 5.7) \\
+Prefetch khi prefill, dự đoán liên tầng & Tắt & Không nhất quán; hiếm được kích hoạt (mục 5.8) \\
+Tăng số luồng CPU quá 4 & Không dùng & Không nhanh hơn trên cả hai máy (mục 5.8) \\
 \bottomrule
 \end{tabularx}
 \end{table}

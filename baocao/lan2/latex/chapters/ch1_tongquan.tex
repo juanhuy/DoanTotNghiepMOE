@@ -42,7 +42,8 @@ Phần nào của một request tốn thời gian nhất? & Đo riêng chờ exp
 VRAM nên dùng để chứa expert hay để tính expert? & Đối chứng ABBA tầng VRAM bật/tắt khi expert tính trên CPU, rồi khi expert tính trên GPU & 5.3--5.4 \\
 Phân tầng có còn giá trị khi RAM thực sự thiếu? & Giới hạn RAM của engine bằng cgroup, xóa page cache để buộc đọc SSD & 5.5 \\
 Mô hình lớn hơn RAM có chạy được không, với chi phí nào? & Chạy Qwen3-30B-A3B dưới trần 10GB và 8GB trên hai máy & 5.6 \\
-Các tối ưu khác (prefetch, admission, số luồng, cache lớn hơn) có giúp không? & Đối chứng ABBA từng cơ chế, ghi cả kết quả âm & 5.7 \\
+Khi phần dense không vừa VRAM, có nên dành VRAM chỉ để chứa và tính expert không? & Mô phỏng các cách đặt expert trên routing thật, rồi đối chứng ABBA với CPU trên hai máy & 5.7 \\
+Các tối ưu khác (prefetch, admission, số luồng, cache lớn hơn) có giúp không? & Đối chứng ABBA từng cơ chế, ghi cả kết quả âm & 5.8 \\
 \bottomrule
 \end{tabularx}
 \end{table}

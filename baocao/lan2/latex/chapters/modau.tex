@@ -13,6 +13,7 @@ Các kết quả chính gồm:
 \item Engine cho logits trùng với thư viện tham chiếu Transformers trên cả hai checkpoint thật.
 \item Tính expert ngay tại VRAM giúp tầng VRAM chuyển từ chi phí ròng thành có lợi, kết quả nhất quán trên hai máy.
 \item Qwen3-30B-A3B với checkpoint 30GB chạy được dưới trần RAM 8GB, chỉ dùng khoảng 5,7GiB bộ nhớ ẩn danh.
+\item Khi phần dense không vừa VRAM, dành VRAM cho các expert hay dùng nhất giúp Qwen3 nhanh hơn chạy CPU ở mọi so sánh trên cả GPU 4GB và 8GB.
 \end{itemize}
 Các phép đo cũng chỉ ra nút thắt còn lại: với mô hình lớn hơn RAM, phần lớn thời gian là chờ đọc expert từ SSD.
 

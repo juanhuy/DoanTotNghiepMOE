@@ -105,7 +105,7 @@ cuBLAS là thư viện đại số tuyến tính của NVIDIA, cài sẵn các p
 
 Điểm hay vấp: cuBLAS theo quy ước **column-major** (theo cột, như Fortran). Ma trận row-major `A (m × n)` khi đưa cho cuBLAS được hiểu là ma trận column-major `Aᵀ (n × m)`. Muốn tính `A x` thì gọi GEMV với cờ chuyển vị `CUBLAS_OP_T`. Engine khai báo hằng `CUBLAS_OP_T` trong `src/gpu.rs` và gọi `cublasSgemv_v2` cho phần dense.
 
-`Sgemv` là phiên bản FP32 ("S" là single precision). Đây là lý do engine phải nới dense sang FP32 trên VRAM, và với Qwen3 dense FP32 cần khoảng 4,9 GB, không vừa GTX 1650 4 GB. Dùng GEMM nửa độ chính xác (`cublasGemmEx` với BF16/FP16) sẽ giữ dense ở khoảng 2,5 GB: đó là một hướng phát triển đã nêu.
+`Sgemv` là phiên bản FP32 ("S" là single precision). Đây là lý do engine phải nới dense sang FP32 trên VRAM, và với Qwen3 dense FP32 cần khoảng 4,9 GB, không vừa GTX 1650 4 GB. Cách đồ án chọn (24/11) là **không đưa dense lên GPU**: với `MOE_GPU_DENSE=off`, dense ở lại CPU và toàn bộ VRAM dành cho pool expert, vì kernel expert nhận đầu vào và trả kết quả qua RAM. Lý do chọn hướng này thay vì GEMM nửa độ chính xác: với Qwen3, dense chỉ chiếm 12–23% thời gian request (Amdahl, module 11), còn chờ đọc expert chiếm 58–76%. Trên i7, lượt khám phá đặt dense lên VRAM (pool còn 565 expert) đạt 2,44 tok/s, thấp hơn 3,74 tok/s khi dành hết VRAM cho expert (1 594 expert).
 
 ## 7. Driver API, Runtime API và NVRTC
 
@@ -190,7 +190,7 @@ GTX 1650 có 4 GB, trong đó dense FP32 của OLMoE và vùng tính tạm chi�
 
 <details><summary>Lời giải</summary>
 
-299 × 6,02 ≈ 1 800 MiB (đúng con số 1799 MiB lấp pool trong hồ sơ). 960 × 6,02 ≈ 5 780 MiB. Qwen3: khoảng 3 200 MiB khả dụng / 4,51 ≈ 700 expert trên 6 144, khoảng 11%. Con số 11% này là lý do báo cáo đánh giá hướng "pool VRAM cho Qwen3 trên i5" là khả thi nhưng lợi ích có giới hạn.
+299 × 6,02 ≈ 1 800 MiB (đúng con số 1799 MiB lấp pool trong hồ sơ). 960 × 6,02 ≈ 5 780 MiB. Qwen3: khoảng 3 200 MiB khả dụng / 4,51 ≈ 700 expert trên 6 144, khoảng 11%. Đo thật: engine cấp 713 slot (3 218 MiB). Dù chỉ 11%, nếu chọn đúng expert hay dùng (module 09, mục 6.2b) thì số lần đọc SSD giảm 28% và Qwen3 trên i5 nhanh hơn CPU 16/16.
 </details>
 
 ### Bài 3 ★★ — Băng thông PCIe
