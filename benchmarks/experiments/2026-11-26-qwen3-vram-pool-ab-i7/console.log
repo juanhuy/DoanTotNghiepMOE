@@ -1,0 +1,48 @@
+BLOCK A
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T120945.559849Z-ram-a6294e7abae34d339b8d5d6c6cd5b1fa
+turn=0 RSS=5689312KiB swap=0KiB
+turn=1 RSS=5712116KiB swap=0KiB
+turn=2 RSS=5758540KiB swap=0KiB
+turn=3 RSS=5806416KiB swap=0KiB
+turn=4 RSS=5832920KiB swap=0KiB
+turn=5 RSS=5845032KiB swap=0KiB
+turn=6 RSS=5868836KiB swap=0KiB
+turn=7 RSS=5900812KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T120945.559849Z-ram-a6294e7abae34d339b8d5d6c6cd5b1fa/result.json
+EXIT A 0
+BLOCK B
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T121619.190035Z-ram-3c5628ff0a7c4e7a9ecf4b54bfbc3d22
+turn=0 RSS=5998036KiB swap=0KiB
+turn=1 RSS=6019516KiB swap=0KiB
+turn=2 RSS=6066144KiB swap=0KiB
+turn=3 RSS=6113696KiB swap=0KiB
+turn=4 RSS=6129424KiB swap=0KiB
+turn=5 RSS=6129508KiB swap=0KiB
+turn=6 RSS=6154496KiB swap=0KiB
+turn=7 RSS=6178724KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T121619.190035Z-ram-3c5628ff0a7c4e7a9ecf4b54bfbc3d22/result.json
+EXIT B 0
+BLOCK B
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T122028.538699Z-ram-628debf7574a4e598e55168ca5316146
+turn=0 RSS=5998352KiB swap=0KiB
+turn=1 RSS=6019812KiB swap=0KiB
+turn=2 RSS=6066596KiB swap=0KiB
+turn=3 RSS=6114312KiB swap=0KiB
+turn=4 RSS=6129952KiB swap=0KiB
+turn=5 RSS=6131008KiB swap=0KiB
+turn=6 RSS=6152900KiB swap=0KiB
+turn=7 RSS=6177448KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T122028.538699Z-ram-628debf7574a4e598e55168ca5316146/result.json
+EXIT B 0
+BLOCK A
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T122448.318401Z-ram-762df52779e44100b46e5517da2d162d
+turn=0 RSS=5689288KiB swap=0KiB
+turn=1 RSS=5712120KiB swap=0KiB
+turn=2 RSS=5758644KiB swap=0KiB
+turn=3 RSS=5806472KiB swap=0KiB
+turn=4 RSS=5832980KiB swap=0KiB
+turn=5 RSS=5845720KiB swap=0KiB
+turn=6 RSS=5858624KiB swap=0KiB
+turn=7 RSS=5891284KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T122448.318401Z-ram-762df52779e44100b46e5517da2d162d/result.json
+EXIT A 0

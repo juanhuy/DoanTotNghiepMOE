@@ -1,0 +1,12 @@
+EXPLORE GPU-DENSE ON
+Artifact: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T123208.773083Z-ram-f7f54db52005444c8ae46cbf5bfd7d19
+turn=0 RSS=6017220KiB swap=0KiB
+turn=1 RSS=6043796KiB swap=0KiB
+turn=2 RSS=6090652KiB swap=0KiB
+turn=3 RSS=6138420KiB swap=0KiB
+turn=4 RSS=6164920KiB swap=0KiB
+turn=5 RSS=6164924KiB swap=0KiB
+turn=6 RSS=6181280KiB swap=0KiB
+turn=7 RSS=6212272KiB swap=0KiB
+completed: /home/nhat-huy/DOANTN/MoE/benchmarks/runs/i7/20261126T123208.773083Z-ram-f7f54db52005444c8ae46cbf5bfd7d19/result.json
+EXIT EXPLORE 0

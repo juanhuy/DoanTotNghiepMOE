@@ -1,5 +1,7 @@
 # Benchmark của MoE-TierEngine
 
+Kết quả mới 26/11 (pool expert VRAM cho Qwen3 i7): [P1 — pool expert VRAM không cần dense GPU, ABBA trên i7](experiments/2026-11-26-qwen3-vram-pool-ab-i7/README.md). Chạy độc lập protocol `qwen3-vram-pool-ab-v1` với `--testbed i7` (RTX 5060 Laptop 8GB), cùng checkpoint khớp i5 478/478 file và đúng hồ sơ tần suất của i5. Với `--gpu-dense off`, pool nạp 1594 slot (7,03 GiB VRAM), A1 tính trên GPU: nhanh hơn CPU-only ở **16/16 so sánh** (`b_faster: true`, total B/A 0,500–0,604, decode 0,466–0,590), decode trung vị 1,92→3,74 tok/s, total 47,1→25,8s, TTFT 9,2→6,3s, payload đọc 74,6→25,4GB (miss 0,377 lần), text khớp 16/16, 0 OOM/swap. Lượt khám phá `--gpu-dense on` (P3, dense 4,6GB + pool 565 slot) chỉ đạt 2,44 tok/s (payload 57,0GB), khẳng định trên i7 nhường VRAM cho pool expert hiệu quả hơn đặt dense lên GPU.
+
 Kết quả mới 24/11 (pool expert VRAM cho Qwen3 i5): [P1 — pool expert VRAM không cần dense GPU, ABBA](experiments/2026-11-24-qwen3-vram-pool-ab-i5/README.md). Dense ở CPU, 713 expert nạp sẵn theo hồ sơ tần suất (học từ workload khác) trên GTX 1650, A1 tính trên GPU. So với CPU-only cùng trần 10240MiB: nhanh hơn 16/16 so sánh (total B/A 0,686–0,869, decode 0,665–0,839), decode trung vị 0,94→1,33 tok/s, text khớp 16/16, cache miss 0,724 lần đúng mô phỏng; RSS +~370MiB.
 
 Kết quả mới 24/11 (mô phỏng pool VRAM Qwen3 i5): [P2 — pool expert VRAM tách khỏi dense, mô phỏng](experiments/2026-11-24-vram-pool-sim-i5/README.md). Phát lại routing thật của Qwen3 (mô phỏng khớp tuyệt đối hit/miss/eviction engine 8/8 turn). Ở 700 slot (ước tính GTX 1650), chính sách A1 hiện tại (fill-only, N expert đầu tiên) chỉ giảm 19% lần đọc SSD; chọn expert theo tần suất học từ prompt khác giảm 31% (held-out 2 turn), cận trên 39–41%. Đếm lần nạp, không đo thời gian.
@@ -67,7 +69,7 @@ Không đọc toàn bộ JSON/trace để hiểu tiến độ. Chọn đúng câ
 | **TRA CỨU** | [PROGRESS](../docs/PROGRESS.md) | Đọc quy tắc và mục mới nhất; chỉ tìm mốc cũ khi cần |
 | **THEO TÁC VỤ** | [ARCHITECTURE](../docs/ARCHITECTURE.md), [WORKFLOWS](../docs/WORKFLOWS.md), [SCENARIOS](SCENARIOS.md) | Sửa engine, bàn giao hoặc chuẩn bị đúng phép đo |
 
-## Nhãn ưu tiên của 38 hồ sơ thí nghiệm
+## Nhãn ưu tiên của 39 hồ sơ thí nghiệm
 
 Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa checksum. **Ưu tiên đọc không đồng nghĩa kết quả tích cực, đã nghiệm thu hoặc đủ điều kiện so tốc độ hai máy.** Giữ giới hạn của từng hồ sơ khi trích dẫn.
 
@@ -77,6 +79,7 @@ Nhãn do mục lục này quản lý, không chèn vào README/raw đã khóa ch
 
 | Hồ sơ | Dùng cho câu hỏi nào? |
 | --- | --- |
+| [Pool expert VRAM không cần dense GPU i7 26/11](experiments/2026-11-26-qwen3-vram-pool-ab-i7/README.md) | RTX 5060 Laptop 8GB, pool 1594 slot (7,03 GiB VRAM), dense CPU: nhanh hơn CPU-only 16/16 (`b_faster: true`), total B/A 0,500–0,604, decode 1,92→3,74 tok/s, payload đọc 74,6→25,4GB (miss 0,377×), text khớp 16/16; khám phá P3 `--gpu-dense on` (565 slot, 2,44 tok/s) chậm hơn `--gpu-dense off` |
 | [Parity logits model thật i5 20/11](experiments/2026-11-20-real-model-parity-i5/README.md) | Engine có tính đúng trên checkpoint thật không, INT8 lệch bao nhiêu: tham chiếu Transformers từng layer; engine với ref-INT8 top-1 159/159 (Qwen3) và 186/186 (OLMoE), max |Δ| ≤ 3e-4; INT8 với BF16 gốc top-1 ~98,8%, KL ~0,008; checkpoint OLMoE trùng tensor với 0924-Instruct@7f1c97f |
 | [Qwen3-30B-A3B dưới trần RAM i7 18/11](experiments/2026-11-18-qwen3-ram-cap-i7/README.md) | Model INT8 30GB: 8/8 request dưới trần 10240 và 8192MiB cgroup, anon ~5,7GiB, 0 OOM, 0 swap; text khớp 8/8 bit-exact với i5; CPU-only decode 1,53 / 1,78 tok/s; kèm lượt khám phá GPU P3 (dense F32 trên VRAM + pool 565 expert, decode 2,22 tok/s, không phải A/B). Không so tốc độ với i5 |
 | [Qwen3-30B-A3B dưới trần RAM i5 17/11](experiments/2026-11-17-qwen3-ram-cap-i5/README.md) | Model lớn gấp đôi RAM (INT8 30GB): 8/8 request dưới trần 10240 và 8192MiB, anon ~5,7GiB, 0 OOM, 0 swap; CPU-only, decode 1,34 / 1,13 tok/s; I/O chiếm 58–76% thời gian |
