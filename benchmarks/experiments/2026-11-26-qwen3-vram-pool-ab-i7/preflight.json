@@ -1,0 +1,70 @@
+{
+  "samples": [
+    {
+      "utc": "2026-11-26T12:09:16.608922+00:00",
+      "available_kib": 10618804,
+      "swap_used_kib": 704,
+      "pswpout": 176,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=267533",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=265985"
+      ]
+    },
+    {
+      "utc": "2026-11-26T12:09:21.609919+00:00",
+      "available_kib": 10609072,
+      "swap_used_kib": 704,
+      "pswpout": 176,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=267533",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=265985"
+      ]
+    },
+    {
+      "utc": "2026-11-26T12:09:26.610390+00:00",
+      "available_kib": 10603240,
+      "swap_used_kib": 704,
+      "pswpout": 176,
+      "psi_memory": [
+        "some avg10=0.00 avg60=0.00 avg300=0.00 total=267533",
+        "full avg10=0.00 avg60=0.00 avg300=0.00 total=265985"
+      ]
+    }
+  ],
+  "active_engine_build_processes": [],
+  "power": {
+    "supplies": {
+      "ADP1": {
+        "type": "Mains",
+        "online": "1",
+        "status": null,
+        "capacity": null
+      },
+      "BAT1": {
+        "type": "Battery",
+        "online": null,
+        "status": "Full",
+        "capacity": "100"
+      }
+    },
+    "on_ac": true
+  },
+  "gpu": {
+    "status": "observed",
+    "pstate": "P2",
+    "clock_gr": "1680 MHz",
+    "temperature": "46",
+    "power_draw": "9.86 W",
+    "reasons": {
+      "clocks_event_reasons.hw_slowdown": "Not Active",
+      "clocks_event_reasons.hw_thermal_slowdown": "Not Active",
+      "clocks_event_reasons.sw_thermal_slowdown": "Not Active",
+      "clocks_event_reasons.hw_power_brake_slowdown": "Not Active",
+      "clocks_event_reasons.sw_power_cap": "Not Active"
+    },
+    "active_throttle": [],
+    "throttled": false
+  },
+  "min_available_required_mib": 5120,
+  "eligible": true
+}
